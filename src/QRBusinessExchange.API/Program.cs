@@ -68,6 +68,7 @@ builder.Services.AddScoped<ISubscriptionRepository, SubscriptionRepository>();
 builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
 
 // Register services
+builder.Services.AddHttpClient(); // Required for OneSignalService
 builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<IQRCodeService, QRCodeService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
