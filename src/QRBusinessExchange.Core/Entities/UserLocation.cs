@@ -19,7 +19,7 @@ public class UserLocation
     public decimal Latitude { get; set; }
 
     [Required]
-    [Column(TypeName = "decimal(11, 8)")]
+    [Column(TypeName = "decimal(10, 8)")]
     public decimal Longitude { get; set; }
 
     public bool PingMeEnabled { get; set; } = false;

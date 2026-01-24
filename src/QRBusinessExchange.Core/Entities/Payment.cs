@@ -48,7 +48,7 @@ public class Payment
     [Column(TypeName = "decimal(10, 8)")]
     public decimal? VerificationLatitude { get; set; }
 
-    [Column(TypeName = "decimal(11, 8)")]
+    [Column(TypeName = "decimal(10, 8)")]
     public decimal? VerificationLongitude { get; set; }
 
     /// <summary>

@@ -337,7 +337,7 @@ public class ApplicationDbContext : DbContext
                 .HasPrecision(10, 8);
 
             entity.Property(e => e.VerificationLongitude)
-                .HasPrecision(11, 8);
+                .HasPrecision(10, 8);
 
             entity.Property(e => e.DistanceVerification)
                 .HasPrecision(10, 2);
@@ -448,7 +448,7 @@ public class ApplicationDbContext : DbContext
                 .HasPrecision(10, 8);
 
             entity.Property(e => e.Longitude)
-                .HasPrecision(11, 8);
+                .HasPrecision(10, 8);
         });
     }
 
