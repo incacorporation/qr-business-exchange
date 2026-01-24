@@ -1,0 +1,41 @@
+@rendermode InteractiveServer
+
+<div class="card">
+    <div class="card-body">
+        <h5 class="card-title">Credits Available</h5>
+        <div class="d-flex align-items-center">
+            <h1 class="display-4 mb-0 me-3">@Credits</h1>
+            <i class="bi bi-coin text-warning" style="font-size: 2rem;"></i>
+        </div>
+        <div class="progress mt-3" style="height: 10px;">
+            <div class="progress-bar" role="progressbar" style="width: @GetProgressWidth()%" 
+                 aria-valuenow="@Credits" aria-valuemin="0" aria-valuemax="@MaxCredits"></div>
+        </div>
+        <p class="text-muted mt-2 mb-0">@GetCreditStatus()</p>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public int Credits { get; set; }
+
+    private int MaxCredits => 1000;
+
+    private int GetProgressWidth()
+    {
+        if (MaxCredits == 0) return 0;
+        return (Credits * 100) / MaxCredits;
+    }
+
+    private string GetCreditStatus()
+    {
+        if (Credits == 0)
+            return "No credits remaining. Upgrade your plan!";
+        else if (Credits < 10)
+            return "Running low on credits";
+        else if (Credits < 50)
+            return "Consider upgrading for more credits";
+        else
+            return "You have plenty of credits";
+    }
+}

@@ -1,4 +1,6 @@
-﻿@inherits LayoutComponentBase
+﻿@using QRBusinessExchange.Web.Services
+@inherits LayoutComponentBase
+@inject StateService StateService
 
 <div class="page">
     <div class="sidebar">
@@ -7,7 +9,15 @@
 
     <main>
         <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
+            @if (StateService.IsAuthenticated)
+            {
+                <span class="me-3">@StateService.UserFullName</span>
+                <span class="badge bg-primary">@StateService.SubscriptionType</span>
+            }
+            else
+            {
+                <a href="/login">Login</a>
+            }
         </div>
 
         <article class="content px-4">
