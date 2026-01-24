@@ -15,7 +15,7 @@ public class PaymentService : IPaymentService
     private readonly PayPalService _payPalService;
     private readonly StripeService _stripeService;
     private readonly CloverService _cloverService;
-    private const decimal MaxDistanceYards = 50; // 50-yard verification rule
+    private readonly PaymentSettings _paymentSettings;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PaymentService"/> class
@@ -36,6 +36,7 @@ public class PaymentService : IPaymentService
             throw new ArgumentNullException(nameof(paymentSettings));
         }
 
+        _paymentSettings = paymentSettings.Value;
         _payPalService = new PayPalService(paymentSettings);
         _stripeService = new StripeService(paymentSettings);
         _cloverService = new CloverService(paymentSettings);
@@ -188,7 +189,13 @@ public class PaymentService : IPaymentService
                 subscriptionType);
 
             // Extract payment intent ID from client secret (format: pi_xxx_secret_yyy)
-            var paymentIntentId = clientSecret.Split('_')[0] + "_" + clientSecret.Split('_')[1];
+            var parts = clientSecret.Split('_');
+            if (parts.Length < 2 || !clientSecret.StartsWith("pi_"))
+            {
+                throw new InvalidOperationException("Invalid Stripe client secret format");
+            }
+            
+            var paymentIntentId = $"{parts[0]}_{parts[1]}";
             
             // Update payment with transaction ID
             payment.TransactionId = paymentIntentId;
@@ -282,8 +289,10 @@ public class PaymentService : IPaymentService
             // Convert amount to cents for Clover
             var amountInCents = (long)(amount * 100);
 
-            // Note: In production, the source token would come from the client
-            // This is a placeholder - actual implementation would receive token from Clover.js
+            // NOTE: The source token should be obtained from Clover.js on the client side.
+            // This placeholder will cause the API call to fail. In production, the controller
+            // should accept and pass the actual source token from the client request.
+            // TODO: Update IPaymentService interface to include source parameter for Clover payments
             var source = "clv_token_placeholder";
 
             // Create Clover charge
@@ -353,20 +362,20 @@ public class PaymentService : IPaymentService
 
             payment.DistanceVerification = distance;
 
-            // Verify if distance is within acceptable range (50 yards)
+            // Verify if distance is within acceptable range (configurable)
             var isVerified = _geolocationService.VerifyPaymentLocation(
                 payment.PaymentLatitude.Value,
                 payment.PaymentLongitude.Value,
                 verificationLatitude,
                 verificationLongitude,
-                MaxDistanceYards);
+                _paymentSettings.MaxVerificationDistanceYards);
 
             payment.IsVerified = isVerified;
 
             if (!isVerified)
             {
                 payment.Status = "Rejected";
-                payment.RejectionReason = $"Payment verification location is {distance:F2} yards away from payment initiation location. Maximum allowed distance is {MaxDistanceYards} yards.";
+                payment.RejectionReason = $"Payment verification location is {distance:F2} yards away from payment initiation location. Maximum allowed distance is {_paymentSettings.MaxVerificationDistanceYards} yards.";
             }
 
             await _paymentRepository.UpdateAsync(payment);

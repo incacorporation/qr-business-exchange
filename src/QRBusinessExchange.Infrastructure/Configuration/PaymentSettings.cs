@@ -61,4 +61,21 @@ public class PaymentSettings
     /// Obtained from the Clover Dashboard.
     /// </remarks>
     public string CloverMerchantId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the maximum allowed distance in yards for payment location verification
+    /// </summary>
+    /// <remarks>
+    /// Default is 50 yards. This enforces the distance verification rule between
+    /// payment initiation and verification locations.
+    /// </remarks>
+    public decimal MaxVerificationDistanceYards { get; set; } = 50;
+
+    /// <summary>
+    /// Gets or sets the brand name to display in payment gateways
+    /// </summary>
+    /// <remarks>
+    /// This name will be shown to users during payment processes across all gateways.
+    /// </remarks>
+    public string BrandName { get; set; } = "QR Business Exchange";
 }

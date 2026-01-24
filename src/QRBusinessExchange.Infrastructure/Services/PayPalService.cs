@@ -76,7 +76,7 @@ public class PayPalService
                 {
                     return_url = returnUrl,
                     cancel_url = cancelUrl,
-                    brand_name = "QR Business Exchange",
+                    brand_name = _paymentSettings.BrandName,
                     user_action = "PAY_NOW"
                 }
             };
