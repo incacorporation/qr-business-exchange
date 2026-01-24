@@ -1,0 +1,166 @@
+@page "/profile"
+@using QRBusinessExchange.Core.DTOs
+@using QRBusinessExchange.Web.Services
+@inject ApiService ApiService
+@inject StateService StateService
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>Edit Profile - QR Business Exchange</PageTitle>
+
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card shadow">
+                <div class="card-body p-4">
+                    <h3 class="mb-4">Edit Profile</h3>
+                    
+                    @if (!string.IsNullOrEmpty(errorMessage))
+                    {
+                        <div class="alert alert-danger" role="alert">
+                            @errorMessage
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(successMessage))
+                    {
+                        <div class="alert alert-success" role="alert">
+                            @successMessage
+                        </div>
+                    }
+
+                    @if (profileDto != null)
+                    {
+                        <EditForm Model="profileDto" OnValidSubmit="SaveProfile" FormName="profileForm">
+                            <DataAnnotationsValidator />
+                            
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="firstName" class="form-label">First Name</label>
+                                    <InputText id="firstName" @bind-Value="profileDto.FirstName" class="form-control" />
+                                </div>
+
+                                <div class="col-md-6 mb-3">
+                                    <label for="lastName" class="form-label">Last Name</label>
+                                    <InputText id="lastName" @bind-Value="profileDto.LastName" class="form-control" />
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="email" class="form-label">Email</label>
+                                <InputText id="email" @bind-Value="profileDto.Email" class="form-control" disabled />
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="companyName" class="form-label">Company Name</label>
+                                <InputText id="companyName" @bind-Value="profileDto.CompanyName" class="form-control" />
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="phoneNumber" class="form-label">Phone Number</label>
+                                <InputText id="phoneNumber" @bind-Value="profileDto.PhoneNumber" class="form-control" />
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="bio" class="form-label">Bio</label>
+                                <InputTextArea id="bio" @bind-Value="profileDto.Bio" class="form-control" rows="4" />
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="skills" class="form-label">Skills (comma-separated)</label>
+                                <InputText id="skills" @bind-Value="profileDto.Skills" class="form-control" 
+                                          placeholder="e.g., Web Development, Marketing, Design" />
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="servicePricing" class="form-label">Service Pricing ($)</label>
+                                <InputNumber id="servicePricing" @bind-Value="profileDto.ServicePricing" class="form-control" />
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="profileImage" class="form-label">Profile Image URL</label>
+                                <InputText id="profileImage" @bind-Value="profileDto.ProfileImageUrl" class="form-control" />
+                            </div>
+
+                            <div class="d-flex gap-2">
+                                <button type="submit" class="btn btn-primary" disabled="@isLoading">
+                                    @if (isLoading)
+                                    {
+                                        <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                        <span>Saving...</span>
+                                    }
+                                    else
+                                    {
+                                        <span>Save Changes</span>
+                                    }
+                                </button>
+                                <button type="button" class="btn btn-secondary" @onclick="Cancel">Cancel</button>
+                            </div>
+                        </EditForm>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private UserProfileDto? profileDto;
+    private string errorMessage = string.Empty;
+    private string successMessage = string.Empty;
+    private bool isLoading = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!StateService.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        profileDto = StateService.CurrentUser;
+    }
+
+    private async Task SaveProfile()
+    {
+        if (profileDto == null) return;
+
+        isLoading = true;
+        errorMessage = string.Empty;
+        successMessage = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var response = await ApiService.PutAsync($"api/users/{profileDto.UserId}", profileDto);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                var updatedProfile = await ApiService.ParseResponseAsync<UserProfileDto>(response);
+                if (updatedProfile != null)
+                {
+                    StateService.CurrentUser = updatedProfile;
+                    successMessage = "Profile updated successfully!";
+                }
+            }
+            else
+            {
+                errorMessage = "Failed to update profile. Please try again.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void Cancel()
+    {
+        Navigation.NavigateTo("/dashboard");
+    }
+}

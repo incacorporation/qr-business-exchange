@@ -1,0 +1,128 @@
+@page "/login"
+@using QRBusinessExchange.Core.DTOs
+@using QRBusinessExchange.Web.Services
+@using QRBusinessExchange.Web.Models
+@inject ApiService ApiService
+@inject IndexedDBService IndexedDB
+@inject StateService StateService
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+@rendermode InteractiveServer
+
+<PageTitle>Login - QR Business Exchange</PageTitle>
+
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-4">
+            <div class="card shadow">
+                <div class="card-body p-4">
+                    <h3 class="text-center mb-4">Login</h3>
+                    
+                    @if (!string.IsNullOrEmpty(errorMessage))
+                    {
+                        <div class="alert alert-danger" role="alert">
+                            @errorMessage
+                        </div>
+                    }
+
+                    <EditForm Model="loginRequest" OnValidSubmit="HandleLogin" FormName="loginForm">
+                        <DataAnnotationsValidator />
+                        
+                        <div class="mb-3">
+                            <label for="email" class="form-label">Email</label>
+                            <InputText id="email" @bind-Value="loginRequest.Email" class="form-control" placeholder="Enter your email" />
+                            <ValidationMessage For="@(() => loginRequest.Email)" class="text-danger" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Password</label>
+                            <InputText id="password" type="password" @bind-Value="loginRequest.Password" class="form-control" placeholder="Enter your password" />
+                            <ValidationMessage For="@(() => loginRequest.Password)" class="text-danger" />
+                        </div>
+
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary" disabled="@isLoading">
+                                @if (isLoading)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                    <span>Logging in...</span>
+                                }
+                                else
+                                {
+                                    <span>Login</span>
+                                }
+                            </button>
+                        </div>
+                    </EditForm>
+
+                    <div class="text-center mt-3">
+                        <p class="mb-0">Don't have an account? <a href="/register">Register here</a></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private LoginRequest loginRequest = new();
+    private string errorMessage = string.Empty;
+    private bool isLoading = false;
+
+    private async Task HandleLogin()
+    {
+        isLoading = true;
+        errorMessage = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var response = await ApiService.PostAsync("api/auth/login", loginRequest);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await ApiService.ParseResponseAsync<LoginResponse>(response);
+                
+                if (result != null && !string.IsNullOrEmpty(result.Token))
+                {
+                    await IndexedDB.SetItemAsync("authToken", result.Token);
+                    await IndexedDB.SetItemAsync("userId", result.UserId.ToString());
+                    
+                    StateService.CurrentUser = result.User;
+                    StateService.CurrentSubscription = result.Subscription;
+                    
+                    if (AuthStateProvider is CustomAuthStateProvider customProvider)
+                    {
+                        customProvider.NotifyAuthenticationStateChanged();
+                    }
+                    
+                    if (!result.User.IsEmailVerified)
+                    {
+                        Navigation.NavigateTo("/email-verification");
+                    }
+                    else
+                    {
+                        Navigation.NavigateTo("/dashboard");
+                    }
+                }
+                else
+                {
+                    errorMessage = "Invalid response from server.";
+                }
+            }
+            else
+            {
+                errorMessage = "Invalid email or password.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+}

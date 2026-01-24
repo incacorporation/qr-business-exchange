@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/QRBusinessExchange.API/QRBusinessExchange.API.csproj" />
+    <Project Path="src/QRBusinessExchange.Core/QRBusinessExchange.Core.csproj" />
+    <Project Path="src/QRBusinessExchange.Infrastructure/QRBusinessExchange.Infrastructure.csproj" />
+    <Project Path="src/QRBusinessExchange.Web/QRBusinessExchange.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/QRBusinessExchange.IntegrationTests/QRBusinessExchange.IntegrationTests.csproj" />
+    <Project Path="tests/QRBusinessExchange.UnitTests/QRBusinessExchange.UnitTests.csproj" />
+  </Folder>
+</Solution>

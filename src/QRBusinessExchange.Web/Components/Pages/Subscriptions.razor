@@ -1,0 +1,203 @@
+@page "/subscriptions"
+@using QRBusinessExchange.Core.DTOs
+@using QRBusinessExchange.Web.Services
+@inject ApiService ApiService
+@inject StateService StateService
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>Subscriptions - QR Business Exchange</PageTitle>
+
+<div class="container mt-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2>Subscription Plans</h2>
+            <p class="text-muted">Choose the plan that fits your needs</p>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="alert alert-info">@message</div>
+    }
+
+    <div class="row g-4 mb-4">
+        <div class="col-md-3">
+            <div class="card shadow h-100 @(StateService.SubscriptionType == "Free" ? "border-primary" : "")">
+                <div class="card-body d-flex flex-column">
+                    <h4 class="card-title">Free</h4>
+                    <h2 class="mb-3">$0<small class="text-muted">/month</small></h2>
+                    <ul class="list-unstyled mb-4 flex-grow-1">
+                        <li><i class="bi bi-check text-success"></i> 10 credits/month</li>
+                        <li><i class="bi bi-check text-success"></i> Basic QR code</li>
+                        <li><i class="bi bi-check text-success"></i> Limited map access</li>
+                        <li><i class="bi bi-check text-success"></i> Email support</li>
+                    </ul>
+                    @if (StateService.SubscriptionType == "Free")
+                    {
+                        <button class="btn btn-outline-primary" disabled>Current Plan</button>
+                    }
+                    else
+                    {
+                        <button class="btn btn-outline-secondary" @onclick='() => ChangePlan("Free")'>Downgrade</button>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card shadow h-100 @(StateService.SubscriptionType == "Basic" ? "border-primary" : "")">
+                <div class="card-body d-flex flex-column">
+                    <h4 class="card-title">Basic</h4>
+                    <h2 class="mb-3">$9.99<small class="text-muted">/month</small></h2>
+                    <ul class="list-unstyled mb-4 flex-grow-1">
+                        <li><i class="bi bi-check text-success"></i> 100 credits/month</li>
+                        <li><i class="bi bi-check text-success"></i> Custom QR code</li>
+                        <li><i class="bi bi-check text-success"></i> Full map access</li>
+                        <li><i class="bi bi-check text-success"></i> Priority email support</li>
+                        <li><i class="bi bi-check text-success"></i> Analytics dashboard</li>
+                    </ul>
+                    @if (StateService.SubscriptionType == "Basic")
+                    {
+                        <button class="btn btn-primary" disabled>Current Plan</button>
+                    }
+                    else
+                    {
+                        <button class="btn btn-primary" @onclick='() => ChangePlan("Basic")'>
+                            @(GetPlanOrder(StateService.SubscriptionType) < GetPlanOrder("Basic") ? "Upgrade" : "Change")
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card shadow h-100 @(StateService.SubscriptionType == "Premium" ? "border-primary" : "")">
+                <div class="card-body d-flex flex-column">
+                    <h4 class="card-title">Premium</h4>
+                    <h2 class="mb-3">$29.99<small class="text-muted">/month</small></h2>
+                    <ul class="list-unstyled mb-4 flex-grow-1">
+                        <li><i class="bi bi-check text-success"></i> 500 credits/month</li>
+                        <li><i class="bi bi-check text-success"></i> All Basic features</li>
+                        <li><i class="bi bi-check text-success"></i> Advanced analytics</li>
+                        <li><i class="bi bi-check text-success"></i> Ping Me feature</li>
+                        <li><i class="bi bi-check text-success"></i> No ads</li>
+                    </ul>
+                    @if (StateService.SubscriptionType == "Premium")
+                    {
+                        <button class="btn btn-primary" disabled>Current Plan</button>
+                    }
+                    else
+                    {
+                        <button class="btn btn-primary" @onclick='() => ChangePlan("Premium")'>
+                            @(GetPlanOrder(StateService.SubscriptionType) < GetPlanOrder("Premium") ? "Upgrade" : "Change")
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card shadow h-100 @(StateService.SubscriptionType == "Enterprise" ? "border-primary" : "")">
+                <div class="card-body d-flex flex-column">
+                    <h4 class="card-title">Enterprise</h4>
+                    <h2 class="mb-3">$99.99<small class="text-muted">/month</small></h2>
+                    <ul class="list-unstyled mb-4 flex-grow-1">
+                        <li><i class="bi bi-check text-success"></i> Unlimited credits</li>
+                        <li><i class="bi bi-check text-success"></i> All Premium features</li>
+                        <li><i class="bi bi-check text-success"></i> API access</li>
+                        <li><i class="bi bi-check text-success"></i> Custom integrations</li>
+                        <li><i class="bi bi-check text-success"></i> Dedicated support</li>
+                    </ul>
+                    @if (StateService.SubscriptionType == "Enterprise")
+                    {
+                        <button class="btn btn-primary" disabled>Current Plan</button>
+                    }
+                    else
+                    {
+                        <button class="btn btn-primary" @onclick='() => ChangePlan("Enterprise")'>Upgrade</button>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (StateService.CurrentSubscription != null)
+    {
+        <div class="row">
+            <div class="col-12">
+                <div class="card shadow">
+                    <div class="card-body">
+                        <h5 class="card-title">Current Subscription Details</h5>
+                        <p><strong>Plan:</strong> @StateService.SubscriptionType</p>
+                        <p><strong>Credits Available:</strong> @StateService.CreditsRemaining</p>
+                        <p><strong>Credits Used:</strong> @StateService.CurrentSubscription.CreditsUsed</p>
+                        @if (StateService.CurrentSubscription.EndDate.HasValue)
+                        {
+                            <p><strong>Renewal Date:</strong> @StateService.CurrentSubscription.EndDate.Value.ToString("MMM dd, yyyy")</p>
+                        }
+                        <p><strong>Auto Renew:</strong> @(StateService.CurrentSubscription.AutoRenew ? "Yes" : "No")</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private string message = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!StateService.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/login");
+        }
+    }
+
+    private async Task ChangePlan(string planType)
+    {
+        message = "Processing subscription change...";
+        StateHasChanged();
+
+        try
+        {
+            var response = await ApiService.PostAsync("api/subscriptions/change", new { 
+                UserId = StateService.CurrentUser?.UserId,
+                NewPlanType = planType 
+            });
+            
+            if (response.IsSuccessStatusCode)
+            {
+                var updatedSubscription = await ApiService.ParseResponseAsync<SubscriptionDto>(response);
+                if (updatedSubscription != null)
+                {
+                    StateService.CurrentSubscription = updatedSubscription;
+                    message = $"Successfully changed to {planType} plan!";
+                }
+            }
+            else
+            {
+                message = "Failed to change subscription. Please try again or contact support.";
+            }
+        }
+        catch (Exception ex)
+        {
+            message = $"Error: {ex.Message}";
+        }
+        
+        StateHasChanged();
+    }
+
+    private int GetPlanOrder(string planType)
+    {
+        return planType switch
+        {
+            "Free" => 0,
+            "Basic" => 1,
+            "Premium" => 2,
+            "Enterprise" => 3,
+            _ => 0
+        };
+    }
+}

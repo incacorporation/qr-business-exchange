@@ -1,0 +1,25 @@
+@rendermode InteractiveServer
+
+<div class="form-check form-switch">
+    <input class="form-check-input" type="checkbox" id="pingMeToggle" 
+           checked="@IsEnabled" @onchange="HandleToggle" />
+    <label class="form-check-label" for="pingMeToggle">
+        <strong>@(IsEnabled ? "Enabled" : "Disabled")</strong>
+    </label>
+</div>
+
+@code {
+    [Parameter]
+    public bool IsEnabled { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> OnToggle { get; set; }
+
+    private async Task HandleToggle(ChangeEventArgs e)
+    {
+        if (e.Value is bool value)
+        {
+            await OnToggle.InvokeAsync(value);
+        }
+    }
+}

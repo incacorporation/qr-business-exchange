@@ -1,0 +1,45 @@
+@using QRBusinessExchange.Web.Models
+@inject IJSRuntime JS
+@rendermode InteractiveServer
+
+<div id="map" style="height: 500px; width: 100%;"></div>
+
+@code {
+    [Parameter]
+    public List<UserLocationDto>? Users { get; set; }
+
+    [Parameter]
+    public Guid? CurrentUserId { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await InitializeMap();
+        }
+    }
+
+    private async Task InitializeMap()
+    {
+        if (Users == null || !Users.Any())
+        {
+            await JS.InvokeVoidAsync("leafletInterop.initializeMap", "map", 40.7128, -74.0060, 13);
+            return;
+        }
+
+        var firstUser = Users.First();
+        await JS.InvokeVoidAsync("leafletInterop.initializeMap", "map", firstUser.Latitude, firstUser.Longitude, 13);
+
+        foreach (var user in Users)
+        {
+            var companyLine = string.IsNullOrEmpty(user.CompanyName) ? "" : $"<p class='mb-1'>{user.CompanyName}</p>";
+            var popupContent = $"<div class='text-center'><h6>{user.FirstName} {user.LastName}</h6>{companyLine}<a href='/user/{user.UserId}' class='btn btn-sm btn-primary'>View Profile</a></div>";
+
+            await JS.InvokeVoidAsync("leafletInterop.addMarker", 
+                user.Latitude, 
+                user.Longitude, 
+                popupContent,
+                user.UserId == CurrentUserId);
+        }
+    }
+}
