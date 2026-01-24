@@ -34,4 +34,11 @@ public interface IPaymentRepository
     /// <param name="payment">The payment entity to update</param>
     /// <returns>The updated payment</returns>
     Task<Payment> UpdateAsync(Payment payment);
+
+    /// <summary>
+    /// Retrieves a payment by its transaction ID
+    /// </summary>
+    /// <param name="transactionId">The transaction ID from the payment gateway</param>
+    /// <returns>The payment if found, null otherwise</returns>
+    Task<Payment?> GetByTransactionIdAsync(string transactionId);
 }

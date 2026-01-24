@@ -103,4 +103,25 @@ public class PaymentRepository : IPaymentRepository
             throw new InvalidOperationException($"Error updating payment with ID {payment.PaymentId}", ex);
         }
     }
+
+    /// <inheritdoc/>
+    public async Task<Payment?> GetByTransactionIdAsync(string transactionId)
+    {
+        if (string.IsNullOrWhiteSpace(transactionId))
+        {
+            throw new ArgumentException("Transaction ID cannot be null or empty", nameof(transactionId));
+        }
+
+        try
+        {
+            return await _context.Payments
+                .AsNoTracking()
+                .Include(p => p.User)
+                .FirstOrDefaultAsync(p => p.TransactionId == transactionId);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Error retrieving payment with transaction ID {transactionId}", ex);
+        }
+    }
 }
