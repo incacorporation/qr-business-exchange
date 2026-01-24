@@ -16,3 +16,19 @@ public class UserLocationDto
     public double Longitude { get; set; }
     public string? ProfileImageUrl { get; set; }
 }
+
+public class LoginResponse
+{
+    public string Token { get; set; } = string.Empty;
+    public Guid UserId { get; set; }
+    public QRBusinessExchange.Core.DTOs.UserProfileDto User { get; set; } = new();
+    public QRBusinessExchange.Core.DTOs.SubscriptionDto Subscription { get; set; } = new();
+}
+
+public class Advertisement
+{
+    public string Title { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string? ImageUrl { get; set; }
+    public string? Link { get; set; }
+}

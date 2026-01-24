@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 
 namespace QRBusinessExchange.Web.Services;
 
@@ -8,11 +9,13 @@ public class ApiService
 {
     private readonly HttpClient _httpClient;
     private readonly IndexedDBService _indexedDB;
+    private readonly ILogger<ApiService> _logger;
 
-    public ApiService(HttpClient httpClient, IndexedDBService indexedDB)
+    public ApiService(HttpClient httpClient, IndexedDBService indexedDB, ILogger<ApiService> logger)
     {
         _httpClient = httpClient;
         _indexedDB = indexedDB;
+        _logger = logger;
     }
 
     public async Task<T?> GetAsync<T>(string endpoint)
@@ -24,7 +27,7 @@ public class ApiService
         }
         catch (HttpRequestException ex)
         {
-            Console.WriteLine($"HTTP error: {ex.Message}");
+            _logger.LogError(ex, "HTTP GET error for endpoint: {Endpoint}", endpoint);
             return default;
         }
     }
@@ -38,7 +41,7 @@ public class ApiService
         }
         catch (HttpRequestException ex)
         {
-            Console.WriteLine($"HTTP error: {ex.Message}");
+            _logger.LogError(ex, "HTTP POST error for endpoint: {Endpoint}", endpoint);
             return new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError);
         }
     }
@@ -52,7 +55,7 @@ public class ApiService
         }
         catch (HttpRequestException ex)
         {
-            Console.WriteLine($"HTTP error: {ex.Message}");
+            _logger.LogError(ex, "HTTP PUT error for endpoint: {Endpoint}", endpoint);
             return new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError);
         }
     }
@@ -66,7 +69,7 @@ public class ApiService
         }
         catch (HttpRequestException ex)
         {
-            Console.WriteLine($"HTTP error: {ex.Message}");
+            _logger.LogError(ex, "HTTP DELETE error for endpoint: {Endpoint}", endpoint);
             return new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError);
         }
     }
@@ -80,7 +83,7 @@ public class ApiService
         }
         catch (HttpRequestException ex)
         {
-            Console.WriteLine($"HTTP error: {ex.Message}");
+            _logger.LogError(ex, "HTTP POST error for endpoint: {Endpoint}", endpoint);
             return new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError);
         }
     }
@@ -107,7 +110,7 @@ public class ApiService
         }
         catch (JsonException ex)
         {
-            Console.WriteLine($"JSON parse error: {ex.Message}");
+            _logger.LogError(ex, "JSON parse error for response");
             return default;
         }
     }

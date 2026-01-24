@@ -1,6 +1,7 @@
 @page "/login"
 @using QRBusinessExchange.Core.DTOs
 @using QRBusinessExchange.Web.Services
+@using QRBusinessExchange.Web.Models
 @inject ApiService ApiService
 @inject IndexedDBService IndexedDB
 @inject StateService StateService
@@ -123,13 +124,5 @@
             isLoading = false;
             StateHasChanged();
         }
-    }
-
-    private class LoginResponse
-    {
-        public string Token { get; set; } = string.Empty;
-        public Guid UserId { get; set; }
-        public UserProfileDto User { get; set; } = new();
-        public SubscriptionDto Subscription { get; set; } = new();
     }
 }

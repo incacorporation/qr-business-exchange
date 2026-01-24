@@ -1,3 +1,4 @@
+@using QRBusinessExchange.Web.Models
 @rendermode InteractiveServer
 
 <div class="ad-banner bg-light border rounded p-3 text-center mb-3">
@@ -45,9 +46,8 @@
         isLoading = true;
         StateHasChanged();
 
-        await Task.Delay(500); // Simulate loading
+        await Task.Delay(500);
 
-        // Mock advertisement data
         advertisement = new Advertisement
         {
             Title = "Upgrade Your Network",
@@ -58,13 +58,5 @@
 
         isLoading = false;
         StateHasChanged();
-    }
-
-    private class Advertisement
-    {
-        public string Title { get; set; } = string.Empty;
-        public string Description { get; set; } = string.Empty;
-        public string? ImageUrl { get; set; }
-        public string? Link { get; set; }
     }
 }
