@@ -48,6 +48,12 @@ public class User
 
     public bool IsActive { get; set; } = true;
 
+    /// <summary>
+    /// User role: "User", "Admin", "SuperAdmin"
+    /// </summary>
+    [StringLength(50)]
+    public string Role { get; set; } = "User";
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

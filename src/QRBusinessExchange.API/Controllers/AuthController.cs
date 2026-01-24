@@ -84,7 +84,10 @@ public class AuthController : ControllerBase
         });
 
         // Generate tokens
-        var accessToken = _jwtService.GenerateAccessToken(createdUser.UserId, createdUser.Email);
+        var accessToken = _jwtService.GenerateAccessToken(createdUser.UserId, createdUser.Email, new Dictionary<string, string>
+        {
+            { "role", createdUser.Role }
+        });
         var refreshToken = _jwtService.GenerateRefreshToken();
 
         var response = new AuthResponse
@@ -130,7 +133,10 @@ public class AuthController : ControllerBase
         await _userRepository.UpdateAsync(user);
 
         // Generate tokens
-        var accessToken = _jwtService.GenerateAccessToken(user.UserId, user.Email);
+        var accessToken = _jwtService.GenerateAccessToken(user.UserId, user.Email, new Dictionary<string, string>
+        {
+            { "role", user.Role }
+        });
         var refreshToken = _jwtService.GenerateRefreshToken();
 
         var response = new AuthResponse
@@ -220,6 +226,76 @@ public class AuthController : ControllerBase
         return Ok(new { message = "Logged out successfully" });
     }
 
+    /// <summary>
+    /// Register a new admin user (protected by admin secret key)
+    /// </summary>
+    /// <param name="request">Admin registration details</param>
+    /// <param name="adminSecret">Admin secret key from configuration</param>
+    /// <returns>Authentication response with JWT tokens</returns>
+    [HttpPost("register-admin")]
+    [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> RegisterAdmin(
+        [FromBody] RegisterRequest request,
+        [FromHeader(Name = "X-Admin-Secret")] string? adminSecret)
+    {
+        // Validate admin secret (in production, use configuration)
+        const string ADMIN_SECRET = "QRBizExchange2025!Admin"; // TODO: Move to appsettings.json
+        
+        if (string.IsNullOrWhiteSpace(adminSecret) || adminSecret != ADMIN_SECRET)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { error = "Invalid or missing admin secret" });
+        }
+
+        // Check if email already exists
+        var existingUser = await _userRepository.GetByEmailAsync(request.Email);
+        if (existingUser != null)
+        {
+            return BadRequest(new { error = "Email already registered" });
+        }
+
+        // Hash password
+        var passwordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
+
+        // Create admin user
+        var admin = new User
+        {
+            Email = request.Email,
+            PasswordHash = passwordHash,
+            FirstName = request.FirstName,
+            LastName = request.LastName,
+            CompanyName = request.CompanyName,
+            PhoneNumber = request.PhoneNumber,
+            Role = "Admin", // Set role to Admin
+            IsEmailVerified = true, // Auto-verify admin accounts
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        var createdAdmin = await _userRepository.CreateAsync(admin);
+
+        _logger.LogInformation("Admin user created: {Email}", createdAdmin.Email);
+
+        // Generate tokens with admin role
+        var accessToken = _jwtService.GenerateAccessToken(createdAdmin.UserId, createdAdmin.Email, new Dictionary<string, string>
+        {
+            { "role", createdAdmin.Role }
+        });
+        var refreshToken = _jwtService.GenerateRefreshToken();
+
+        var response = new AuthResponse
+        {
+            AccessToken = accessToken,
+            RefreshToken = refreshToken,
+            ExpiresAt = DateTime.UtcNow.AddMinutes(60),
+            User = MapToUserDto(createdAdmin)
+        };
+
+        return CreatedAtAction(nameof(RegisterAdmin), response);
+    }
+
     private static UserDto MapToUserDto(User user)
     {
         return new UserDto
@@ -235,6 +311,7 @@ public class AuthController : ControllerBase
             Skills = user.Skills,
             ServicePricing = user.ServicePricing,
             IsEmailVerified = user.IsEmailVerified,
+            Role = user.Role,
             CreatedAt = user.CreatedAt
         };
     }

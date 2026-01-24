@@ -59,6 +59,7 @@ public class UserDto
     public string? Skills { get; set; }
     public decimal? ServicePricing { get; set; }
     public bool IsEmailVerified { get; set; }
+    public string Role { get; set; } = "User";
     public DateTime CreatedAt { get; set; }
 }
 
