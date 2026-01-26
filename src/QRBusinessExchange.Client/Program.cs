@@ -17,6 +17,7 @@ builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(apiBaseU
 builder.Services.AddScoped<ApiService>();
 builder.Services.AddScoped<StateService>();
 builder.Services.AddScoped<IndexedDBService>();
+builder.Services.AddScoped<GeolocationService>();
 
 // Add authorization
 builder.Services.AddAuthorizationCore();
