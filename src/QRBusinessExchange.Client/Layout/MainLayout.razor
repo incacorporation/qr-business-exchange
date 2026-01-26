@@ -1,0 +1,123 @@
+@inherits LayoutComponentBase
+@inject StateService StateService
+@inject NavigationManager Navigation
+@implements IDisposable
+
+<div class="page">
+    <div class="sidebar">
+        <div class="top-row ps-3 navbar navbar-dark">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="">
+                    <i class="bi bi-qr-code-scan"></i> QR Business Exchange
+                </a>
+            </div>
+        </div>
+
+        <input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+
+        <div class="nav-scrollable">
+            <nav class="flex-column">
+                <div class="nav-item px-3">
+                    <a href="/" class="nav-link">
+                        <i class="bi bi-house-door-fill"></i> Home
+                    </a>
+                </div>
+                @if (StateService.IsAuthenticated)
+                {
+                    <div class="nav-item px-3">
+                        <a href="/dashboard" class="nav-link">
+                            <i class="bi bi-speedometer2"></i> Dashboard
+                        </a>
+                    </div>
+                    <div class="nav-item px-3">
+                        <a href="/profile" class="nav-link">
+                            <i class="bi bi-person-circle"></i> Profile
+                        </a>
+                    </div>
+                    <div class="nav-item px-3">
+                        <a href="/connections" class="nav-link">
+                            <i class="bi bi-people-fill"></i> Connections
+                        </a>
+                    </div>
+                    <div class="nav-item px-3">
+                        <a href="/analytics" class="nav-link">
+                            <i class="bi bi-graph-up"></i> Analytics
+                        </a>
+                    </div>
+                    <div class="nav-item px-3">
+                        <a href="/settings" class="nav-link">
+                            <i class="bi bi-gear-fill"></i> Settings
+                        </a>
+                    </div>
+                    <div class="nav-item px-3">
+                        <a href="/logout" class="nav-link">
+                            <i class="bi bi-box-arrow-right"></i> Logout
+                        </a>
+                    </div>
+                }
+                else
+                {
+                    <div class="nav-item px-3">
+                        <a href="/login" class="nav-link">
+                            <i class="bi bi-box-arrow-in-right"></i> Login
+                        </a>
+                    </div>
+                    <div class="nav-item px-3">
+                        <a href="/register" class="nav-link">
+                            <i class="bi bi-person-plus"></i> Register
+                        </a>
+                    </div>
+                }
+            </nav>
+        </div>
+    </div>
+
+    <main>
+        <div class="top-row px-4">
+            @if (StateService.IsAuthenticated)
+            {
+                <div class="d-flex align-items-center gap-3">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-person-circle text-primary-custom me-2" style="font-size: 1.5rem;"></i>
+                        <span class="fw-semibold text-dark-color">@StateService.UserFullName</span>
+                    </div>
+                    <span class="subscription-badge @(StateService.SubscriptionType == "Free" ? "badge-free" : "badge-paid")">
+                        @StateService.SubscriptionType
+                    </span>
+                    <a href="/logout" class="btn btn-sm btn-outline-danger">
+                        <i class="bi bi-box-arrow-right"></i> Logout
+                    </a>
+                </div>
+            }
+            else
+            {
+                <div class="d-flex gap-2">
+                    <a href="/login" class="btn btn-sm btn-primary">
+                        <i class="bi bi-box-arrow-in-right"></i> Login
+                    </a>
+                    <a href="/register" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-person-plus"></i> Register
+                    </a>
+                </div>
+            }
+        </div>
+
+        <article class="content px-4">
+            @Body
+        </article>
+    </main>
+</div>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        await StateService.InitializeAsync();
+        StateService.OnStateChanged += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        StateService.OnStateChanged -= StateHasChanged;
+    }
+}
+

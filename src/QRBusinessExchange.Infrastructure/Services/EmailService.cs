@@ -29,7 +29,9 @@ public class EmailService : IEmailService
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _baseUrl = baseUrl ?? throw new ArgumentNullException(nameof(baseUrl));
 
-        ValidateSettings();
+        // Don't validate on construction - validate when actually sending email
+        // This allows the app to start even if SMTP is not configured
+        // ValidateSettings();
     }
 
     /// <inheritdoc/>
@@ -173,6 +175,9 @@ public class EmailService : IEmailService
     /// <returns>True if email was sent successfully, false otherwise</returns>
     private async Task<bool> SendEmailAsync(string to, string subject, string body)
     {
+        // Validate settings before attempting to send
+        ValidateSettings();
+
         try
         {
             using var smtpClient = new SmtpClient(_emailSettings.SmtpHost, _emailSettings.SmtpPort)

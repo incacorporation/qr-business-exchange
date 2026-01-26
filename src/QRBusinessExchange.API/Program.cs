@@ -15,7 +15,8 @@ var builder = WebApplication.CreateBuilder(args);
 // Configure database
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(
-        "Server=incacorporation.net;Database=www.qrbound.com;User Id=ssoAdministrator;Password=8^7lhy1F;TrustServerCertificate=True;Encrypt=False;"
+        "Server=incacorporation.net;Database=www.qrbound.com;User Id=ssoAdministrator;Password=8^7lhy1F;TrustServerCertificate=True;Encrypt=False;",
+        b => b.MigrationsAssembly("QRBusinessExchange.Infrastructure")
     ));
 
 // Configure settings
@@ -50,14 +51,19 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 
-// Configure CORS
+// Configure CORS - Allow Web app with credentials
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
+    options.AddPolicy("AllowBlazorWeb", policy =>
     {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
+        policy.WithOrigins(
+                "https://localhost:7089",  // Blazor Web HTTPS
+                "http://localhost:5116"    // Blazor Web HTTP (for development)
+            )
+            .AllowAnyMethod()
+            .AllowAnyHeader()
+            .AllowCredentials()  // CRITICAL: Allow cookies/credentials
+            .SetIsOriginAllowed(origin => true); // Allow dynamic origins in dev
     });
 });
 
@@ -137,6 +143,22 @@ builder.Services.AddSwaggerGen(options =>
 
 var app = builder.Build();
 
+// Initialize database and seed data
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    try
+    {
+        var context = services.GetRequiredService<ApplicationDbContext>();
+        await DbInitializer.Initialize(context);
+    }
+    catch (Exception ex)
+    {
+        var logger = services.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "An error occurred while seeding the database.");
+    }
+}
+
 // Configure middleware pipeline
 app.UseMiddleware<ErrorHandlingMiddleware>();
 
@@ -151,7 +173,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-app.UseCors("AllowAll");
+app.UseCors("AllowBlazorWeb");
 
 app.UseAuthentication();
 app.UseAuthorization();

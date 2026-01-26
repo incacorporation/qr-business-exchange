@@ -1,7 +1,22 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.2" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\QRBusinessExchange.Core\QRBusinessExchange.Core.csproj" />
+    <ProjectReference Include="..\QRBusinessExchange.Infrastructure\QRBusinessExchange.Infrastructure.csproj" />
+    <ProjectReference Include="..\QRBusinessExchange.Client\QRBusinessExchange.Client.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude Web wwwroot from static files to avoid conflicts with Client -->
+    <Content Remove="wwwroot\**" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -11,3 +26,5 @@
   </PropertyGroup>
 
 </Project>
+
+

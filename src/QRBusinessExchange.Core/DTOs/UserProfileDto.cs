@@ -61,6 +61,11 @@ public class UserProfileDto
     public bool IsEmailVerified { get; set; }
 
     /// <summary>
+    /// User's role (e.g., User, Admin, SuperAdmin)
+    /// </summary>
+    public string Role { get; set; } = "User";
+
+    /// <summary>
     /// Indicates if the user account is active
     /// </summary>
     public bool IsActive { get; set; }

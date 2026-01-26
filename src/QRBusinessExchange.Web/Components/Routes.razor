@@ -4,3 +4,12 @@
         <FocusOnNavigate RouteData="routeData" Selector="h1" />
     </Found>
 </Router>
+
+@code {
+    // InteractiveServer rendermode applied to this component
+    // This ensures all pages share the same Blazor circuit and DI scope
+    // State (like StateService) will persist across navigation
+}
+
+@* Apply InteractiveServer render mode to the entire router *@
+@rendermode InteractiveServer

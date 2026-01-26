@@ -7,7 +7,8 @@
 @inject ApiService ApiService
 @inject StateService StateService
 @inject NavigationManager Navigation
-@rendermode InteractiveServer
+@inject IndexedDBService IndexedDB
+@inject AuthenticationStateProvider AuthStateProvider
 
 <PageTitle>Dashboard - QR Business Exchange</PageTitle>
 
@@ -71,19 +72,27 @@
 </div>
 
 @code {
-    private bool isLoading = true;
-    private int totalConnections = 0;
-    private List<UsageDataPoint> usageData = new();
-    private List<UserLocationDto> nearbyUsers = new();
+private bool isLoading = true;
+private int totalConnections = 0;
+private List<UsageDataPoint> usageData = new();
+private List<UserLocationDto> nearbyUsers = new();
 
     protected override async Task OnInitializedAsync()
     {
-        if (!StateService.IsAuthenticated)
+        // Initialize StateService to restore state from browser storage
+        await StateService.InitializeAsync();
+        
+        Console.WriteLine($"Dashboard OnInitializedAsync - CurrentUser: {(StateService.CurrentUser != null ? "SET (" + StateService.CurrentUser.Email + ")" : "NULL")}, IsAuthenticated: {StateService.IsAuthenticated}");
+        
+        // Check if user is authenticated
+        if (StateService.CurrentUser == null || !StateService.IsAuthenticated)
         {
+            Console.WriteLine("Dashboard: User not authenticated, redirecting to login");
             Navigation.NavigateTo("/login");
             return;
         }
 
+        Console.WriteLine($"Dashboard loaded for user: {StateService.UserFullName}");
         await LoadDashboardData();
     }
 

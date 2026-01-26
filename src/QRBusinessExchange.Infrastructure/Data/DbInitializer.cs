@@ -16,13 +16,48 @@ public static class DbInitializer
         // Ensure database is created
         await context.Database.MigrateAsync();
 
-        // Check if data already exists
-        if (await context.Users.AnyAsync())
+        // Check if admin user already exists
+        var adminEmail = "webmaster@qrbound.com";
+        var existingAdmin = await context.Users.FirstOrDefaultAsync(u => u.Email == adminEmail);
+        
+        if (existingAdmin == null)
         {
-            return; // Database has been seeded
-        }
+            // Create admin user
+            var adminUser = new User
+            {
+                UserId = Guid.NewGuid(),
+                Email = adminEmail,
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword("V-Md*%G@khh!0715"),
+                FirstName = "System",
+                LastName = "Administrator",
+                CompanyName = "QR Bound",
+                Role = "SuperAdmin",
+                IsEmailVerified = true,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
 
-        // Seed subscription types would go here if needed
-        await context.SaveChangesAsync();
+            context.Users.Add(adminUser);
+            
+            // Create initial subscription for admin user
+            var adminSubscription = new Subscription
+            {
+                SubscriptionId = Guid.NewGuid(),
+                UserId = adminUser.UserId,
+                SubscriptionType = "Enterprise",
+                CreditsAvailable = 999999,
+                CreditsUsed = 0,
+                StartDate = DateTime.UtcNow,
+                EndDate = DateTime.UtcNow.AddYears(100),
+                AutoRenew = false,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            context.Subscriptions.Add(adminSubscription);
+            
+            await context.SaveChangesAsync();
+        }
     }
 }

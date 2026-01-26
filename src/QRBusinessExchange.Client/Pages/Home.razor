@@ -1,0 +1,139 @@
+@page "/"
+@inject StateService StateService
+
+<PageTitle>Home - QR Business Exchange</PageTitle>
+
+<!-- Hero Section -->
+<div class="container-fluid py-5" style="background: linear-gradient(135deg, var(--primary-color), #357ABD);">
+    <div class="container text-center text-white py-5">
+        <i class="bi bi-qr-code display-1 mb-4"></i>
+        <h1 class="display-3 fw-bold mb-3">QR Business Exchange</h1>
+        <p class="lead fs-4 mb-4">Connect. Network. Grow Your Business.</p>
+        
+        @if (!StateService.IsAuthenticated)
+        {
+            <div class="d-flex gap-3 justify-content-center flex-wrap">
+                <a href="/login" class="btn btn-light btn-lg px-5 shadow">
+                    <i class="bi bi-box-arrow-in-right me-2"></i>Get Started
+                </a>
+                <a href="/register" class="btn btn-outline-light btn-lg px-5">
+                    <i class="bi bi-person-plus me-2"></i>Sign Up Free
+                </a>
+            </div>
+        }
+        else
+        {
+            <div class="mt-4">
+                <a href="/dashboard" class="btn btn-light btn-lg px-5 shadow">
+                    <i class="bi bi-speedometer2 me-2"></i>Go to Dashboard
+                </a>
+            </div>
+            <p class="mt-4 fs-5">Welcome back, <strong>@StateService.UserFullName</strong>!</p>
+        }
+    </div>
+</div>
+
+<!-- Features Section -->
+<div class="container my-5 py-5">
+    <div class="text-center mb-5">
+        <h2 class="display-5 fw-bold gradient-text mb-3">Why Choose Us?</h2>
+        <p class="text-muted fs-5">Modern networking made simple</p>
+    </div>
+
+    <div class="row g-4">
+        <!-- Feature 1 -->
+        <div class="col-md-4">
+            <div class="dashboard-card text-center h-100">
+                <div class="stat-card">
+                    <i class="bi bi-qr-code icon"></i>
+                    <h4 class="fw-bold mt-3 mb-3">QR Code Networking</h4>
+                    <p class="text-muted">Share your business profile instantly with custom QR codes. Quick, easy, and professional.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Feature 2 -->
+        <div class="col-md-4">
+            <div class="dashboard-card text-center h-100">
+                <div class="stat-card">
+                    <i class="bi bi-people-fill icon"></i>
+                    <h4 class="fw-bold mt-3 mb-3">Build Connections</h4>
+                    <p class="text-muted">Connect with professionals worldwide and grow your network exponentially.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Feature 3 -->
+        <div class="col-md-4">
+            <div class="dashboard-card text-center h-100">
+                <div class="stat-card">
+                    <i class="bi bi-graph-up icon"></i>
+                    <h4 class="fw-bold mt-3 mb-3">Track Analytics</h4>
+                    <p class="text-muted">Monitor your profile views, connection growth, and engagement metrics.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Stats Section -->
+<div class="container-fluid py-5" style="background-color: var(--light-bg);">
+    <div class="container">
+        <div class="row g-4 text-center">
+            <div class="col-md-3 col-6">
+                <div class="stat-card">
+                    <h2 class="display-4 fw-bold" style="color: var(--primary-color);">10K+</h2>
+                    <p class="text-muted">Active Users</p>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="stat-card">
+                    <h2 class="display-4 fw-bold" style="color: var(--secondary-color);">50K+</h2>
+                    <p class="text-muted">Connections Made</p>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="stat-card">
+                    <h2 class="display-4 fw-bold" style="color: var(--warning-color);">100K+</h2>
+                    <p class="text-muted">QR Scans</p>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="stat-card">
+                    <h2 class="display-4 fw-bold" style="color: var(--danger-color);">24/7</h2>
+                    <p class="text-muted">Support</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- CTA Section -->
+<div class="container my-5 py-5">
+    <div class="dashboard-card text-center py-5" style="background: linear-gradient(135deg, var(--primary-color), #357ABD);">
+        <div class="text-white">
+            <h2 class="display-5 fw-bold mb-3">Ready to Transform Your Networking?</h2>
+            <p class="fs-5 mb-4">Join thousands of professionals already growing their business</p>
+            @if (!StateService.IsAuthenticated)
+            {
+                <a href="/register" class="btn btn-light btn-lg px-5 shadow">
+                    <i class="bi bi-rocket-takeoff me-2"></i>Start Now - It's Free
+                </a>
+            }
+            else
+            {
+                <a href="/dashboard" class="btn btn-light btn-lg px-5 shadow">
+                    <i class="bi bi-speedometer2 me-2"></i>Continue to Dashboard
+                </a>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        await StateService.InitializeAsync();
+    }
+}
+

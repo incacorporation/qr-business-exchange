@@ -1,0 +1,668 @@
+/* ==========================================
+   QR Business Exchange - Global Theme Styles
+   Based on dashboard-mockup.html design system
+   ========================================== */
+
+/* CSS Variables - Design System */
+:root {
+    --primary-color: #4A90E2;
+    --secondary-color: #50C878;
+    --danger-color: #E74C3C;
+    --warning-color: #F39C12;
+    --dark-color: #2C3E50;
+    --light-bg: #F8F9FA;
+    --card-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    --card-shadow-hover: 0 6px 25px rgba(0,0,0,0.12);
+}
+
+/* Global Styles */
+html, body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--light-bg);
+    height: 100%;
+}
+
+/* ==========================================
+   Layout Structure
+   ========================================== */
+
+.page {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+/* ==========================================
+   Sidebar Navigation
+   ========================================== */
+
+.sidebar {
+    background: linear-gradient(135deg, var(--primary-color), #357ABD);
+    box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+}
+
+.sidebar .top-row {
+    background: linear-gradient(135deg, var(--primary-color), #357ABD);
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.navbar-brand {
+    font-weight: bold;
+    font-size: 1.5rem;
+    color: white !important;
+}
+
+.navbar-brand i {
+    color: var(--secondary-color);
+}
+
+.nav-scrollable {
+    display: block;
+    overflow-y: auto;
+    max-height: calc(100vh - 3.5rem);
+}
+
+.nav-item {
+    padding: 0.25rem 0;
+}
+
+.nav-link {
+    color: rgba(255,255,255,0.85);
+    border-radius: 8px;
+    height: 3rem;
+    display: flex;
+    align-items: center;
+    line-height: 3rem;
+    padding: 0.5rem 1rem;
+    transition: all 0.3s ease;
+}
+
+.nav-link:hover {
+    background-color: rgba(255,255,255,0.15);
+    color: white;
+    transform: translateX(5px);
+}
+
+.nav-link.active {
+    background-color: rgba(255,255,255,0.25);
+    color: white;
+    font-weight: 600;
+}
+
+.nav-link i {
+    margin-right: 10px;
+    font-size: 1.2rem;
+}
+
+/* ==========================================
+   Top Bar
+   ========================================== */
+
+.top-row {
+    background: white;
+    border-bottom: 1px solid #E0E0E0;
+    justify-content: flex-end;
+    height: 3.5rem;
+    display: flex;
+    align-items: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+
+/* ==========================================
+   Main Content Area
+   ========================================== */
+
+main {
+    flex: 1;
+}
+
+.content {
+    padding-top: 1.5rem;
+    padding-bottom: 2rem;
+}
+
+/* ==========================================
+   Cards & Containers
+   ========================================== */
+
+.dashboard-card,
+.card {
+    background: white;
+    border-radius: 15px;
+    padding: 25px;
+    margin-bottom: 20px;
+    box-shadow: var(--card-shadow);
+    transition: transform 0.3s ease;
+    border: none;
+}
+
+.dashboard-card:hover,
+.card:hover {
+    transform: translateY(-5px);
+    box-shadow: var(--card-shadow-hover);
+}
+
+/* ==========================================
+   Statistics Cards
+   ========================================== */
+
+.stat-card {
+    text-align: center;
+    padding: 20px;
+}
+
+.stat-card .icon {
+    font-size: 3rem;
+    margin-bottom: 15px;
+    color: var(--primary-color);
+}
+
+.stat-card h3 {
+    font-size: 2.5rem;
+    font-weight: bold;
+    margin: 10px 0;
+    color: var(--dark-color);
+}
+
+.stat-card p {
+    color: #7F8C8D;
+    font-size: 1rem;
+    margin: 0;
+}
+
+/* ==========================================
+   Badges & Labels
+   ========================================== */
+
+.credit-badge {
+    background: linear-gradient(135deg, var(--secondary-color), #3AA15E);
+    color: white;
+    padding: 15px 25px;
+    border-radius: 50px;
+    font-size: 1.2rem;
+    font-weight: bold;
+    display: inline-block;
+    box-shadow: 0 4px 15px rgba(80, 200, 120, 0.3);
+}
+
+.credit-badge i {
+    margin-right: 10px;
+}
+
+.subscription-badge {
+    padding: 8px 20px;
+    border-radius: 25px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    display: inline-block;
+}
+
+.badge-free {
+    background: #95A5A6;
+    color: white;
+}
+
+.badge-paid,
+.badge-premium {
+    background: linear-gradient(135deg, #F39C12, #E67E22);
+    color: white;
+}
+
+.skill-badge {
+    display: inline-block;
+    background: #E8F4F8;
+    color: var(--primary-color);
+    padding: 8px 15px;
+    border-radius: 20px;
+    margin: 5px;
+    font-size: 0.9rem;
+}
+
+/* ==========================================
+   Buttons
+   ========================================== */
+
+.btn-primary {
+    background: linear-gradient(135deg, var(--primary-color), #357ABD);
+    border: none;
+    border-radius: 10px;
+    padding: 12px 30px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.btn-primary:hover {
+    background: linear-gradient(135deg, #357ABD, var(--primary-color));
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(74, 144, 226, 0.4);
+}
+
+.btn-success,
+.business-button {
+    background: linear-gradient(135deg, var(--secondary-color), #3AA15E);
+    border: none;
+    border-radius: 50px;
+    padding: 15px 40px;
+    font-size: 1.1rem;
+    font-weight: bold;
+    color: white;
+    transition: transform 0.3s ease;
+}
+
+.btn-success:hover,
+.business-button:hover {
+    transform: scale(1.05);
+    box-shadow: 0 6px 20px rgba(80, 200, 120, 0.4);
+}
+
+.btn-danger {
+    background: var(--danger-color);
+    border: none;
+    border-radius: 10px;
+}
+
+.btn-danger:hover {
+    background: #C0392B;
+    transform: translateY(-2px);
+}
+
+.btn-outline-danger {
+    border-color: var(--danger-color);
+    color: var(--danger-color);
+    border-radius: 10px;
+}
+
+.btn-outline-danger:hover {
+    background: var(--danger-color);
+    border-color: var(--danger-color);
+}
+
+/* ==========================================
+   Advertisement Banner
+   ========================================== */
+
+.ad-banner {
+    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 20px;
+    margin-bottom: 20px;
+    border-radius: 10px;
+    text-align: center;
+    cursor: pointer;
+    transition: transform 0.3s ease;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+}
+
+.ad-banner:hover {
+    transform: scale(1.02);
+}
+
+.ad-banner h4 {
+    margin: 0;
+    font-weight: bold;
+}
+
+.ad-banner p {
+    margin: 5px 0 0 0;
+    font-size: 0.9rem;
+}
+
+/* ==========================================
+   Forms
+   ========================================== */
+
+.form-control {
+    border-radius: 10px;
+    border: 2px solid #E0E0E0;
+    padding: 12px 15px;
+    transition: all 0.3s ease;
+}
+
+.form-control:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 0.2rem rgba(74, 144, 226, 0.25);
+}
+
+.form-label {
+    font-weight: 600;
+    color: var(--dark-color);
+    margin-bottom: 8px;
+}
+
+/* ==========================================
+   Alerts
+   ========================================== */
+
+.alert {
+    border-radius: 12px;
+    border: none;
+    padding: 15px 20px;
+}
+
+.alert-success {
+    background: #D5F4E6;
+    color: #27AE60;
+}
+
+.alert-danger {
+    background: #FADBD8;
+    color: var(--danger-color);
+}
+
+.alert-warning {
+    background: #FEF5E7;
+    color: var(--warning-color);
+}
+
+.alert-info {
+    background: #EBF5FB;
+    color: var(--primary-color);
+}
+
+/* ==========================================
+   Tool Buttons (Settings)
+   ========================================== */
+
+.tool-button {
+    width: 100%;
+    padding: 20px;
+    margin-bottom: 15px;
+    border-radius: 12px;
+    border: 2px solid #E0E0E0;
+    background: white;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.tool-button:hover {
+    border-color: var(--primary-color);
+    background: #F0F7FF;
+    transform: translateX(5px);
+}
+
+.tool-button i {
+    font-size: 2rem;
+    color: var(--primary-color);
+}
+
+.tool-button .tool-content {
+    flex: 1;
+    text-align: left;
+    margin-left: 20px;
+}
+
+.tool-button h5 {
+    margin: 0;
+    color: var(--dark-color);
+}
+
+.tool-button p {
+    margin: 5px 0 0 0;
+    color: #7F8C8D;
+    font-size: 0.9rem;
+}
+
+/* ==========================================
+   Toggle Switch
+   ========================================== */
+
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 60px;
+    height: 34px;
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: .4s;
+    border-radius: 34px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 26px;
+    width: 26px;
+    left: 4px;
+    bottom: 4px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+}
+
+input:checked + .slider {
+    background-color: var(--secondary-color);
+}
+
+input:checked + .slider:before {
+    transform: translateX(26px);
+}
+
+/* ==========================================
+   Modals
+   ========================================== */
+
+.modal-content {
+    border-radius: 20px;
+    border: none;
+    overflow: hidden;
+}
+
+.profile-header {
+    background: linear-gradient(135deg, var(--primary-color), #357ABD);
+    color: white;
+    padding: 30px;
+    text-align: center;
+}
+
+.profile-avatar {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    border: 5px solid white;
+    margin: 0 auto 15px;
+    object-fit: cover;
+}
+
+.profile-body {
+    padding: 30px;
+}
+
+/* ==========================================
+   Chart Container
+   ========================================== */
+
+.chart-container {
+    position: relative;
+    height: 300px;
+    margin-top: 20px;
+}
+
+/* ==========================================
+   Map
+   ========================================== */
+
+#map {
+    height: 500px;
+    border-radius: 15px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+}
+
+/* ==========================================
+   Notifications
+   ========================================== */
+
+.notification-badge {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    background: var(--danger-color);
+    color: white;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    font-size: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* ==========================================
+   Loading & Spinners
+   ========================================== */
+
+.spinner-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+}
+
+.spinner-overlay.active {
+    display: flex;
+}
+
+/* ==========================================
+   Blazor Error UI
+   ========================================== */
+
+#blazor-error-ui {
+    background: lightyellow;
+    bottom: 0;
+    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
+    display: none;
+    left: 0;
+    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+}
+
+#blazor-error-ui .dismiss {
+    cursor: pointer;
+    position: absolute;
+    right: 0.75rem;
+    top: 0.5rem;
+}
+
+.blazor-error-boundary {
+    background: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTYiIGhlaWdodD0iNDkiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiIG92ZXJmbG93PSJoaWRkZW4iPjxkZWZzPjxjbGlwUGF0aCBpZD0iY2xpcDAiPjxyZWN0IHg9IjIzNSIgeT0iNTEiIHdpZHRoPSI1NiIgaGVpZ2h0PSI0OSIvPjwvY2xpcFBhdGg+PC9kZWZzPjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMCkiIHRyYW5zZm9ybT0idHJhbnNsYXRlKC0yMzUgLTUxKSI+PHBhdGggZD0iTTI2My41MDYgNTFDMjY0LjcxNyA1MSAyNjUuODEzIDUxLjQ4MzcgMjY2LjYwNiA1Mi4yNjU4TDI2Ny4wNTIgNTIuNzk4NyAyNjcuNTM5IDUzLjYyODMgMjY3Ljk4NCA1NC4zNjg2IDI2OS4xMTUgNTYuODI1MyAyNzAuNDM3IDU5Ljk1NjUgMjcxLjUxMiA2Mi40NzM1IDI3MS45NTcgNjMuNjg0MyAyNzIuNDI0IDY1LjE3ODYgMjczLjEyIDY3Ljk0ODggMjczLjczNyA3MC44MDYzIDI3My44ODYgNzEuOTgxMUMyNzQuMDIgNzMuMjU5IDI3NC4wNzIgNzQuNTQ2OSAyNzMuOTIyIDc1LjgxOTggMjczLjc3MSA3Ny4wOTI4IDI3My40MiA3OC4zMjU1IDI3Mi44NzYgNzkuNDczMUwyNzIuNDk3IDgwLjE4NzMgMjcyLjA3OCA4MC44NjIxIDI3MS42MTggODEuNDk3MyAyNzEuMTE1IDgyLjA5NTcgMjcwLjU2NyA4Mi42NTg3IDI2OS45NzMgODMuMTg4NiAyNjkuMzMzIDgzLjY4NjkgMjY4LjY0NSA4NC4xNTU1IDI2Ny45MDYgODQuNTk2MiAyNjcuMTE3IDg1LjAxMTEgMjY2LjI3NSA4NS40MDEzIDI2NS4zNzkgODUuNzY5MSAyNjQuNDI2IDg2LjExNjcgMjYzLjQxNCA4Ni40NDYxIDI2Mi4zNCA4Ni43NTk5IDI2MS4yMDEgODcuMDYwMyAyNjAuMTI1IDg3LjM0NyAyNTguOTczIDg3LjYyMTMgMjU3Ljc0MiA4Ny44ODQgMjU2LjQyOCA4OC4xMzYgMjU1LjAyOSA4OC4zNzgyIDI1My41NDMgODguNjEyIDI1Mi4wNjYgODguODM3NCAyNTAuNDcgODkuMDU2MSAyNDguODUzIDg5LjI2ODEgMjQ3LjIxMiA4OS40NzM5IDI0NS41NDMgODkuNjczOSAyNDMuODQ1IDg5Ljg2OSAyNDIuMTEyIDkwLjA2MDUgMjQwLjM0NCA5MC4yNDkxIDIzOC41MzcgOTAuNDM1MSAyMzYuNjkxIDkwLjYxOTcgMjM0LjgwMSA5MC44MDQxIDIzMi44NjUgOTAuOTg4OSAyMzAuODgxIDkxLjE3NTYgMjI4Ljg0NCA5MS4zNjU5IDIyNi43NTEgOTEuNTYxMyAyMjQuNTk3IDkxLjc2MzEgMjIyLjM3OSA5MS45NzI1IDIyMC4wOTQgOTIuMTkwNiAyMTcuNzM4IDkyLjQxODkgMjE1LjMwOCA5Mi42NTkxIDIxMi43OTggOTIuOTEyNiAyMTAuMjA0IDkzLjE4MDcgMjA3LjUyMiA5My40NjU0IDIwNC43NDcgOTMuNzY4NyAyMDEuODczIDk0LjA5MTcgMTk4Ljg5NiA5NC40MzY4IDE5NS44MDkgOTQuODA1NyAxOTIuNjA2IDk1LjE5OTkgMTg5LjI4MiA5NS42MjEzIDE4NS44MyA5Ni4wNzIgMTgyLjI0NSA5Ni41NTQ0IDE3OC41MjEgOTcuMDcwMiAxNzQuNjQ4IDk3LjYyMTUgMTcwLjYxOCA5OC4yMTA0IDE2Ni40MjIgOTguODM5MSAxNjIuMDUzIDk5LjUwOTcgMTU3LjUwNCAxMDAuMjIzIDE1Mi43NjggMTAwLjk4MiAxNDcuODM2IDEwMS43ODkgMTQyLjcgMTAyLjY0NyAxMzcuMzQ5IDEwMy41NTggMTMxLjc3OSAxMDQuNTI0IDEyNS45NzggMTA1LjU0OCAxMTkuOTM2IDEwNi42MzEgMTEzLjY0NCAxMDcuNzc3IDEwNy4wOSAxMDguOTg4IDEwMC4yNjIgMTEwLjI2NyA5My4xNDggMTExLjYxNSA4NS43MzQgMTEzLjAzNSA3Ny45OTYgMTE0LjUzIDY5LjkyIDExNi4xMDMgNjEuNDkgMTE3Ljc1NiA1Mi42ODggMTE5LjQ5MiA0My41MSAxMjEuMzE0IDMzLjk0OCAxMjMuMjI1IDIzLjk5IDEyNS4yMjkgMTMuNjEgMTI3LjMyOSAyLjgxMyAxMjkuNTI4LTguMzg2IDEzMS44My0yMC4wMDUgMTM0LjIzNy0zMi4wNDYgMTM2Ljc1Mi00NC41MjUgMTM5LjM4NC01Ny40NTggMTQyLjEzOC03MC44NTYgMTQ1LjAyMS04NC43MzcgMTQ4LjAzOC05OS4xMTYgMTUxLjE5NCIgc3Ryb2tlPSIjRkZGRkZGIiBzdHJva2Utd2lkdGg9IjIiIGZpbGw9Im5vbmUiLz48L2c+PC9zdmc+) no-repeat 1rem/1.8rem, #b32121;
+    padding: 1rem 1rem 1rem 3.7rem;
+    color: white;
+}
+
+.blazor-error-boundary::after {
+    content: "An error has occurred."
+}
+
+/* ==========================================
+   Responsive Design
+   ========================================== */
+
+@media (max-width: 640.98px) {
+    .top-row {
+        justify-content: space-between;
+    }
+
+    .stat-card h3 {
+        font-size: 2rem;
+    }
+
+    #map {
+        height: 400px;
+    }
+
+    .tool-button {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .tool-button .tool-content {
+        margin-left: 0;
+        margin-top: 15px;
+    }
+}
+
+@media (min-width: 641px) {
+    .page {
+        flex-direction: row;
+    }
+
+    .sidebar {
+        width: 250px;
+        height: 100vh;
+        position: sticky;
+        top: 0;
+    }
+
+    .top-row {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+    }
+
+    .top-row, article {
+        padding-left: 2rem !important;
+        padding-right: 1.5rem !important;
+    }
+}
+
+/* ==========================================
+   Utility Classes
+   ========================================== */
+
+.text-primary-custom {
+    color: var(--primary-color) !important;
+}
+
+.text-secondary-custom {
+    color: var(--secondary-color) !important;
+}
+
+.bg-primary-custom {
+    background: linear-gradient(135deg, var(--primary-color), #357ABD) !important;
+}
+
+.bg-secondary-custom {
+    background: linear-gradient(135deg, var(--secondary-color), #3AA15E) !important;
+}
+
+.shadow-custom {
+    box-shadow: var(--card-shadow) !important;
+}
+
+.shadow-custom-hover {
+    box-shadow: var(--card-shadow-hover) !important;
+}
+
+.gradient-text {
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-weight: bold;
+}
+

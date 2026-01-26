@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using QRBusinessExchange.Core.Entities;
 
@@ -5,8 +6,9 @@ namespace QRBusinessExchange.Infrastructure.Data;
 
 /// <summary>
 /// Entity Framework Core database context for the QR Business Exchange application
+/// Inherits from IdentityDbContext to provide ASP.NET Core Identity support
 /// </summary>
-public class ApplicationDbContext : DbContext
+public class ApplicationDbContext : IdentityDbContext
 {
     /// <summary>
     /// Initializes a new instance of the <see cref="ApplicationDbContext"/> class
@@ -74,6 +76,22 @@ public class ApplicationDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        // Configure Identity table names (optional - customize as needed)
+        modelBuilder.Entity<Microsoft.AspNetCore.Identity.IdentityUser>()
+            .ToTable("AspNetUsers");
+        modelBuilder.Entity<Microsoft.AspNetCore.Identity.IdentityRole>()
+            .ToTable("AspNetRoles");
+        modelBuilder.Entity<Microsoft.AspNetCore.Identity.IdentityUserRole<string>>()
+            .ToTable("AspNetUserRoles");
+        modelBuilder.Entity<Microsoft.AspNetCore.Identity.IdentityUserClaim<string>>()
+            .ToTable("AspNetUserClaims");
+        modelBuilder.Entity<Microsoft.AspNetCore.Identity.IdentityUserLogin<string>>()
+            .ToTable("AspNetUserLogins");
+        modelBuilder.Entity<Microsoft.AspNetCore.Identity.IdentityUserToken<string>>()
+            .ToTable("AspNetUserTokens");
+        modelBuilder.Entity<Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>>()
+            .ToTable("AspNetRoleClaims");
 
         ConfigureUser(modelBuilder);
         ConfigureQRCode(modelBuilder);
@@ -429,9 +447,8 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => e.LastUpdated)
                 .HasDatabaseName("IX_UserLocations_LastUpdated");
 
-            // Spatial index for geography column
-            entity.HasIndex(e => e.GeographyPoint)
-                .HasDatabaseName("IX_UserLocations_GeographyPoint");
+            // Note: Spatial index for GeographyPoint column must be created via raw SQL in migrations
+            // Cannot use HasIndex() for geography/geometry types
 
             // Default values
             entity.Property(e => e.LocationId)

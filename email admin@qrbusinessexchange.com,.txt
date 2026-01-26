@@ -1,0 +1,5 @@
+"email": "admin@qrbusinessexchange.com",
+"password": "Admin@123456"
+
+"email": "webmaster@qrbound.com",
+"password": "V-Md*%G@khh!0715"

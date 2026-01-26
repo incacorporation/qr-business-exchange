@@ -1,0 +1,281 @@
+@page "/login"
+@using QRBusinessExchange.Core.DTOs
+@using QRBusinessExchange.Client.Services
+@inject ApiService ApiService
+@inject StateService StateService
+@inject NavigationManager Navigation
+@inject IndexedDBService IndexedDB
+
+<PageTitle>Login - QR Business Exchange</PageTitle>
+
+<!-- Responsive Container with vertical centering on larger screens -->
+<div class="container-fluid min-vh-100 d-flex align-items-center py-4 px-3 px-sm-4">
+    <div class="row w-100 justify-content-center">
+        <!-- Responsive column sizing: full width on mobile, constrained on larger screens -->
+        <div class="col-12 col-sm-10 col-md-8 col-lg-6 col-xl-5 col-xxl-4">
+            
+            <!-- Logo/Branding (visible on mobile) -->
+            <div class="text-center mb-4 d-lg-none">
+                <i class="bi bi-qr-code display-1 text-primary"></i>
+                <h2 class="mt-2">QR Business Exchange</h2>
+            </div>
+
+            <!-- Login Card -->
+            <div class="card shadow-lg border-0">
+                <div class="card-body p-4 p-sm-5">
+                    
+                    <!-- Hidden logo for larger screens -->
+                    <div class="text-center mb-4 d-none d-lg-block">
+                        <i class="bi bi-qr-code display-3 text-primary"></i>
+                    </div>
+
+                    <h3 class="card-title text-center mb-4 fw-bold">Welcome Back</h3>
+                    <p class="text-center text-muted mb-4">Sign in to your account</p>
+                    
+                    <!-- Error Alert (responsive) -->
+                    @if (!string.IsNullOrEmpty(errorMessage))
+                    {
+                        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                            <span class="d-inline-block">@errorMessage</span>
+                            <button type="button" class="btn-close" @onclick="@(() => errorMessage = string.Empty)"></button>
+                        </div>
+                    }
+
+                    <EditForm Model="loginRequest" OnValidSubmit="HandleLogin">
+                        <DataAnnotationsValidator />
+                        
+                        <!-- Email Field -->
+                        <div class="mb-3">
+                            <label for="email" class="form-label fw-semibold">
+                                <i class="bi bi-envelope me-1"></i> Email Address
+                            </label>
+                            <InputText 
+                                id="email" 
+                                @bind-Value="loginRequest.Email" 
+                                class="form-control form-control-lg" 
+                                placeholder="name@example.com" 
+                                autocomplete="email"
+                                disabled="@isLoading" />
+                            <ValidationMessage For="@(() => loginRequest.Email)" class="text-danger small mt-1" />
+                        </div>
+
+                        <!-- Password Field -->
+                        <div class="mb-4">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <label for="password" class="form-label fw-semibold mb-0">
+                                    <i class="bi bi-lock me-1"></i> Password
+                                </label>
+                                <a href="/forgot-password" class="small text-decoration-none">Forgot password?</a>
+                            </div>
+                            <InputText 
+                                id="password" 
+                                type="password" 
+                                @bind-Value="loginRequest.Password" 
+                                class="form-control form-control-lg" 
+                                placeholder="Enter your password"
+                                autocomplete="current-password"
+                                disabled="@isLoading" />
+                            <ValidationMessage For="@(() => loginRequest.Password)" class="text-danger small mt-1" />
+                        </div>
+
+                        <!-- Remember Me (optional) -->
+                        <div class="mb-4 form-check">
+                            <input class="form-check-input" type="checkbox" id="rememberMe" disabled="@isLoading">
+                            <label class="form-check-label small" for="rememberMe">
+                                Remember me for 30 days
+                            </label>
+                        </div>
+
+                        <!-- Submit Button (responsive) -->
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary btn-lg fw-semibold" disabled="@isLoading">
+                                @if (isLoading)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                    <span>Signing in...</span>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-box-arrow-in-right me-2"></i>
+                                    <span>Sign In</span>
+                                }
+                            </button>
+                        </div>
+                    </EditForm>
+
+                    <!-- Divider -->
+                    <div class="position-relative my-4">
+                        <hr class="text-muted">
+                        <span class="position-absolute top-50 start-50 translate-middle bg-white px-3 text-muted small">OR</span>
+                    </div>
+
+                    <!-- Social Login (optional - placeholder) -->
+                    <div class="d-grid gap-2 mb-4">
+                        <button class="btn btn-outline-secondary" disabled>
+                            <i class="bi bi-google me-2"></i>Continue with Google
+                        </button>
+                    </div>
+
+                    <!-- Sign Up Link -->
+                    <div class="text-center">
+                        <p class="mb-0 text-muted small">
+                            Don't have an account? 
+                            <a href="/register" class="text-decoration-none fw-semibold">Create one now</a>
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer Links (responsive) -->
+            <div class="text-center mt-4">
+                <small class="text-muted">
+                    <a href="/privacy" class="text-decoration-none me-3">Privacy Policy</a>
+                    <a href="/terms" class="text-decoration-none">Terms of Service</a>
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private LoginRequest loginRequest = new();
+    private string errorMessage = string.Empty;
+    private bool isLoading = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // If already authenticated, redirect to dashboard
+        await StateService.InitializeAsync();
+        if (StateService.IsAuthenticated && StateService.CurrentUser != null)
+        {
+            Navigation.NavigateTo("/dashboard");
+        }
+    }
+
+    private async Task HandleLogin()
+    {
+        Console.WriteLine("=== HandleLogin STARTED ===");
+        
+        isLoading = true;
+        errorMessage = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            Console.WriteLine($"Calling API: api/auth/login with email: {loginRequest.Email}");
+            var response = await ApiService.PostAsync("api/auth/login", loginRequest);
+            
+            Console.WriteLine($"API Response Status: {response.StatusCode}");
+            
+            if (response.IsSuccessStatusCode)
+            {
+                Console.WriteLine("Parsing response...");
+                var result = await ApiService.ParseResponseAsync<AuthResponse>(response);
+
+                if (result != null && !string.IsNullOrEmpty(result.AccessToken))
+                {
+                    Console.WriteLine("=== LOGIN SUCCESS ===");
+                    Console.WriteLine($"User: {result.User.Email}");
+                    
+                    // Update state
+                    StateService.CurrentUser = new UserProfileDto
+                    {
+                        UserId = result.User.UserId,
+                        Email = result.User.Email,
+                        FirstName = result.User.FirstName,
+                        LastName = result.User.LastName,
+                        CompanyName = result.User.CompanyName,
+                        PhoneNumber = result.User.PhoneNumber,
+                        ProfileImageUrl = result.User.ProfileImageUrl,
+                        Bio = result.User.Bio,
+                        Skills = result.User.Skills,
+                        ServicePricing = result.User.ServicePricing,
+                        IsEmailVerified = result.User.IsEmailVerified,
+                        Role = result.User.Role,
+                        CreatedAt = result.User.CreatedAt
+                    };
+                    
+                    StateService.IsAuthenticated = true;
+                    Console.WriteLine("StateService updated with user data and auth status");
+                    
+                    // Save tokens to localStorage
+                    await IndexedDB.SetItemAsync("authToken", result.AccessToken);
+                    await IndexedDB.SetItemAsync("userId", result.User.UserId.ToString());
+                    
+                    // Navigate to dashboard
+                    if (!result.User.IsEmailVerified)
+                    {
+                        Navigation.NavigateTo("/email-verification");
+                    }
+                    else
+                    {
+                        Navigation.NavigateTo("/dashboard");
+                    }
+                }
+                else
+                {
+                    errorMessage = "Invalid response from server. Please try again.";
+                }
+            }
+            else
+            {
+                Console.WriteLine($"Login failed - Status: {response.StatusCode}");
+                
+                // User-friendly error messages
+                errorMessage = response.StatusCode switch
+                {
+                    System.Net.HttpStatusCode.Unauthorized => "Invalid email or password. Please check your credentials.",
+                    System.Net.HttpStatusCode.TooManyRequests => "Too many login attempts. Please try again later.",
+                    System.Net.HttpStatusCode.ServiceUnavailable => "Service temporarily unavailable. Please try again.",
+                    _ => "Unable to sign in. Please try again or contact support."
+                };
+            }
+        }
+        catch (HttpRequestException httpEx)
+        {
+            Console.WriteLine($"HTTP error: {httpEx.Message}");
+            errorMessage = "Network error. Please check your internet connection and try again.";
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Login error: {ex.Message}");
+            errorMessage = "An unexpected error occurred. Please try again.";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    public class LoginRequest
+    {
+        public string Email { get; set; } = "";
+        public string Password { get; set; } = "";
+    }
+
+    public class AuthResponse
+    {
+        public string AccessToken { get; set; } = "";
+        public UserDto User { get; set; } = new();
+    }
+
+    public class UserDto
+    {
+        public Guid UserId { get; set; }
+        public string Email { get; set; } = "";
+        public string FirstName { get; set; } = "";
+        public string LastName { get; set; } = "";
+        public string? CompanyName { get; set; }
+        public string? PhoneNumber { get; set; }
+        public string? ProfileImageUrl { get; set; }
+        public string? Bio { get; set; }
+        public string? Skills { get; set; }
+        public decimal? ServicePricing { get; set; }
+        public bool IsEmailVerified { get; set; }
+        public string Role { get; set; } = "User";
+        public DateTime CreatedAt { get; set; }
+    }
+}
+

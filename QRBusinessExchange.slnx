@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/QRBusinessExchange.API/QRBusinessExchange.API.csproj" />
+    <Project Path="src/QRBusinessExchange.Client/QRBusinessExchange.Client.csproj" />
     <Project Path="src/QRBusinessExchange.Core/QRBusinessExchange.Core.csproj" />
     <Project Path="src/QRBusinessExchange.Infrastructure/QRBusinessExchange.Infrastructure.csproj" />
     <Project Path="src/QRBusinessExchange.Web/QRBusinessExchange.Web.csproj" />
