@@ -1,0 +1,79 @@
+@inject PwaService PwaService
+@inject IJSRuntime JSRuntime
+
+@if (showInstallButton)
+{
+    <button class="btn btn-success pwa-install-btn" @onclick="ShowInstallPrompt">
+        <i class="fas fa-download me-2"></i>
+        Install App
+    </button>
+}
+
+@code {
+    private bool showInstallButton = false;
+    private bool isInstalled = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await CheckInstallStatus();
+        }
+    }
+
+    private async Task CheckInstallStatus()
+    {
+        try
+        {
+            isInstalled = await PwaService.IsInstalledAsync();
+            showInstallButton = !isInstalled;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error checking install status: {ex.Message}");
+        }
+    }
+
+    private async Task ShowInstallPrompt()
+    {
+        try
+        {
+            // The actual install prompt is handled by pwa-service.js
+            // This just provides a way to programmatically trigger it
+            await JSRuntime.InvokeVoidAsync("eval", 
+                "if(window.pwaService && window.pwaService.showInstallPrompt) window.pwaService.showInstallPrompt();");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error showing install prompt: {ex.Message}");
+        }
+    }
+}
+
+<style>
+    .pwa-install-btn {
+        position: fixed;
+        bottom: 20px;
+        left: 20px;
+        z-index: 1000;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        animation: slideIn 0.5s ease-out;
+    }
+
+    @@keyframes slideIn {
+        from {
+            transform: translateX(-100%);
+            opacity: 0;
+        }
+        to {
+            transform: translateX(0);
+            opacity: 1;
+        }
+    }
+
+    .pwa-install-btn:hover {
+        transform: translateX(5px);
+        transition: transform 0.3s ease;
+    }
+</style>

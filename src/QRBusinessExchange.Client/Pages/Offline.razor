@@ -1,0 +1,58 @@
+@page "/offline"
+
+<PageTitle>Offline - QR Business Exchange</PageTitle>
+
+<div class="container-fluid min-vh-100 d-flex align-items-center justify-content-center" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+    <div class="text-center text-white">
+        <i class="fas fa-wifi-slash" style="font-size: 5rem; margin-bottom: 2rem; opacity: 0.8;"></i>
+        
+        <h1 class="display-4 fw-bold mb-3">You're Offline</h1>
+        
+        <p class="lead mb-4">
+            No internet connection detected. Some features may be limited.
+        </p>
+        
+        <div class="alert alert-light d-inline-block" role="alert">
+            <i class="fas fa-info-circle me-2"></i>
+            You can still access cached pages and data
+        </div>
+        
+        <div class="mt-5">
+            <button class="btn btn-light btn-lg px-5" onclick="window.location.reload()">
+                <i class="fas fa-sync-alt me-2"></i>
+                Try Again
+            </button>
+        </div>
+        
+        <div class="mt-4">
+            <a href="/dashboard" class="btn btn-outline-light">
+                <i class="fas fa-home me-2"></i>
+                Go to Dashboard
+            </a>
+        </div>
+    </div>
+</div>
+
+<style>
+    .fa-wifi-slash {
+        animation: pulse 2s ease-in-out infinite;
+    }
+    
+    @@keyframes pulse {
+        0%, 100% {
+            opacity: 0.8;
+            transform: scale(1);
+        }
+        50% {
+            opacity: 0.5;
+            transform: scale(1.05);
+        }
+    }
+</style>
+
+@code {
+    protected override void OnInitialized()
+    {
+        Console.WriteLine("Offline page displayed");
+    }
+}

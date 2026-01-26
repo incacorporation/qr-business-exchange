@@ -3,7 +3,7 @@
 @using QRBusinessExchange.Web.Services
 @using QRBusinessExchange.Web.Models
 @using QRBusinessExchange.Web.Components.Dashboard
-@using QRBusinessExchange.Web.Components.Map
+@* @using QRBusinessExchange.Web.Components.Map *@
 @inject ApiService ApiService
 @inject StateService StateService
 @inject NavigationManager Navigation
@@ -63,7 +63,7 @@
                 <div class="card">
                     <div class="card-body">
                         <h5 class="card-title">Nearby Users</h5>
-                        <LeafletMap Users="@nearbyUsers" CurrentUserId="@StateService.CurrentUser?.UserId" />
+                        @* <LeafletMap Users="@nearbyUsers" CurrentUserId="@StateService.CurrentUser?.UserId" /> *@
                     </div>
                 </div>
             </div>
