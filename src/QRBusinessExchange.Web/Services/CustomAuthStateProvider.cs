@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components.Authorization;
+using QRBusinessExchange.Client.Services;
 using System.Security.Claims;
 
 namespace QRBusinessExchange.Web.Services;

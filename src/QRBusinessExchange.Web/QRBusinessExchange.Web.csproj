@@ -16,7 +16,20 @@
 
   <ItemGroup>
     <!-- Exclude Web wwwroot from static files to avoid conflicts with Client -->
+    <Compile Remove="Components\Layout\**" />
+    <Compile Remove="Components\Pages\**" />
+    <Content Remove="Components\Layout\**" />
+    <Content Remove="Components\Pages\**" />
     <Content Remove="wwwroot\**" />
+    <EmbeddedResource Remove="Components\Layout\**" />
+    <EmbeddedResource Remove="Components\Pages\**" />
+    <None Remove="Components\Layout\**" />
+    <None Remove="Components\Pages\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="Services\ApiService.cs" />
+    <Compile Remove="Services\StateService.cs" />
   </ItemGroup>
 
   <PropertyGroup>

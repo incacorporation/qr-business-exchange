@@ -1,11 +1,10 @@
 @page "/settings"
-@using QRBusinessExchange.Web.Services
-@using QRBusinessExchange.Web.Components.QRCode
-@using QRBusinessExchange.Web.Components.Tools
-@inject StateService StateService
+@using QRBusinessExchange.Client.Services
+@using QRBusinessExchange.Client.Components.QRCode
+@using QRBusinessExchange.Client.Components.Tools
 @inject ApiService ApiService
 @inject NavigationManager Navigation
-@rendermode InteractiveServer
+@inject StateService StateService
 
 <PageTitle>Settings - QR Business Exchange</PageTitle>
 
@@ -112,7 +111,7 @@
 
     private async Task HandleLogout()
     {
-        StateService.Reset();
+        await StateService.ResetAsync();
         Navigation.NavigateTo("/login");
     }
 }

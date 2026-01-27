@@ -1,8 +1,7 @@
 @page "/user/{userId}"
 @using QRBusinessExchange.Core.DTOs
-@using QRBusinessExchange.Web.Services
+@using QRBusinessExchange.Client.Services
 @inject ApiService ApiService
-@rendermode InteractiveServer
 
 <PageTitle>@userProfile?.FirstName @userProfile?.LastName - QR Business Exchange</PageTitle>
 
