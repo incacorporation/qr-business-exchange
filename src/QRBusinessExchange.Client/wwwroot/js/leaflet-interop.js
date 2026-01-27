@@ -21,12 +21,21 @@ window.leafletInterop = {
                 // Remove existing map if it exists
                 if (self.map) {
                     try {
+                        console.log('Removing existing map instance...');
+                        self.clearMarkers();
                         self.map.remove();
                         self.map = null;
-                        self.markers = [];
                     } catch (e) {
                         console.warn('Error removing previous map:', e);
                     }
+                }
+
+                // Clear any orphaned map instances attached to this element
+                try {
+                    element._leaflet_id = undefined;
+                    element.innerHTML = '';
+                } catch (e) {
+                    console.warn('Error clearing element:', e);
                 }
 
                 // Check if Leaflet is loaded

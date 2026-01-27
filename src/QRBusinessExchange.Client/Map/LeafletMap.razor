@@ -15,10 +15,10 @@
     public string Height { get; set; } = "500px";
 
     [Parameter]
-    public double DefaultLat { get; set; } = 40.7128;
+    public double DefaultLat { get; set; } = 29.7604;
 
     [Parameter]
-    public double DefaultLng { get; set; } = -74.0060;
+    public double DefaultLng { get; set; } = -95.3698;
 
     [Parameter]
     public int DefaultZoom { get; set; } = 12;
@@ -59,6 +59,18 @@
                     Console.WriteLine("ERROR: Leaflet library failed to load");
                     return;
                 }
+            }
+
+            // Clear any cached map instance before initialization
+            try
+            {
+                Console.WriteLine("Clearing cached map before initialization...");
+                await JS.InvokeVoidAsync("leafletInterop.destroyMap");
+                await Task.Delay(100); // Brief delay to ensure cleanup completes
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Error clearing cached map: {ex.Message}");
             }
 
             Console.WriteLine($"Initializing map with MapId: {MapId}");
