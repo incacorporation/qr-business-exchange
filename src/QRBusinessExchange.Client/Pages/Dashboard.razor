@@ -351,14 +351,26 @@ private async Task GetCurrentLocationAsync()
                 
                 Console.WriteLine($"✓ Location obtained: {currentLatitude}, {currentLongitude}");
                 
-                // Update map view to current location
+                // Reinitialize map data with new location and current distance
+                InitializeMapData(selectedDistance);
+                
+                // Update map view to current location with appropriate zoom
                 if (mapComponent != null)
                 {
-                    await mapComponent.SetViewAsync(currentLatitude, currentLongitude, 12);
+                    int zoom = selectedDistance switch
+                    {
+                        1 => 14,
+                        5 => 12,
+                        10 => 11,
+                        25 => 10,
+                        50 => 9,
+                        _ => 12
+                    };
+                    
+                    await mapComponent.RefreshMarkers(nearbyUsers);
+                    await mapComponent.SetViewAsync(currentLatitude, currentLongitude, zoom);
                 }
                 
-                // Reinitialize map data with new location
-                InitializeMapData();
                 StateHasChanged();
             }
             else
@@ -441,47 +453,68 @@ private async Task GetCurrentLocationAsync()
 
     private void InitializeMapData()
     {
+        InitializeMapData(selectedDistance);
+    }
+
+    private void InitializeMapData(int distanceMiles)
+    {
         try
         {
-            // Calculate nearby coordinates (approximately 1-2 miles away)
-            var latOffset1 = 0.01; // ~0.69 miles
-            var lngOffset1 = 0.01;
-            var latOffset2 = 0.015; // ~1 mile
-            var lngOffset2 = -0.012;
+            // 1 degree of latitude is approximately 69 miles
+            // 1 degree of longitude is approximately 69 miles * cos(latitude)
+            double milesPerDegree = 69.0;
+            double distanceDegrees = distanceMiles / milesPerDegree;
             
-            // Load sample nearby users based on current location
-            nearbyUsers = new List<UserLocationDto>
+            // Calculate offsets based on selected distance
+            // Generate users at various distances within the selected radius
+            var random = new Random();
+            var users = new List<UserLocationDto>();
+            
+            // Add current user at center
+            users.Add(new UserLocationDto
             {
-                new UserLocationDto
-                {
-                    UserId = Guid.NewGuid(),
-                    FirstName = "John",
-                    LastName = "Smith",
-                    CompanyName = "Smith Tech Solutions",
-                    Latitude = currentLatitude + latOffset1,
-                    Longitude = currentLongitude + lngOffset1
-                },
-                new UserLocationDto
-                {
-                    UserId = Guid.NewGuid(),
-                    FirstName = "Jane",
-                    LastName = "Doe",
-                    CompanyName = "Doe Consulting",
-                    Latitude = currentLatitude + latOffset2,
-                    Longitude = currentLongitude + lngOffset2
-                },
-                new UserLocationDto
-                {
-                    UserId = StateService.CurrentUser?.UserId ?? Guid.NewGuid(),
-                    FirstName = StateService.CurrentUser?.FirstName ?? "You",
-                    LastName = StateService.CurrentUser?.LastName ?? "",
-                    CompanyName = StateService.CurrentUser?.CompanyName,
-                    Latitude = currentLatitude,
-                    Longitude = currentLongitude
-                }
+                UserId = StateService.CurrentUser?.UserId ?? Guid.NewGuid(),
+                FirstName = StateService.CurrentUser?.FirstName ?? "You",
+                LastName = StateService.CurrentUser?.LastName ?? "",
+                CompanyName = StateService.CurrentUser?.CompanyName,
+                Latitude = currentLatitude,
+                Longitude = currentLongitude
+            });
+
+            // Generate mock users at different distances
+            var mockUsers = new[]
+            {
+                new { FirstName = "John", LastName = "Smith", Company = "Smith Tech Solutions", DistanceRatio = 0.3 },
+                new { FirstName = "Jane", LastName = "Doe", Company = "Doe Consulting", DistanceRatio = 0.5 },
+                new { FirstName = "Mike", LastName = "Johnson", Company = "Johnson Enterprises", DistanceRatio = 0.7 },
+                new { FirstName = "Sarah", LastName = "Williams", Company = "Williams & Associates", DistanceRatio = 0.9 },
+                new { FirstName = "David", LastName = "Brown", Company = "Brown Industries", DistanceRatio = 0.4 },
+                new { FirstName = "Emily", LastName = "Davis", Company = "Davis Solutions", DistanceRatio = 0.6 }
             };
 
-            Console.WriteLine($"Initialized {nearbyUsers.Count} nearby users centered at: {currentLatitude}, {currentLongitude}");
+            foreach (var mockUser in mockUsers)
+            {
+                // Only include users within the selected distance
+                double actualDistance = distanceDegrees * mockUser.DistanceRatio;
+                
+                // Generate random angle for distribution around center
+                double angle = random.NextDouble() * 2 * Math.PI;
+                double latOffset = actualDistance * Math.Cos(angle);
+                double lngOffset = actualDistance * Math.Sin(angle);
+
+                users.Add(new UserLocationDto
+                {
+                    UserId = Guid.NewGuid(),
+                    FirstName = mockUser.FirstName,
+                    LastName = mockUser.LastName,
+                    CompanyName = mockUser.Company,
+                    Latitude = currentLatitude + latOffset,
+                    Longitude = currentLongitude + lngOffset
+                });
+            }
+
+            nearbyUsers = users;
+            Console.WriteLine($"Initialized {nearbyUsers.Count} nearby users within {distanceMiles} miles centered at: {currentLatitude}, {currentLongitude}");
         }
         catch (Exception ex)
         {
@@ -502,16 +535,39 @@ private async Task GetCurrentLocationAsync()
         {
             Console.WriteLine($"Map distance changed to: {selectedDistance} miles");
             
-            // TODO: Load nearby users based on distance from API
+            // Load nearby users based on distance from API
+            // When API is available, uncomment this:
             // var userId = StateService.CurrentUser?.UserId;
             // if (userId.HasValue)
             // {
             //     nearbyUsers = await ApiService.GetAsync<List<UserLocationDto>>(
             //         $"api/location/nearby?userId={userId}&distance={selectedDistance}");
-            //     StateHasChanged();
             // }
             
-            await Task.CompletedTask;
+            // For now, generate mock data based on distance
+            InitializeMapData(selectedDistance);
+            
+            // Refresh the map markers
+            if (mapComponent != null)
+            {
+                await mapComponent.RefreshMarkers(nearbyUsers);
+                
+                // Adjust zoom level based on distance
+                int zoom = selectedDistance switch
+                {
+                    1 => 14,
+                    5 => 12,
+                    10 => 11,
+                    25 => 10,
+                    50 => 9,
+                    _ => 12
+                };
+                
+                await mapComponent.SetViewAsync(currentLatitude, currentLongitude, zoom);
+                Console.WriteLine($"Map updated with {nearbyUsers.Count} users at zoom level {zoom}");
+            }
+            
+            StateHasChanged();
         }
         catch (Exception ex)
         {
