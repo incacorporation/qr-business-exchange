@@ -1,0 +1,381 @@
+@page "/businesses/{BusinessId:guid}"
+@using QRBusinessExchange.Client.Services
+@using QRBusinessExchange.Core.DTOs
+@inject ApiService ApiService
+@inject PortalAuthService PortalAuth
+@inject NavigationManager Navigation
+@inject IConfiguration Configuration
+@inject IJSRuntime JS
+
+<PageTitle>@(business?.Name ?? "Business") - qrbound</PageTitle>
+
+<div class="container mt-4 mb-5">
+    <a href="/businesses" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> All businesses</a>
+
+    @if (business == null)
+    {
+        <div class="text-center py-5">
+            @if (error != null) { <div class="alert alert-danger">@error</div> }
+            else { <span class="spinner-border text-primary"></span> }
+        </div>
+    }
+    else
+    {
+        <div class="d-flex justify-content-between align-items-start mt-2 mb-4">
+            <div>
+                <h2 class="mb-1">@business.Name</h2>
+                <p class="text-muted mb-0">@business.Slug · your role: <strong>@business.MyRole</strong></p>
+            </div>
+            @if (business.MyRole == "Owner")
+            {
+                <button class="btn btn-outline-danger btn-sm" @onclick="DeleteBusinessAsync">Delete business</button>
+            }
+        </div>
+
+        @if (!string.IsNullOrEmpty(error))
+        {
+            <div class="alert alert-danger alert-dismissible">
+                @error
+                <button type="button" class="btn-close" @onclick="() => error = null"></button>
+            </div>
+        }
+
+        @if (newSecret != null)
+        {
+            <div class="alert alert-warning">
+                <h6 class="alert-heading"><i class="bi bi-key-fill me-1"></i>Client secret for @newSecret.Name</h6>
+                <p class="small mb-2">Copy it now — it will not be shown again.</p>
+                <div class="input-group">
+                    <input class="form-control font-monospace" readonly value="@newSecret.ClientSecret" />
+                    <button class="btn btn-outline-dark" @onclick="() => CopyAsync(newSecret.ClientSecret!)">Copy</button>
+                </div>
+                <button class="btn btn-sm btn-link px-0 mt-2" @onclick="() => newSecret = null">I've saved it</button>
+            </div>
+        }
+
+        <!-- Applications -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="card-title mb-0"><i class="bi bi-app-indicator me-2"></i>SSO applications</h5>
+                    @if (CanManage)
+                    {
+                        <button class="btn btn-primary btn-sm" @onclick="() => showAppForm = !showAppForm">
+                            <i class="bi bi-plus-lg me-1"></i>Register app
+                        </button>
+                    }
+                </div>
+
+                @if (showAppForm)
+                {
+                    <div class="border rounded p-3 mb-3 bg-body-tertiary">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Application name</label>
+                                <input class="form-control" @bind="appModel.Name" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Token lifetime (minutes)</label>
+                                <input type="number" class="form-control" min="5" max="1440" @bind="appModel.TokenLifetimeMinutes" />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Redirect URIs <span class="text-muted small">(one per line, exact match)</span></label>
+                                <textarea class="form-control font-monospace" rows="3" @bind="redirectUrisText"
+                                          placeholder="https://app.example.com/auth/callback"></textarea>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="confidential" @bind="appModel.IsConfidential" />
+                                    <label class="form-check-label" for="confidential">
+                                        Has a backend (confidential client with secret)
+                                    </label>
+                                </div>
+                                <small class="text-muted">Uncheck for SPAs and mobile apps — they must use PKCE.</small>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="membership" @bind="appModel.RequireMembership" />
+                                    <label class="form-check-label" for="membership">Only members of @business.Name may sign in</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <button class="btn btn-primary" @onclick="CreateAppAsync" disabled="@saving">Register</button>
+                            <button class="btn btn-link" @onclick="() => showAppForm = false">Cancel</button>
+                        </div>
+                    </div>
+                }
+
+                @if (apps == null)
+                {
+                    <span class="spinner-border spinner-border-sm"></span>
+                }
+                else if (apps.Count == 0)
+                {
+                    <p class="text-muted mb-0">No applications yet.</p>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table align-middle mb-0">
+                            <thead>
+                                <tr><th>Name</th><th>Client ID</th><th>Type</th><th>Redirect URIs</th><th>Status</th><th></th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var app in apps)
+                                {
+                                    <tr>
+                                        <td>
+                                            @app.Name
+                                            @if (app.RequireMembership) { <span class="badge bg-info ms-1">members only</span> }
+                                        </td>
+                                        <td>
+                                            <code>@app.ClientId</code>
+                                            <button class="btn btn-sm btn-link p-0 ms-1" title="Copy" @onclick="() => CopyAsync(app.ClientId)"><i class="bi bi-clipboard"></i></button>
+                                        </td>
+                                        <td>@(app.IsConfidential ? "Confidential" : "Public (PKCE)")</td>
+                                        <td class="small font-monospace">@foreach (var uri in app.RedirectUris) { <div>@uri</div> }</td>
+                                        <td>
+                                            <span class="badge @(app.IsActive ? "bg-success" : "bg-secondary")">@(app.IsActive ? "Active" : "Disabled")</span>
+                                        </td>
+                                        <td class="text-end text-nowrap">
+                                            @if (CanManage)
+                                            {
+                                                <button class="btn btn-sm btn-outline-secondary" @onclick="() => ToggleAppAsync(app)">@(app.IsActive ? "Disable" : "Enable")</button>
+                                                @if (app.IsConfidential)
+                                                {
+                                                    <button class="btn btn-sm btn-outline-warning ms-1" @onclick="() => RotateAsync(app)">Rotate secret</button>
+                                                }
+                                                <button class="btn btn-sm btn-outline-danger ms-1" @onclick="() => DeleteAppAsync(app)"><i class="bi bi-trash"></i></button>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Members -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-people me-2"></i>Members</h5>
+
+                @if (CanManage)
+                {
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-6"><input class="form-control" placeholder="email of an existing account" @bind="memberModel.Email" /></div>
+                        <div class="col-md-3">
+                            <select class="form-select" @bind="memberModel.Role">
+                                <option>Member</option>
+                                <option>Admin</option>
+                                @if (business.MyRole == "Owner") { <option>Owner</option> }
+                            </select>
+                        </div>
+                        <div class="col-md-3 d-grid"><button class="btn btn-outline-primary" @onclick="AddMemberAsync" disabled="@saving">Add / update</button></div>
+                    </div>
+                }
+
+                @if (members != null)
+                {
+                    <ul class="list-group list-group-flush">
+                        @foreach (var m in members)
+                        {
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <div class="fw-semibold">@m.FullName</div>
+                                    <div class="small text-muted">@m.Email</div>
+                                </div>
+                                <div>
+                                    <span class="badge bg-light text-dark border me-2">@m.Role</span>
+                                    @if (CanManage)
+                                    {
+                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveMemberAsync(m)"><i class="bi bi-person-dash"></i></button>
+                                    }
+                                </div>
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+
+        <!-- Integration guide -->
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-plug me-2"></i>Integrating an app</h5>
+                <ol class="small">
+                    <li>Send the user to
+                        <code>@PortalBase/sso/authorize?client_id=…&amp;redirect_uri=…&amp;state=…&amp;code_challenge=…&amp;code_challenge_method=S256</code>
+                    </li>
+                    <li>The user signs in with a passkey, or scans the QR code with their signed-in phone.</li>
+                    <li>You receive <code>redirect_uri?code=…&amp;state=…</code>. Check <code>state</code>.</li>
+                    <li>Exchange the code: <code>POST @ApiBase/api/sso/token</code> with
+                        <code>grant_type=authorization_code</code>, <code>code</code>, <code>redirect_uri</code>, <code>client_id</code>,
+                        and <code>client_secret</code> (confidential) and/or <code>code_verifier</code> (PKCE).</li>
+                    <li>Validate the returned RS256 JWT using <code>@ApiBase/api/sso/jwks</code>:
+                        issuer <code>@Issuer</code>, audience = your client ID.</li>
+                </ol>
+                <p class="small mb-0">
+                    Discovery: <code>@ApiBase/api/sso/configuration</code> · Sign-out:
+                    <code>@PortalBase/sso/logout?client_id=…&amp;post_logout_redirect_uri=…</code>
+                </p>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid BusinessId { get; set; }
+
+    private BusinessDto? business;
+    private List<SsoApplicationDto>? apps;
+    private List<BusinessMemberDto>? members;
+    private SsoApplicationDto? newSecret;
+    private CreateSsoApplicationRequest appModel = new();
+    private string redirectUrisText = string.Empty;
+    private AddBusinessMemberRequest memberModel = new();
+    private bool showAppForm;
+    private bool saving;
+    private string? error;
+
+    private bool CanManage => business?.MyRole is "Owner" or "Admin";
+    private string PortalBase => Navigation.BaseUri.TrimEnd('/');
+    private string ApiBase => (Configuration["ApiSettings:BaseUrl"] ?? "https://localhost:7059").TrimEnd('/');
+    private string Issuer => Configuration["ApiSettings:Issuer"] ?? ApiBase;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await PortalAuth.HasSessionAsync())
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        var response = await ApiService.GetResponseAsync($"api/businesses/{BusinessId}");
+        if (!response.IsSuccessStatusCode)
+        {
+            error = await ApiService.ReadErrorAsync(response, "Business not found.");
+            return;
+        }
+
+        business = await ApiService.ParseResponseAsync<BusinessDto>(response);
+        await Task.WhenAll(LoadAppsAsync(), LoadMembersAsync());
+    }
+
+    private async Task LoadAppsAsync() =>
+        apps = await ApiService.GetAsync<List<SsoApplicationDto>>($"api/businesses/{BusinessId}/applications") ?? new();
+
+    private async Task LoadMembersAsync() =>
+        members = await ApiService.GetAsync<List<BusinessMemberDto>>($"api/businesses/{BusinessId}/members") ?? new();
+
+    private async Task CreateAppAsync()
+    {
+        appModel.RedirectUris = redirectUrisText
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+
+        var created = await SendAsync<SsoApplicationDto>(ApiService.PostAsync($"api/businesses/{BusinessId}/applications", appModel));
+        if (created != null)
+        {
+            if (created.ClientSecret != null) newSecret = created;
+            appModel = new();
+            redirectUrisText = string.Empty;
+            showAppForm = false;
+            await LoadAppsAsync();
+        }
+    }
+
+    private async Task ToggleAppAsync(SsoApplicationDto app)
+    {
+        var updated = await SendAsync<SsoApplicationDto>(ApiService.PutAsync($"api/businesses/{BusinessId}/applications/{app.SsoApplicationId}",
+            new UpdateSsoApplicationRequest
+            {
+                Name = app.Name,
+                RedirectUris = app.RedirectUris,
+                RequireMembership = app.RequireMembership,
+                TokenLifetimeMinutes = app.TokenLifetimeMinutes,
+                IsActive = !app.IsActive
+            }));
+        if (updated != null) await LoadAppsAsync();
+    }
+
+    private async Task RotateAsync(SsoApplicationDto app)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Rotate the secret for {app.Name}? The current secret stops working immediately.")) return;
+        var rotated = await SendAsync<SsoApplicationDto>(ApiService.PostAsync($"api/businesses/{BusinessId}/applications/{app.SsoApplicationId}/rotate-secret", new { }));
+        if (rotated != null) newSecret = rotated;
+    }
+
+    private async Task DeleteAppAsync(SsoApplicationDto app)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Delete {app.Name}? Users will no longer be able to sign in to it.")) return;
+        if (await SendAsync<object>(ApiService.DeleteAsync($"api/businesses/{BusinessId}/applications/{app.SsoApplicationId}")) != null)
+        {
+            await LoadAppsAsync();
+        }
+    }
+
+    private async Task AddMemberAsync()
+    {
+        if (await SendAsync<BusinessMemberDto>(ApiService.PostAsync($"api/businesses/{BusinessId}/members", memberModel)) != null)
+        {
+            memberModel = new();
+            await LoadMembersAsync();
+        }
+    }
+
+    private async Task RemoveMemberAsync(BusinessMemberDto member)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Remove {member.Email} from {business!.Name}?")) return;
+        if (await SendAsync<object>(ApiService.DeleteAsync($"api/businesses/{BusinessId}/members/{member.UserId}")) != null)
+        {
+            await LoadMembersAsync();
+        }
+    }
+
+    private async Task DeleteBusinessAsync()
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Delete {business!.Name} and all of its applications? This cannot be undone.")) return;
+        if (await SendAsync<object>(ApiService.DeleteAsync($"api/businesses/{BusinessId}")) != null)
+        {
+            Navigation.NavigateTo("/businesses");
+        }
+    }
+
+    private async Task CopyAsync(string text)
+    {
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", text); } catch { /* clipboard unavailable */ }
+    }
+
+    private async Task<T?> SendAsync<T>(Task<HttpResponseMessage> request) where T : class
+    {
+        saving = true;
+        error = null;
+        try
+        {
+            var response = await request;
+            if (!response.IsSuccessStatusCode)
+            {
+                error = await ApiService.ReadErrorAsync(response, "The request failed.");
+                return null;
+            }
+
+            // For fire-and-forget calls (T = object) any success counts, even with an empty body
+            return typeof(T) == typeof(object)
+                ? (T)new object()
+                : await ApiService.ParseResponseAsync<T>(response);
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            return null;
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+}

@@ -72,6 +72,7 @@ builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IConnectionRepository, ConnectionRepository>();
 builder.Services.AddScoped<ISubscriptionRepository, SubscriptionRepository>();
 builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
+builder.Services.AddScoped<IPasskeyRepository, PasskeyRepository>();
 
 // Register services
 builder.Services.AddHttpClient(); // Required for OneSignalService
@@ -80,6 +81,24 @@ builder.Services.AddScoped<IQRCodeService, QRCodeService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IGeolocationService, GeolocationService>();
 builder.Services.AddScoped<INotificationService, OneSignalService>();
+builder.Services.AddScoped<WebAuthnService>();
+
+// Multi-business QR / SSO login core
+builder.Services.AddMemoryCache(); // WebAuthn challenges (use a distributed cache when scaling out)
+builder.Services.Configure<SsoSettings>(builder.Configuration.GetSection("Sso"));
+builder.Services.AddSingleton(sp =>
+{
+    var sso = builder.Configuration.GetSection("Sso").Get<SsoSettings>() ?? new SsoSettings();
+    var keyPath = Path.IsPathRooted(sso.SigningKeyPath)
+        ? sso.SigningKeyPath
+        : Path.Combine(builder.Environment.ContentRootPath, sso.SigningKeyPath);
+    return new SsoSigningKeyProvider(keyPath);
+});
+builder.Services.AddScoped<BusinessService>();
+builder.Services.AddScoped<SsoService>();
+builder.Services.AddScoped<QrLoginService>();
+builder.Services.AddSingleton<DeviceLinkService>(); // in-memory, short-lived "link a phone" sessions
+builder.Services.AddScoped<QRBusinessExchange.API.Services.PortalSessionFactory>();
 
 // Configure controllers
 builder.Services.AddControllers()
@@ -105,6 +124,9 @@ builder.Services.AddSwaggerGen(options =>
             Email = "support@qrbusinessexchange.com"
         }
     });
+
+    // Use fully qualified names to avoid schema conflicts
+    options.CustomSchemaIds(type => type.FullName?.Replace("+", "."));
 
     // Add JWT authentication to Swagger
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme

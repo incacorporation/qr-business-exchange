@@ -1,12 +1,14 @@
 @page "/login"
 @using QRBusinessExchange.Core.DTOs
 @using QRBusinessExchange.Client.Services
+@using QRBusinessExchange.Client.Components.Auth
 @inject ApiService ApiService
 @inject StateService StateService
 @inject NavigationManager Navigation
 @inject IndexedDBService IndexedDB
+@inject PortalAuthService PortalAuth
 
-<PageTitle>Login - QR Business Exchange</PageTitle>
+<PageTitle>Login - qrbound</PageTitle>
 
 <!-- Responsive Container with vertical centering on larger screens -->
 <div class="container-fluid min-vh-100 d-flex align-items-center py-4 px-3 px-sm-4">
@@ -16,8 +18,7 @@
             
             <!-- Logo/Branding (visible on mobile) -->
             <div class="text-center mb-4 d-lg-none">
-                <i class="bi bi-qr-code display-1 text-primary"></i>
-                <h2 class="mt-2">QR Business Exchange</h2>
+                <img src="images/qrbound-logo.png" class="brand-logo brand-logo-card" alt="qrbound - Let's get QR Bound" />
             </div>
 
             <!-- Login Card -->
@@ -26,7 +27,7 @@
                     
                     <!-- Hidden logo for larger screens -->
                     <div class="text-center mb-4 d-none d-lg-block">
-                        <i class="bi bi-qr-code display-3 text-primary"></i>
+                        <img src="images/qrbound-logo.png" class="brand-logo brand-logo-card" alt="qrbound - Let's get QR Bound" />
                     </div>
 
                     <h3 class="card-title text-center mb-4 fw-bold">Welcome Back</h3>
@@ -53,12 +54,25 @@
                             <InputText 
                                 id="email" 
                                 @bind-Value="loginRequest.Email" 
+                                @bind-Value:after="HandleEmailChangedSync"
                                 class="form-control form-control-lg" 
                                 placeholder="name@example.com" 
-                                autocomplete="email"
+                                autocomplete="email webauthn"
                                 disabled="@isLoading" />
                             <ValidationMessage For="@(() => loginRequest.Email)" class="text-danger small mt-1" />
                         </div>
+
+                        <!-- Passkey Login Component -->
+                        <PasskeyLogin Email="@loginRequest.Email" OnSuccess="HandlePasskeySuccess" IsVisible="@showPasskeyOption" />
+
+                        @if (showPasskeyOption)
+                        {
+                            <!-- Divider -->
+                            <div class="position-relative my-3">
+                                <hr class="text-muted">
+                                <span class="position-absolute top-50 start-50 translate-middle bg-white px-3 text-muted small">OR</span>
+                            </div>
+                        }
 
                         <!-- Password Field -->
                         <div class="mb-4">
@@ -110,12 +124,22 @@
                         <span class="position-absolute top-50 start-50 translate-middle bg-white px-3 text-muted small">OR</span>
                     </div>
 
-                    <!-- Social Login (optional - placeholder) -->
-                    <div class="d-grid gap-2 mb-4">
-                        <button class="btn btn-outline-secondary" disabled>
-                            <i class="bi bi-google me-2"></i>Continue with Google
+                    <!-- Passwordless options: any saved passkey, or scan a QR with a signed-in phone -->
+                    <div class="d-grid gap-2 mb-3">
+                        <button type="button" class="btn btn-outline-primary" @onclick="HandleAnyPasskeyLogin" disabled="@isLoading">
+                            <i class="bi bi-fingerprint me-2"></i>Sign in with a passkey
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" @onclick="() => showQr = !showQr" disabled="@isLoading">
+                            <i class="bi bi-qr-code-scan me-2"></i>@(showQr ? "Hide QR code" : "Sign in with your phone (QR code)")
                         </button>
                     </div>
+
+                    @if (showQr)
+                    {
+                        <div class="mb-4">
+                            <QrLoginPanel OnSuccess="HandlePasskeySuccess" />
+                        </div>
+                    }
 
                     <!-- Sign Up Link -->
                     <div class="text-center">
@@ -139,17 +163,58 @@
 </div>
 
 @code {
-    private LoginRequest loginRequest = new();
-    private string errorMessage = string.Empty;
-    private bool isLoading = false;
+[SupplyParameterFromQuery(Name = "returnUrl")] public string? ReturnUrl { get; set; }
 
-    protected override async Task OnInitializedAsync()
-    {
-        // If already authenticated, redirect to dashboard
-        await StateService.InitializeAsync();
-        if (StateService.IsAuthenticated && StateService.CurrentUser != null)
+private LoginRequest loginRequest = new();
+private string errorMessage = string.Empty;
+private bool isLoading = false;
+private bool showPasskeyOption = false;
+private bool showQr = false;
+
+protected override async Task OnInitializedAsync()
+{
+    // If already authenticated, redirect to dashboard (or where the user was going)
+    await StateService.InitializeAsync();
+    if (StateService.IsAuthenticated && StateService.CurrentUser != null)
         {
-            Navigation.NavigateTo("/dashboard");
+            Navigation.NavigateTo(SafeReturnUrl ?? "/dashboard");
+        }
+    }
+
+    /// <summary>Only allow same-site relative return URLs (prevents open redirects).</summary>
+    private string? SafeReturnUrl =>
+        !string.IsNullOrEmpty(ReturnUrl) && ReturnUrl.StartsWith('/') && !ReturnUrl.StartsWith("//") && !ReturnUrl.StartsWith("/\\")
+            ? ReturnUrl
+            : null;
+
+    private void NavigateAfterLogin(UserProfileDto user)
+    {
+        if (SafeReturnUrl != null)
+        {
+            Navigation.NavigateTo(SafeReturnUrl);
+        }
+        else
+        {
+            Navigation.NavigateTo(user.IsEmailVerified ? "/dashboard" : "/email-verification");
+        }
+    }
+
+    private async Task HandleAnyPasskeyLogin()
+    {
+        isLoading = true;
+        errorMessage = string.Empty;
+        try
+        {
+            var auth = await PortalAuth.SignInWithPasskeyAsync();
+            NavigateAfterLogin(auth.User);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = PortalAuthService.Describe(ex);
+        }
+        finally
+        {
+            isLoading = false;
         }
     }
 
@@ -203,15 +268,7 @@
                     await IndexedDB.SetItemAsync("authToken", result.AccessToken);
                     await IndexedDB.SetItemAsync("userId", result.User.UserId.ToString());
                     
-                    // Navigate to dashboard
-                    if (!result.User.IsEmailVerified)
-                    {
-                        Navigation.NavigateTo("/email-verification");
-                    }
-                    else
-                    {
-                        Navigation.NavigateTo("/dashboard");
-                    }
+                    NavigateAfterLogin(result.User);
                 }
                 else
                 {
@@ -249,33 +306,78 @@
         }
     }
 
+    private async Task HandleEmailChange()
+    {
+        // Check if user has passkeys when email changes
+        if (!string.IsNullOrEmpty(loginRequest.Email) && loginRequest.Email.Contains("@"))
+        {
+            showPasskeyOption = true;
+        }
+        else
+        {
+            showPasskeyOption = false;
+        }
+    }
+
+    private void HandleEmailChangedSync()
+    {
+        // Check if user has passkeys when email changes
+        if (!string.IsNullOrEmpty(loginRequest.Email) && loginRequest.Email.Contains("@"))
+        {
+            showPasskeyOption = true;
+        }
+        else
+        {
+            showPasskeyOption = false;
+        }
+    }
+
+    private async Task HandlePasskeySuccess(AuthResponse result)
+    {
+        try
+        {
+            Console.WriteLine("=== PASSKEY LOGIN SUCCESS ===");
+            Console.WriteLine($"User: {result.User.Email}");
+
+            // Update state
+            StateService.CurrentUser = new UserProfileDto
+            {
+                UserId = result.User.UserId,
+                Email = result.User.Email,
+                FirstName = result.User.FirstName,
+                LastName = result.User.LastName,
+                CompanyName = result.User.CompanyName,
+                PhoneNumber = result.User.PhoneNumber,
+                ProfileImageUrl = result.User.ProfileImageUrl,
+                Bio = result.User.Bio,
+                Skills = result.User.Skills,
+                ServicePricing = result.User.ServicePricing,
+                IsEmailVerified = result.User.IsEmailVerified,
+                Role = result.User.Role,
+                CreatedAt = result.User.CreatedAt
+            };
+
+            StateService.IsAuthenticated = true;
+            Console.WriteLine("StateService updated with user data and auth status");
+
+            // Save tokens to localStorage
+            await IndexedDB.SetItemAsync("authToken", result.AccessToken);
+            await IndexedDB.SetItemAsync("userId", result.User.UserId.ToString());
+
+            NavigateAfterLogin(result.User);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error handling passkey success: {ex.Message}");
+            errorMessage = "An error occurred during authentication";
+        }
+    }
+
     public class LoginRequest
     {
         public string Email { get; set; } = "";
         public string Password { get; set; } = "";
     }
-
-    public class AuthResponse
-    {
-        public string AccessToken { get; set; } = "";
-        public UserDto User { get; set; } = new();
-    }
-
-    public class UserDto
-    {
-        public Guid UserId { get; set; }
-        public string Email { get; set; } = "";
-        public string FirstName { get; set; } = "";
-        public string LastName { get; set; } = "";
-        public string? CompanyName { get; set; }
-        public string? PhoneNumber { get; set; }
-        public string? ProfileImageUrl { get; set; }
-        public string? Bio { get; set; }
-        public string? Skills { get; set; }
-        public decimal? ServicePricing { get; set; }
-        public bool IsEmailVerified { get; set; }
-        public string Role { get; set; } = "User";
-        public DateTime CreatedAt { get; set; }
-    }
 }
+
 

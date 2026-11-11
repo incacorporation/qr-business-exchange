@@ -35,6 +35,18 @@ window.chartInterop = {
                     }
                 }
 
+                // Brand palette (matches wwwroot/css/app.css): one series = one color.
+                // The most recent bar is full brand blue; earlier bars use the lighter periwinkle.
+                const brand = '#1F43AD';
+                const brandSoft = '#AFC0F2';
+                const ink = '#5A6480';
+                const grid = '#E3E7F0';
+                const lastIndex = (data || []).length - 1;
+                const barColors = (data || []).map((_, i) => i === lastIndex ? brand : brandSoft);
+
+                Chart.defaults.font.family = "'Inter', 'Segoe UI', system-ui, sans-serif";
+                Chart.defaults.color = ink;
+
                 // Create new chart
                 this.chartInstance = new Chart(ctx, {
                     type: 'bar',
@@ -43,35 +55,40 @@ window.chartInterop = {
                         datasets: [{
                             label: 'Usage Statistics',
                             data: data,
-                            backgroundColor: [
-                                'rgba(54, 162, 235, 0.5)',
-                                'rgba(75, 192, 192, 0.5)',
-                                'rgba(255, 206, 86, 0.5)',
-                                'rgba(153, 102, 255, 0.5)'
-                            ],
-                            borderColor: [
-                                'rgba(54, 162, 235, 1)',
-                                'rgba(75, 192, 192, 1)',
-                                'rgba(255, 206, 86, 1)',
-                                'rgba(153, 102, 255, 1)'
-                            ],
-                            borderWidth: 2
+                            backgroundColor: barColors,
+                            hoverBackgroundColor: brand,
+                            borderWidth: 0,
+                            borderRadius: 6,
+                            maxBarThickness: 56
                         }]
                     },
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
                         scales: {
+                            x: {
+                                grid: { display: false },
+                                border: { color: grid }
+                            },
                             y: {
                                 beginAtZero: true,
+                                border: { display: false },
+                                grid: { color: grid },
                                 ticks: {
-                                    stepSize: 1
+                                    stepSize: 1,
+                                    precision: 0
                                 }
                             }
                         },
                         plugins: {
                             legend: {
                                 display: false
+                            },
+                            tooltip: {
+                                backgroundColor: '#0B1638',
+                                padding: 10,
+                                cornerRadius: 8,
+                                displayColors: false
                             }
                         }
                     }

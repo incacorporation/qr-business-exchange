@@ -1,0 +1,295 @@
+@using QRBusinessExchange.Client.Services
+@using QRBusinessExchange.Core.DTOs
+@inject ApiService ApiService
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+@* Computer side of "Link a phone": shows a QR code; once a phone scans it, the user picks the
+   number displayed on the phone; the phone then creates its own passkey. *@
+
+<div class="link-phone-panel">
+    @if (!started)
+    {
+        <p class="text-muted small mb-3">
+            Add a passkey on your phone by scanning a QR code with its camera. Afterwards the phone stays
+            signed in and can approve "scan with your phone" sign-ins on other computers.
+        </p>
+        <button class="btn btn-primary" @onclick="StartAsync">
+            <i class="bi bi-qr-code-scan me-2"></i>Link a phone
+        </button>
+    }
+    else if (session == null && string.IsNullOrEmpty(error))
+    {
+        <div class="py-4 text-center"><span class="spinner-border text-primary"></span></div>
+    }
+    else if (status == DeviceLinkStatus.Completed)
+    {
+        <div class="alert alert-success mb-3">
+            <i class="bi bi-check-circle-fill me-2"></i>
+            <strong>@(deviceName ?? "Your phone")</strong> is linked. It can now sign in with its passkey
+            and approve QR sign-ins.
+        </div>
+        <button class="btn btn-outline-primary btn-sm" @onclick="StartAsync">Link another phone</button>
+    }
+    else if (!string.IsNullOrEmpty(error))
+    {
+        <div class="alert alert-warning small mb-3">@error</div>
+        <button class="btn btn-outline-primary btn-sm" @onclick="StartAsync">
+            <i class="bi bi-arrow-clockwise me-1"></i>New QR code
+        </button>
+    }
+    else if (status == DeviceLinkStatus.Scanned)
+    {
+        <div class="text-center">
+            <i class="bi bi-phone display-5 text-primary"></i>
+            <h5 class="mt-2 mb-1">Is this your phone?</h5>
+            <p class="text-muted small mb-3">
+                @DeviceDescriber.Describe(phoneUserAgent) · @(phoneIp ?? "unknown IP")
+            </p>
+            <p class="fw-semibold mb-2">Pick the number shown on your phone</p>
+            <div class="d-flex justify-content-center gap-3 mb-3">
+                @foreach (var choice in choices)
+                {
+                    <button class="btn btn-lg btn-outline-primary number-choice" disabled="@working"
+                            @onclick="() => ConfirmAsync(choice)">
+                        @choice
+                    </button>
+                }
+            </div>
+            <button class="btn btn-link btn-sm text-danger" @onclick="CancelAsync" disabled="@working">
+                That's not my phone — cancel
+            </button>
+        </div>
+    }
+    else if (status == DeviceLinkStatus.Confirmed)
+    {
+        <div class="text-center py-3">
+            <span class="spinner-border spinner-border-sm text-primary me-2"></span>
+            <span class="fw-semibold">Number confirmed. Create the passkey on your phone…</span>
+            <p class="text-muted small mt-2 mb-0">Expires in @SecondsLeft s</p>
+        </div>
+    }
+    else
+    {
+        <div class="text-center">
+            <div class="qr-frame mx-auto mb-3">
+                <div id="@elementId"></div>
+            </div>
+            <p class="fw-semibold mb-1">Scan with your phone's camera</p>
+            <p class="text-muted small mb-1">Open the link, then pick the number your phone shows here.</p>
+            <p class="text-muted small mb-2">Expires in @SecondsLeft s</p>
+            <button class="btn btn-link btn-sm" @onclick="CancelAsync">Cancel</button>
+        </div>
+    }
+</div>
+
+@code {
+    private readonly string elementId = $"link-qr-{Guid.NewGuid():N}";
+    private bool started;
+    private bool working;
+    private bool qrRendered;
+    private DeviceLinkCreateResponse? session;
+    private string status = DeviceLinkStatus.Pending;
+    private List<string> choices = new();
+    private string? phoneUserAgent;
+    private string? phoneIp;
+    private string? deviceName;
+    private string? error;
+    private DateTime expiresAt;
+    private CancellationTokenSource? cts;
+
+    [Parameter] public EventCallback OnLinked { get; set; }
+
+    /// <summary>Show the QR code immediately instead of a "Link a phone" button.</summary>
+    [Parameter] public bool AutoStart { get; set; }
+
+    protected override Task OnInitializedAsync() => AutoStart ? StartAsync() : Task.CompletedTask;
+
+    private int SecondsLeft => Math.Max(0, (int)(expiresAt - DateTime.UtcNow).TotalSeconds);
+
+    private async Task StartAsync()
+    {
+        cts?.Cancel();
+        cts = new CancellationTokenSource();
+        started = true;
+        session = null;
+        error = null;
+        qrRendered = false;
+        status = DeviceLinkStatus.Pending;
+        choices = new();
+        deviceName = null;
+        StateHasChanged();
+
+        try
+        {
+            var response = await ApiService.PostAsync("api/device-link/sessions", new { });
+            if (!response.IsSuccessStatusCode)
+            {
+                error = await ApiService.ReadErrorAsync(response, "Could not start linking a phone.");
+                return;
+            }
+
+            session = await ApiService.ParseResponseAsync<DeviceLinkCreateResponse>(response);
+            if (session == null)
+            {
+                error = "Could not start linking a phone.";
+                return;
+            }
+
+            expiresAt = DateTime.SpecifyKind(session.ExpiresAt, DateTimeKind.Utc);
+            StateHasChanged();
+            _ = PollLoopAsync(session, cts.Token);
+        }
+        catch (Exception ex)
+        {
+            error = $"Could not reach the server: {ex.Message}";
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (session != null && !qrRendered && status == DeviceLinkStatus.Pending && string.IsNullOrEmpty(error))
+        {
+            qrRendered = true;
+            try
+            {
+                await JS.InvokeVoidAsync("qrCodeInterop.generateQRCode", elementId, session.LinkUrl);
+            }
+            catch (Exception ex)
+            {
+                error = $"Could not draw the QR code: {ex.Message}";
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task PollLoopAsync(DeviceLinkCreateResponse current, CancellationToken token)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(Math.Max(1, current.PollIntervalSeconds)));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(token))
+            {
+                var response = await ApiService.GetResponseAsync($"api/device-link/sessions/{current.SessionId}");
+                if (token.IsCancellationRequested) return;
+                if (!response.IsSuccessStatusCode)
+                {
+                    error = "This QR code is no longer valid.";
+                    await InvokeAsync(StateHasChanged);
+                    return;
+                }
+
+                var dto = await ApiService.ParseResponseAsync<DeviceLinkStatusDto>(response);
+                if (dto == null) continue;
+
+                status = dto.Status;
+                expiresAt = DateTime.SpecifyKind(dto.ExpiresAt, DateTimeKind.Utc);
+                phoneUserAgent = dto.PhoneUserAgent;
+                phoneIp = dto.PhoneIp;
+                if (dto.VerificationChoices.Count > 0) choices = dto.VerificationChoices;
+
+                switch (status)
+                {
+                    case DeviceLinkStatus.Completed:
+                        deviceName = dto.DeviceName;
+                        await InvokeAsync(StateHasChanged);
+                        await InvokeAsync(() => OnLinked.InvokeAsync());
+                        return;
+                    case DeviceLinkStatus.Denied:
+                        error ??= "Linking was cancelled.";
+                        await InvokeAsync(StateHasChanged);
+                        return;
+                    case DeviceLinkStatus.Expired:
+                        error = "The QR code expired before the phone finished.";
+                        await InvokeAsync(StateHasChanged);
+                        return;
+                }
+
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            error = $"Lost connection to the server: {ex.Message}";
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task ConfirmAsync(string choice)
+    {
+        if (session == null) return;
+        working = true;
+        try
+        {
+            var response = await ApiService.PostAsync($"api/device-link/sessions/{session.SessionId}/confirm",
+                new DeviceLinkConfirmRequest { VerificationCode = choice });
+            if (response.IsSuccessStatusCode)
+            {
+                status = DeviceLinkStatus.Confirmed;
+            }
+            else
+            {
+                cts?.Cancel();
+                error = await ApiService.ReadErrorAsync(response, "Could not confirm the number.");
+            }
+        }
+        finally
+        {
+            working = false;
+        }
+    }
+
+    private async Task CancelAsync()
+    {
+        cts?.Cancel();
+        if (session != null)
+        {
+            try
+            {
+                await ApiService.PostAsync($"api/device-link/sessions/{session.SessionId}/cancel", new { });
+            }
+            catch
+            {
+                // best effort; the session expires on its own
+            }
+        }
+
+        started = false;
+        session = null;
+        error = null;
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        cts?.Cancel();
+        cts?.Dispose();
+        return ValueTask.CompletedTask;
+    }
+}
+
+<style>
+    .link-phone-panel .qr-frame {
+        width: 100%;
+        max-width: 240px;
+        padding: 8px;
+        background: #fff;
+        border: 1px solid var(--bs-border-color);
+        border-radius: .75rem;
+    }
+
+    .link-phone-panel .qr-frame canvas,
+    .link-phone-panel .qr-frame img {
+        width: 100% !important;
+        height: auto !important;
+        display: block;
+    }
+
+    .link-phone-panel .number-choice {
+        min-width: 4.5rem;
+        font-size: 1.5rem;
+        font-variant-numeric: tabular-nums;
+    }
+</style>

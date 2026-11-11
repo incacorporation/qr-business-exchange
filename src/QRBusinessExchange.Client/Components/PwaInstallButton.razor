@@ -1,79 +1,136 @@
-@inject PwaService PwaService
-@inject IJSRuntime JSRuntime
+@* "Install app" call to action.
+   Variant="Floating": fixed bottom-left button, shown on desktop (>= 992px) only, can be dismissed for the session.
+   Variant="Footer":   static footer link, shown on mobile/tablet (< 992px) only.
+   Appears only when the browser can install the PWA (beforeinstallprompt) or on iPhone/iPad, where it
+   explains Share > Add to Home Screen instead. Hidden once the app is installed. *@
+@inject IJSRuntime JS
+@implements IAsyncDisposable
 
-@if (showInstallButton)
+@if (IsVisible)
 {
-    <button class="btn btn-success pwa-install-btn" @onclick="ShowInstallPrompt">
-        <i class="fas fa-download me-2"></i>
-        Install App
-    </button>
+    if (Variant == InstallButtonVariant.Floating)
+    {
+        <div class="pwa-install-floating d-none d-lg-flex" role="region" aria-label="Install app">
+            <button type="button" class="pwa-install-floating-btn" @onclick="InstallAsync">
+                <span class="pwa-install-icon"><img src="images/qrbound-mark.svg" alt="" /></span>
+                <span class="pwa-install-text">
+                    <span class="pwa-install-title">Install app</span>
+                    <span class="pwa-install-sub">Fast access from your desktop</span>
+                </span>
+                <i class="bi bi-download pwa-install-arrow"></i>
+            </button>
+            <button type="button" class="pwa-install-close" aria-label="Hide install button" @onclick="DismissAsync">
+                <i class="bi bi-x"></i>
+            </button>
+        </div>
+    }
+    else
+    {
+        <button type="button" class="pwa-install-footer d-lg-none" @onclick="InstallAsync">
+            <i class="bi bi-phone"></i> Install app
+        </button>
+    }
+
+    @if (showIosHelp)
+    {
+        <div class="pwa-ios-help-backdrop" @onclick="() => showIosHelp = false"></div>
+        <div class="pwa-ios-help" role="dialog" aria-modal="true" aria-labelledby="pwa-ios-help-title">
+            <div class="d-flex align-items-start justify-content-between gap-3 mb-2">
+                <h3 id="pwa-ios-help-title">Add qrbound to your Home Screen</h3>
+                <button type="button" class="btn-close" aria-label="Close" @onclick="() => showIosHelp = false"></button>
+            </div>
+            <ol>
+                <li>Tap the <strong>Share</strong> button <i class="bi bi-box-arrow-up"></i> in Safari.</li>
+                <li>Choose <strong>Add to Home Screen</strong> <i class="bi bi-plus-square"></i>.</li>
+                <li>Tap <strong>Add</strong>.</li>
+            </ol>
+        </div>
+    }
 }
 
 @code {
-    private bool showInstallButton = false;
-    private bool isInstalled = false;
+    public enum InstallButtonVariant { Floating, Footer }
+
+    [Parameter] public InstallButtonVariant Variant { get; set; } = InstallButtonVariant.Floating;
+
+    private const string DismissKey = "pwaInstallDismissed";
+
+    private InstallState state = new();
+    private bool dismissed;
+    private bool showIosHelp;
+    private DotNetObjectReference<PwaInstallButton>? selfRef;
+
+    private bool IsVisible =>
+        !state.Installed
+        && (state.CanPrompt || state.IsIos)
+        && !(Variant == InstallButtonVariant.Floating && dismissed);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
-        {
-            await CheckInstallStatus();
-        }
-    }
+        if (!firstRender) return;
 
-    private async Task CheckInstallStatus()
-    {
         try
         {
-            isInstalled = await PwaService.IsInstalledAsync();
-            showInstallButton = !isInstalled;
+            selfRef = DotNetObjectReference.Create(this);
+            state = await JS.InvokeAsync<InstallState>("pwaService.subscribeInstallState", selfRef);
+
+            if (Variant == InstallButtonVariant.Floating)
+            {
+                dismissed = await JS.InvokeAsync<string?>("sessionStorage.getItem", DismissKey) == "1";
+            }
+
             StateHasChanged();
         }
-        catch (Exception ex)
+        catch (JSException ex)
         {
-            Console.WriteLine($"Error checking install status: {ex.Message}");
+            Console.WriteLine($"PwaInstallButton: install state unavailable: {ex.Message}");
         }
     }
 
-    private async Task ShowInstallPrompt()
+    [JSInvokable]
+    public Task OnInstallStateChanged(InstallState newState)
     {
+        state = newState;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task InstallAsync()
+    {
+        if (state.CanPrompt)
+        {
+            await JS.InvokeAsync<string>("pwaService.showInstallPrompt");
+        }
+        else if (state.IsIos)
+        {
+            showIosHelp = true;
+        }
+    }
+
+    private async Task DismissAsync()
+    {
+        dismissed = true;
+        await JS.InvokeVoidAsync("sessionStorage.setItem", DismissKey, "1");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (selfRef is null) return;
+
         try
         {
-            // The actual install prompt is handled by pwa-service.js
-            // This just provides a way to programmatically trigger it
-            await JSRuntime.InvokeVoidAsync("eval", 
-                "if(window.pwaService && window.pwaService.showInstallPrompt) window.pwaService.showInstallPrompt();");
+            await JS.InvokeVoidAsync("pwaService.unsubscribeInstallState", selfRef);
         }
-        catch (Exception ex)
+        catch (JSDisconnectedException)
         {
-            Console.WriteLine($"Error showing install prompt: {ex.Message}");
         }
+
+        selfRef.Dispose();
+    }
+
+    public sealed class InstallState
+    {
+        public bool Installed { get; set; }
+        public bool CanPrompt { get; set; }
+        public bool IsIos { get; set; }
     }
 }
-
-<style>
-    .pwa-install-btn {
-        position: fixed;
-        bottom: 20px;
-        left: 20px;
-        z-index: 1000;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-        animation: slideIn 0.5s ease-out;
-    }
-
-    @@keyframes slideIn {
-        from {
-            transform: translateX(-100%);
-            opacity: 0;
-        }
-        to {
-            transform: translateX(0);
-            opacity: 1;
-        }
-    }
-
-    .pwa-install-btn:hover {
-        transform: translateX(5px);
-        transition: transform 0.3s ease;
-    }
-</style>
