@@ -1,4 +1,4 @@
-// Service Worker Registration for QR Business Exchange PWA
+// Service Worker Registration for qrbound PWA
 window.pwaService = {
     registration: null,
     updateAvailable: false,
@@ -101,10 +101,10 @@ window.pwaService = {
         const notification = document.createElement('div');
         notification.id = 'pwa-update-notification';
         notification.innerHTML = `
-            <div style="position: fixed; bottom: 20px; right: 20px; background: #4A90E2; color: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); z-index: 10000; max-width: 300px;">
+            <div style="position: fixed; bottom: 20px; right: 20px; background: #1F43AD; color: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); z-index: 10000; max-width: 300px;">
                 <h4 style="margin: 0 0 10px 0;">Update Available</h4>
-                <p style="margin: 0 0 15px 0;">A new version of QR Business Exchange is available.</p>
-                <button id="pwa-update-btn" style="background: white; color: #4A90E2; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; margin-right: 10px;">
+                <p style="margin: 0 0 15px 0;">A new version of qrbound is available.</p>
+                <button id="pwa-update-btn" style="background: white; color: #1F43AD; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; margin-right: 10px;">
                     Update Now
                 </button>
                 <button id="pwa-dismiss-btn" style="background: transparent; color: white; border: 1px solid white; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
@@ -132,66 +132,77 @@ window.pwaService = {
                window.navigator.standalone === true;
     },
 
-    // Show install prompt
-    showInstallPrompt: null,
-    
-    // Setup install prompt
-    setupInstallPrompt: function() {
-        let deferredPrompt = null;
+    // ---------- Install ("Install app") support ----------
+    // The UI lives in the Blazor PwaInstallButton component; this only tracks whether the
+    // browser can install the app and triggers the native prompt.
 
-        window.addEventListener('beforeinstallprompt', (e) => {
-            console.log('Install prompt available');
-            e.preventDefault();
-            deferredPrompt = e;
+    deferredPrompt: null,
+    installListeners: [],
 
-            // Show custom install button
-            this.showInstallButton(deferredPrompt);
-        });
+    // iPhone / iPad Safari never fires beforeinstallprompt; users install via Share > Add to Home Screen.
+    isIos: function() {
+        const ua = window.navigator.userAgent || '';
+        const iPadOs = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+        return /iphone|ipad|ipod/i.test(ua) || iPadOs;
+    },
 
-        window.addEventListener('appinstalled', () => {
-            console.log('App installed successfully');
-            deferredPrompt = null;
+    // Current install state, read by the Blazor component.
+    getInstallState: function() {
+        return {
+            installed: this.isInstalled(),
+            canPrompt: !!this.deferredPrompt,
+            isIos: this.isIos()
+        };
+    },
+
+    // Blazor components register a DotNetObjectReference to hear about changes.
+    subscribeInstallState: function(dotNetRef) {
+        this.installListeners.push(dotNetRef);
+        return this.getInstallState();
+    },
+
+    unsubscribeInstallState: function(dotNetRef) {
+        this.installListeners = this.installListeners.filter(r => r !== dotNetRef);
+    },
+
+    notifyInstallState: function() {
+        const state = this.getInstallState();
+        this.installListeners.forEach(ref => {
+            ref.invokeMethodAsync('OnInstallStateChanged', state).catch(() => { /* component disposed */ });
         });
     },
 
-    // Show install button
-    showInstallButton: function(deferredPrompt) {
-        // Create install button
-        const installBtn = document.createElement('div');
-        installBtn.id = 'pwa-install-prompt';
-        installBtn.innerHTML = `
-            <div style="position: fixed; bottom: 20px; left: 20px; background: #50C878; color: white; padding: 15px 20px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); z-index: 10000; cursor: pointer; display: flex; align-items: center; gap: 10px;">
-                <i class="fas fa-download"></i>
-                <span>Install App</span>
-            </div>
-        `;
+    // Show the browser's install dialog. Returns 'accepted', 'dismissed' or 'unavailable'.
+    showInstallPrompt: async function() {
+        const prompt = this.deferredPrompt;
+        if (!prompt) {
+            return 'unavailable';
+        }
 
-        document.body.appendChild(installBtn);
+        prompt.prompt();
+        const result = await prompt.userChoice;
+        console.log('[PWA] Install prompt result:', result.outcome);
 
-        installBtn.addEventListener('click', async () => {
-            if (!deferredPrompt) return;
+        // A prompt event can only be used once.
+        this.deferredPrompt = null;
+        this.notifyInstallState();
+        return result.outcome;
+    },
 
-            deferredPrompt.prompt();
-            const result = await deferredPrompt.userChoice;
-
-            console.log('Install prompt result:', result.outcome);
-            
-            if (result.outcome === 'accepted') {
-                console.log('User accepted install');
-            } else {
-                console.log('User dismissed install');
-            }
-
-            deferredPrompt = null;
-            installBtn.remove();
+    // Setup install prompt
+    setupInstallPrompt: function() {
+        window.addEventListener('beforeinstallprompt', (e) => {
+            console.log('[PWA] Install prompt available');
+            e.preventDefault(); // keep it for our own "Install app" button
+            this.deferredPrompt = e;
+            this.notifyInstallState();
         });
 
-        // Auto-hide after 10 seconds
-        setTimeout(() => {
-            if (installBtn.parentElement) {
-                installBtn.remove();
-            }
-        }, 10000);
+        window.addEventListener('appinstalled', () => {
+            console.log('[PWA] App installed successfully');
+            this.deferredPrompt = null;
+            this.notifyInstallState();
+        });
     },
 
     // Request notification permission

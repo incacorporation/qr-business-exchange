@@ -1,0 +1,215 @@
+@using QRBusinessExchange.Client.Services
+@using QRBusinessExchange.Core.DTOs
+@inject ApiService ApiService
+@inject PortalAuthService PortalAuth
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+@* Desktop side of "scan with your signed-in phone". Shows a QR code, polls for approval,
+   saves the resulting portal session and raises OnSuccess. *@
+
+<div class="qr-login-panel text-center">
+    @if (session == null && string.IsNullOrEmpty(error))
+    {
+        <div class="py-5">
+            <span class="spinner-border text-primary" role="status"></span>
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(error))
+    {
+        <div class="alert alert-warning small mb-3">@error</div>
+        <button class="btn btn-outline-primary btn-sm" @onclick="StartAsync">
+            <i class="bi bi-arrow-clockwise me-1"></i>New QR code
+        </button>
+    }
+    else
+    {
+        <div class="qr-frame mx-auto mb-3 @(status == QrScanned ? "dimmed" : "")">
+            <div id="@elementId"></div>
+        </div>
+
+        @if (status == QrScanned)
+        {
+            <p class="fw-semibold mb-1"><i class="bi bi-phone me-1"></i>Scanned — check your phone</p>
+        }
+        else
+        {
+            <p class="fw-semibold mb-1">Scan with your phone's camera</p>
+        }
+
+        <p class="text-muted small mb-2">
+            Your phone must already be signed in. On your phone, tap the number below,
+            then confirm with your passkey.
+        </p>
+        <p class="text-muted small mb-2">
+            Phone not set up yet? On a computer where you're signed in, open
+            <strong>Settings → Sign in with your phone camera</strong> and link your phone first.
+        </p>
+
+        <div class="verification-code display-5 fw-bold mb-2" aria-label="Verification number">@session!.VerificationCode</div>
+
+        <p class="text-muted small mb-0">Expires in @SecondsLeft s</p>
+    }
+</div>
+
+@code {
+    private const string QrScanned = "Scanned";
+
+    /// <summary>Optional client_id of the application being signed in to.</summary>
+    [Parameter] public string? ClientId { get; set; }
+
+    [Parameter] public EventCallback<AuthResponse> OnSuccess { get; set; }
+
+    private readonly string elementId = $"qr-login-{Guid.NewGuid():N}";
+    private QrLoginCreateResponse? session;
+    private string status = "Pending";
+    private string? error;
+    private CancellationTokenSource? cts;
+    private bool qrRendered;
+
+    private int SecondsLeft => session == null ? 0 : Math.Max(0, (int)(session.ExpiresAt - DateTime.UtcNow).TotalSeconds);
+
+    protected override Task OnInitializedAsync() => StartAsync();
+
+    private async Task StartAsync()
+    {
+        cts?.Cancel();
+        cts = new CancellationTokenSource();
+        error = null;
+        session = null;
+        qrRendered = false;
+        status = "Pending";
+        StateHasChanged();
+
+        try
+        {
+            var response = await ApiService.PostAsync("api/qr-login/sessions", new QrLoginCreateRequest { ClientId = ClientId });
+            if (!response.IsSuccessStatusCode)
+            {
+                error = await ApiService.ReadErrorAsync(response, "Could not create a QR sign-in request.");
+                return;
+            }
+
+            session = await ApiService.ParseResponseAsync<QrLoginCreateResponse>(response);
+            if (session == null)
+            {
+                error = "Could not create a QR sign-in request.";
+                return;
+            }
+
+            // Server time is UTC; make sure the countdown treats it that way
+            session.ExpiresAt = DateTime.SpecifyKind(session.ExpiresAt, DateTimeKind.Utc);
+            StateHasChanged();
+            _ = PollLoopAsync(session, cts.Token);
+        }
+        catch (Exception ex)
+        {
+            error = $"Could not reach the sign-in service: {ex.Message}";
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (session != null && !qrRendered && string.IsNullOrEmpty(error))
+        {
+            qrRendered = true;
+            try
+            {
+                await JS.InvokeVoidAsync("qrCodeInterop.generateQRCode", elementId, session.ApproveUrl);
+            }
+            catch (Exception ex)
+            {
+                error = $"Could not draw the QR code: {ex.Message}";
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task PollLoopAsync(QrLoginCreateResponse current, CancellationToken token)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(Math.Max(1, current.PollIntervalSeconds)));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(token))
+            {
+                var response = await ApiService.PostAsync(
+                    $"api/qr-login/sessions/{current.SessionId}/poll",
+                    new QrLoginPollRequest { PollSecret = current.PollSecret });
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    error = "This QR code is no longer valid.";
+                    await InvokeAsync(StateHasChanged);
+                    return;
+                }
+
+                var poll = await ApiService.ParseResponseAsync<QrLoginPollResponse>(response);
+                status = poll?.Status ?? status;
+
+                switch (status)
+                {
+                    case "Approved" when poll?.Auth != null:
+                        await PortalAuth.SaveSessionAsync(poll.Auth);
+                        await InvokeAsync(() => OnSuccess.InvokeAsync(poll.Auth));
+                        return;
+                    case "Denied":
+                        error = "The sign-in was declined on your phone.";
+                        await InvokeAsync(StateHasChanged);
+                        return;
+                    case "Expired":
+                    case "Consumed":
+                        error = "This QR code has expired.";
+                        await InvokeAsync(StateHasChanged);
+                        return;
+                }
+
+                await InvokeAsync(StateHasChanged); // refresh countdown / scanned state
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // component disposed or restarted
+        }
+        catch (Exception ex)
+        {
+            error = $"Lost connection to the sign-in service: {ex.Message}";
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        cts?.Cancel();
+        cts?.Dispose();
+        return ValueTask.CompletedTask;
+    }
+}
+
+<style>
+    .qr-login-panel .qr-frame {
+        width: 100%;
+        max-width: 272px;
+        padding: 8px;
+        background: #fff;
+        border: 1px solid var(--bs-border-color);
+        border-radius: .75rem;
+        transition: opacity .2s ease;
+    }
+
+    /* qrcode.js draws a fixed 256px canvas/img; let it shrink with the column */
+    .qr-login-panel .qr-frame canvas,
+    .qr-login-panel .qr-frame img {
+        width: 100% !important;
+        height: auto !important;
+        display: block;
+    }
+
+    .qr-login-panel .qr-frame.dimmed {
+        opacity: .35;
+    }
+
+    .qr-login-panel .verification-code {
+        letter-spacing: .15em;
+        font-variant-numeric: tabular-nums;
+    }
+</style>

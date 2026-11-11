@@ -1,7 +1,7 @@
-// Service Worker for QR Business Exchange PWA
-const CACHE_NAME = 'qr-business-exchange-v1';
-const STATIC_CACHE = 'qr-business-static-v1';
-const RUNTIME_CACHE = 'qr-business-runtime-v1';
+// Service Worker for qrbound PWA
+const CACHE_NAME = 'qr-business-exchange-v3';
+const STATIC_CACHE = 'qr-business-static-v3';
+const RUNTIME_CACHE = 'qr-business-runtime-v3';
 
 // Files to cache immediately on install
 const STATIC_FILES = [
@@ -73,69 +73,82 @@ self.addEventListener('activate', event => {
     );
 });
 
-// Fetch event - serve from cache, fallback to network
+// "name.<10-char hash>.ext" as produced by .NET static asset fingerprinting
+const FINGERPRINT = /\.[a-z0-9]{10}\.[a-z0-9]+$/i;
+
+function isFingerprinted(pathname) {
+    return pathname.startsWith('/_framework/') && FINGERPRINT.test(pathname);
+}
+
+function isCacheable(response) {
+    return response && response.status === 200 && response.type === 'basic';
+}
+
+function putInCache(request, response) {
+    const copy = response.clone();
+    caches.open(RUNTIME_CACHE).then(cache => cache.put(request, copy));
+}
+
+async function networkFirst(request) {
+    try {
+        const response = await fetch(request);
+        if (isCacheable(response)) {
+            putInCache(request, response);
+        }
+        return response;
+    } catch (error) {
+        // Offline: fall back to the last good copy; for page loads, the cached app shell.
+        const cached = await caches.match(request);
+        if (cached) {
+            return cached;
+        }
+        if (request.mode === 'navigate') {
+            const shell = await caches.match('/index.html') || await caches.match('/');
+            if (shell) {
+                return shell;
+            }
+        }
+        throw error;
+    }
+}
+
+async function cacheFirst(request) {
+    const cached = await caches.match(request);
+    if (cached) {
+        return cached;
+    }
+    const response = await fetch(request);
+    if (isCacheable(response)) {
+        putInCache(request, response);
+    }
+    return response;
+}
+
+// Fetch event
 self.addEventListener('fetch', event => {
     const { request } = event;
     const url = new URL(request.url);
 
-    // Network-only for API calls
-    if (NETWORK_ONLY.some(pattern => url.pathname.includes(pattern))) {
-        event.respondWith(
-            fetch(request)
-                .catch(error => {
-                    console.error('[Service Worker] Network request failed:', error);
-                    return new Response(
-                        JSON.stringify({ error: 'Network unavailable' }),
-                        { status: 503, headers: { 'Content-Type': 'application/json' } }
-                    );
-                })
-        );
+    // API calls, other origins (the API runs on its own host) and non-GET requests are not
+    // intercepted at all: the browser handles them as if there were no service worker.
+    // Re-fetching them from here broke CORS/credentialed calls and turned every failure
+    // (including real API errors) into a fake 503 "Network unavailable".
+    if (url.origin !== self.location.origin ||
+        request.method !== 'GET' ||
+        NETWORK_ONLY.some(pattern => url.pathname.includes(pattern))) {
         return;
     }
 
-    // Cache-first strategy for static assets
-    if (request.method === 'GET') {
-        event.respondWith(
-            caches.match(request)
-                .then(cachedResponse => {
-                    if (cachedResponse) {
-                        console.log('[Service Worker] Serving from cache:', request.url);
-                        return cachedResponse;
-                    }
-
-                    // Not in cache, fetch from network
-                    return fetch(request)
-                        .then(response => {
-                            // Don't cache non-successful responses
-                            if (!response || response.status !== 200 || response.type === 'error') {
-                                return response;
-                            }
-
-                            // Clone the response
-                            const responseToCache = response.clone();
-
-                            // Cache the fetched response
-                            caches.open(RUNTIME_CACHE)
-                                .then(cache => {
-                                    cache.put(request, responseToCache);
-                                    console.log('[Service Worker] Cached new resource:', request.url);
-                                });
-
-                            return response;
-                        })
-                        .catch(error => {
-                            console.error('[Service Worker] Fetch failed:', error);
-                            
-                            // Return offline page for navigation requests
-                            if (request.mode === 'navigate') {
-                                return caches.match('/index.html');
-                            }
-                            
-                            throw error;
-                        });
-                })
-        );
+    // Fingerprinted build output (e.g. _framework/App.80opl6u2kt.wasm) never changes under the
+    // same name, so it is safe to serve from the cache first.
+    if (isFingerprinted(url.pathname)) {
+        event.respondWith(cacheFirst(request));
+        return;
     }
+
+    // Everything else (pages, index.html, dotnet.js, css, js, images) is network-first: a new build
+    // shows up on the next load, and the cache is only used when the network is unavailable.
+    event.respondWith(networkFirst(request));
 });
 
 // Background sync for offline actions
@@ -152,7 +165,7 @@ self.addEventListener('push', event => {
     console.log('[Service Worker] Push notification received');
     
     const data = event.data ? event.data.json() : {};
-    const title = data.title || 'QR Business Exchange';
+    const title = data.title || 'qrbound';
     const options = {
         body: data.body || 'You have a new notification',
         icon: '/icon-192.svg',

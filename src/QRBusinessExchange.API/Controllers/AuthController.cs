@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using QRBusinessExchange.API.DTOs;
+using QRBusinessExchange.Core.DTOs;
 using QRBusinessExchange.Core.Entities;
 using QRBusinessExchange.Core.Interfaces;
 using QRBusinessExchange.Infrastructure.Services;
@@ -37,9 +38,9 @@ public class AuthController : ControllerBase
     /// <param name="request">Registration details</param>
     /// <returns>Authentication response with JWT tokens</returns>
     [HttpPost("register")]
-    [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(Core.DTOs.AuthResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> Register([FromBody] RegisterRequest request)
+    public async Task<IActionResult> Register([FromBody] Core.DTOs.RegisterRequest request)
     {
         // Check if email already exists
         var existingUser = await _userRepository.GetByEmailAsync(request.Email);
@@ -90,7 +91,7 @@ public class AuthController : ControllerBase
         });
         var refreshToken = _jwtService.GenerateRefreshToken();
 
-        var response = new AuthResponse
+        var response = new Core.DTOs.AuthResponse
         {
             AccessToken = accessToken,
             RefreshToken = refreshToken,
@@ -107,9 +108,9 @@ public class AuthController : ControllerBase
     /// <param name="request">Login credentials</param>
     /// <returns>Authentication response with JWT tokens</returns>
     [HttpPost("login")]
-    [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(Core.DTOs.AuthResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> Login([FromBody] LoginRequest request)
+    public async Task<IActionResult> Login([FromBody] Core.DTOs.LoginRequest request)
     {
         var user = await _userRepository.GetByEmailAsync(request.Email);
         if (user == null)
@@ -139,7 +140,7 @@ public class AuthController : ControllerBase
         });
         var refreshToken = _jwtService.GenerateRefreshToken();
 
-        var response = new AuthResponse
+        var response = new Core.DTOs.AuthResponse
         {
             AccessToken = accessToken,
             RefreshToken = refreshToken,
@@ -204,7 +205,7 @@ public class AuthController : ControllerBase
     /// <param name="request">Refresh token request</param>
     /// <returns>New authentication response with JWT tokens</returns>
     [HttpPost("refresh-token")]
-    [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(Core.DTOs.AuthResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request)
     {
@@ -233,11 +234,11 @@ public class AuthController : ControllerBase
     /// <param name="adminSecret">Admin secret key from configuration</param>
     /// <returns>Authentication response with JWT tokens</returns>
     [HttpPost("register-admin")]
-    [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(Core.DTOs.AuthResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> RegisterAdmin(
-        [FromBody] RegisterRequest request,
+        [FromBody] Core.DTOs.RegisterRequest request,
         [FromHeader(Name = "X-Admin-Secret")] string? adminSecret)
     {
         // Validate admin secret (in production, use configuration)
@@ -285,7 +286,7 @@ public class AuthController : ControllerBase
         });
         var refreshToken = _jwtService.GenerateRefreshToken();
 
-        var response = new AuthResponse
+        var response = new Core.DTOs.AuthResponse
         {
             AccessToken = accessToken,
             RefreshToken = refreshToken,
@@ -296,9 +297,9 @@ public class AuthController : ControllerBase
         return CreatedAtAction(nameof(RegisterAdmin), response);
     }
 
-    private static UserDto MapToUserDto(User user)
+    private static UserProfileDto MapToUserDto(User user)
     {
-        return new UserDto
+        return new UserProfileDto
         {
             UserId = user.UserId,
             Email = user.Email,

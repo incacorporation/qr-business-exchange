@@ -1,0 +1,265 @@
+@page "/qr/approve/{SessionId:guid}"
+@using QRBusinessExchange.Client.Services
+@using QRBusinessExchange.Core.DTOs
+@inject ApiService ApiService
+@inject PortalAuthService PortalAuth
+@inject StateService StateService
+@inject NavigationManager Navigation
+
+@* Phone side of QR login: opened by scanning the QR code shown on another screen. *@
+
+<PageTitle>Approve sign-in</PageTitle>
+
+<div class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-12 col-sm-10 col-md-7 col-lg-5">
+            <div class="card shadow border-0">
+                <div class="card-body p-4">
+                    @if (loading)
+                    {
+                        <div class="text-center py-5"><span class="spinner-border text-primary"></span></div>
+                    }
+                    else if (!signedIn)
+                    {
+                        <div class="text-center">
+                            <i class="bi bi-phone display-4 text-primary"></i>
+                            <h4 class="mt-3">Sign in on this phone first</h4>
+                            <p class="text-muted">To approve a sign-in on another screen, this phone must be signed in with a passkey.</p>
+                            <p class="text-muted small">
+                                No passkey on this phone yet? On a computer where you're signed in, open
+                                <strong>Settings → Sign in with your phone camera</strong> and scan that QR code with this phone.
+                            </p>
+                            @if (!string.IsNullOrEmpty(error))
+                            {
+                                <div class="alert alert-danger small">@error</div>
+                            }
+                            <div class="d-grid gap-2">
+                                <button class="btn btn-primary btn-lg" @onclick="SignInHereAsync" disabled="@working">
+                                    <i class="bi bi-key me-2"></i>Sign in with a passkey
+                                </button>
+                                <a class="btn btn-outline-secondary" href="@($"/login?returnUrl={Uri.EscapeDataString($"/qr/approve/{SessionId}")}")">Other sign-in options</a>
+                            </div>
+                        </div>
+                    }
+                    else if (done != null)
+                    {
+                        <div class="text-center">
+                            @if (done == "Approved")
+                            {
+                                <i class="bi bi-check-circle-fill display-3 text-success"></i>
+                                <h4 class="mt-3">Signed in</h4>
+                                <p class="text-muted mb-0">You can return to the other screen.</p>
+                            }
+                            else
+                            {
+                                <i class="bi bi-x-octagon-fill display-3 text-danger"></i>
+                                <h4 class="mt-3">Sign-in blocked</h4>
+                                <p class="text-muted mb-0">@(error ?? "The request was declined. Nobody was signed in.")</p>
+                            }
+                        </div>
+                    }
+                    else if (info == null || info.Status is not ("Pending" or "Scanned"))
+                    {
+                        <div class="text-center">
+                            <i class="bi bi-hourglass-bottom display-4 text-muted"></i>
+                            <h4 class="mt-3">This QR code can't be used</h4>
+                            <p class="text-muted mb-0">@(error ?? $"The request is {info?.Status?.ToLowerInvariant() ?? "unavailable"}. Refresh the QR code on the other screen and scan again.")</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <h4 class="fw-bold text-center mb-1">Sign in on another device?</h4>
+                        <p class="text-center text-muted">
+                            as <strong>@StateService.CurrentUser?.Email</strong>
+                        </p>
+
+                        <ul class="list-group list-group-flush small mb-4">
+                            <li class="list-group-item d-flex justify-content-between">
+                                <span class="text-muted">Signing in to</span>
+                                <span class="fw-semibold text-end">@(info.ApplicationName ?? "qrbound")@(info.BusinessName != null ? $" ({info.BusinessName})" : "")</span>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between">
+                                <span class="text-muted">Device</span>
+                                <span class="text-end">@DeviceDescriber.Describe(info.RequesterUserAgent)</span>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between">
+                                <span class="text-muted">IP address</span>
+                                <span>@(info.RequesterIp ?? "unknown")</span>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between">
+                                <span class="text-muted">Requested</span>
+                                <span>@DateTime.SpecifyKind(info.CreatedAt, DateTimeKind.Utc).ToLocalTime().ToString("t")</span>
+                            </li>
+                        </ul>
+
+                        <p class="fw-semibold text-center mb-2">Tap the number shown on the other screen</p>
+                        <div class="d-flex justify-content-center gap-3 mb-3">
+                            @foreach (var choice in info.VerificationChoices)
+                            {
+                                <button class="btn btn-lg @(selected == choice ? "btn-primary" : "btn-outline-primary") number-choice"
+                                        @onclick="() => selected = choice" disabled="@working">
+                                    @choice
+                                </button>
+                            }
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(error))
+                        {
+                            <div class="alert alert-danger small">@error</div>
+                        }
+
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-success btn-lg" @onclick="ApproveAsync" disabled="@(selected == null || working)">
+                                @if (working)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2"></span>
+                                }
+                                <i class="bi bi-fingerprint me-2"></i>Approve with passkey
+                            </button>
+                            <button class="btn btn-outline-danger" @onclick="DenyAsync" disabled="@working">
+                                This wasn't me
+                            </button>
+                        </div>
+
+                        <p class="small text-muted mt-3 mb-0">
+                            <i class="bi bi-exclamation-triangle me-1"></i>
+                            Only approve if you started this sign-in yourself. Never scan QR codes sent to you by someone else.
+                        </p>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public Guid SessionId { get; set; }
+
+    private bool loading = true;
+    private bool signedIn;
+    private bool working;
+    private QrLoginSessionInfoDto? info;
+    private string? selected;
+    private string? error;
+    private string? done;
+
+    protected override async Task OnInitializedAsync()
+    {
+        signedIn = await PortalAuth.HasSessionAsync();
+        if (signedIn)
+        {
+            await LoadAsync();
+        }
+        loading = false;
+    }
+
+    private async Task LoadAsync()
+    {
+        var response = await ApiService.GetResponseAsync($"api/qr-login/sessions/{SessionId}");
+        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            await PortalAuth.SignOutAsync();
+            signedIn = false;
+            error = "Your session on this phone has expired.";
+            return;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            error = await ApiService.ReadErrorAsync(response, "Sign-in request not found.");
+            return;
+        }
+
+        info = await ApiService.ParseResponseAsync<QrLoginSessionInfoDto>(response);
+    }
+
+    private async Task SignInHereAsync()
+    {
+        working = true;
+        error = null;
+        try
+        {
+            await PortalAuth.SignInWithPasskeyAsync();
+            signedIn = true;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            error = PortalAuthService.Describe(ex);
+        }
+        finally
+        {
+            working = false;
+        }
+    }
+
+    private async Task ApproveAsync()
+    {
+        if (selected == null) return;
+
+        working = true;
+        error = null;
+        StateHasChanged();
+
+        try
+        {
+            var initResponse = await ApiService.PostAsync($"api/qr-login/sessions/{SessionId}/approve/init", new { });
+            if (!initResponse.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ApiService.ReadErrorAsync(initResponse, "Could not start passkey confirmation."));
+            }
+
+            var options = await ApiService.ParseResponseAsync<PasskeyAuthenticationOptionsDto>(initResponse)
+                ?? throw new InvalidOperationException("Invalid passkey options.");
+
+            var assertion = await PortalAuth.AssertAsync(options);
+
+            var response = await ApiService.PostAsync($"api/qr-login/sessions/{SessionId}/approve", new QrLoginApproveRequest
+            {
+                VerificationCode = selected,
+                Challenge = options.Challenge,
+                Assertion = assertion
+            });
+
+            if (response.IsSuccessStatusCode)
+            {
+                done = "Approved";
+                return;
+            }
+
+            var body = await ApiService.ParseResponseAsync<SsoErrorResponse>(response);
+            if (body?.Error == "verification_mismatch")
+            {
+                done = "Denied";
+                error = body.ErrorDescription;
+                return;
+            }
+
+            error = body?.ErrorDescription ?? "Approval failed.";
+        }
+        catch (Exception ex)
+        {
+            error = PortalAuthService.Describe(ex);
+        }
+        finally
+        {
+            working = false;
+        }
+    }
+
+    private async Task DenyAsync()
+    {
+        working = true;
+        await ApiService.PostAsync($"api/qr-login/sessions/{SessionId}/deny", new { });
+        done = "Denied";
+        working = false;
+    }
+}
+
+<style>
+    .number-choice {
+        min-width: 4.5rem;
+        font-size: 1.5rem;
+        font-variant-numeric: tabular-nums;
+    }
+</style>

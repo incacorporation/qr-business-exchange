@@ -382,3 +382,9 @@ FodyWeavers.xsd
 # JetBrains Rider
 .idea/
 *.sln.iml
+
+# SSO token signing keys (never commit)
+**/keys/*.pem
+
+# Local test credentials
+.claude/*.local.md

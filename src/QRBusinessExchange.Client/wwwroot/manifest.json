@@ -1,11 +1,11 @@
 {
-  "name": "QR Business Exchange",
-  "short_name": "QR Business",
+  "name": "qrbound",
+  "short_name": "qrbound",
   "description": "Connect, network, and grow your business with QR code-based professional networking",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#4A90E2",
+  "background_color": "#1F43AD",
+  "theme_color": "#1F43AD",
   "orientation": "portrait-primary",
   "scope": "/",
   "categories": [
@@ -15,16 +15,28 @@
   ],
   "icons": [
     {
-      "src": "icon-192.svg",
+      "src": "icon-192.png",
       "sizes": "192x192",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     },
     {
       "src": "icon-192.svg",
-      "sizes": "512x512",
+      "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "favicon.png",

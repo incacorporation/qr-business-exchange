@@ -19,6 +19,8 @@ builder.Services.AddScoped<StateService>();
 builder.Services.AddScoped<IndexedDBService>();
 builder.Services.AddScoped<GeolocationService>();
 builder.Services.AddScoped<PwaService>();
+builder.Services.AddScoped<WebAuthnService>();
+builder.Services.AddScoped<PortalAuthService>();
 
 // Add authorization
 builder.Services.AddAuthorizationCore();
