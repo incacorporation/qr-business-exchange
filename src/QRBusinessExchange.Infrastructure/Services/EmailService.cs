@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Mail;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using QRBusinessExchange.Core.Interfaces;
 using QRBusinessExchange.Infrastructure.Configuration;
@@ -16,17 +17,20 @@ public class EmailService : IEmailService
     private readonly EmailSettings _emailSettings;
     private readonly ApplicationDbContext _context;
     private readonly string _baseUrl;
+    private readonly ILogger<EmailService> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="EmailService"/> class
     /// </summary>
     /// <param name="emailSettings">Email configuration settings</param>
     /// <param name="context">The application database context</param>
+    /// <param name="logger">Logger instance for diagnostics</param>
     /// <param name="baseUrl">The base URL for verification links (e.g., "https://qrbusinessexchange.com")</param>
-    public EmailService(IOptions<EmailSettings> emailSettings, ApplicationDbContext context, string baseUrl = "https://qrbusinessexchange.com")
+    public EmailService(IOptions<EmailSettings> emailSettings, ApplicationDbContext context, ILogger<EmailService> logger, string baseUrl = "https://qrbusinessexchange.com")
     {
         _emailSettings = emailSettings?.Value ?? throw new ArgumentNullException(nameof(emailSettings));
         _context = context ?? throw new ArgumentNullException(nameof(context));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _baseUrl = baseUrl ?? throw new ArgumentNullException(nameof(baseUrl));
 
         // Don't validate on construction - validate when actually sending email
@@ -260,12 +264,12 @@ public class EmailService : IEmailService
         catch (SmtpException ex)
         {
             // Log the error but don't throw - return false to indicate failure
-            Console.Error.WriteLine($"SMTP error sending email to {to}: {ex.Message}");
+            _logger.LogError(ex, "SMTP error sending email to {Email}. Status: {StatusCode}", to, ex.StatusCode);
             return false;
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Error sending email to {to}: {ex.Message}");
+            _logger.LogError(ex, "Error sending email to {Email}", to);
             return false;
         }
     }

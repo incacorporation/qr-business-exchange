@@ -246,6 +246,7 @@ Secrets are not in this file. Put them in the service's environment, readable on
 [Service]
 Environment=Database__Password=<password>
 Environment=JwtSettings__SecretKey=<output of: openssl rand -base64 64 | tr -d '\n'>
+Environment=EmailSettings__SmtpPassword=<password of the noreply@qrbound.com mailbox>
 # Only if you need POST /api/auth/register-admin; leave it out to keep that endpoint switched off.
 # Environment=Admin__RegistrationSecret=<output of: openssl rand -base64 32>
 ```

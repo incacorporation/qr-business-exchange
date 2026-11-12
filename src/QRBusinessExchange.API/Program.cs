@@ -88,7 +88,14 @@ builder.Services.AddScoped<IPasskeyRepository, PasskeyRepository>();
 builder.Services.AddHttpClient(); // Required for OneSignalService
 builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<IQRCodeService, QRCodeService>();
-builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<IEmailService>(provider =>
+{
+    var emailSettings = provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<EmailSettings>>();
+    var context = provider.GetRequiredService<ApplicationDbContext>();
+    var logger = provider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<EmailService>>();
+    var portalBaseUrl = builder.Configuration["Sso:PortalBaseUrl"] ?? "https://qrbusinessexchange.com";
+    return new EmailService(emailSettings, context, logger, portalBaseUrl);
+});
 builder.Services.AddScoped<IGeolocationService, GeolocationService>();
 builder.Services.AddScoped<INotificationService, OneSignalService>();
 builder.Services.AddScoped<WebAuthnService>();

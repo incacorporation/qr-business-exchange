@@ -53,7 +53,7 @@ a short or sample one.
     "SmtpHost": "smtp.gmail.com",
     "SmtpPort": 587,
     "SmtpUser": "your-email@gmail.com",
-    "SmtpPassword": "your-app-password",
+    "SmtpPassword": "",
     "FromEmail": "noreply@qrbound.com",
     "FromName": "QR Business Exchange"
   },
@@ -139,13 +139,14 @@ cd src/QRBusinessExchange.API
 $b = New-Object byte[] 64; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b)
 dotnet user-secrets set "JwtSettings:SecretKey" ([Convert]::ToBase64String($b))
 dotnet user-secrets set "Database:Password" "<database password>"
+dotnet user-secrets set "EmailSettings:SmtpPassword" "<mailbox password for EmailSettings:SmtpUser>"
 dotnet user-secrets set "PaymentSettings:PayPalClientSecret" "<secret>"
 # Optional: allows POST /api/auth/register-admin (send it in the X-Admin-Secret header). Leave unset to keep it off.
 dotnet user-secrets set "Admin:RegistrationSecret" "<long random value>"
 ```
 
 On servers use environment variables instead: `JwtSettings__SecretKey`, `Database__Password`,
-`Admin__RegistrationSecret`. Changing the JWT key signs everyone out.
+`EmailSettings__SmtpPassword`, `Admin__RegistrationSecret`. Changing the JWT key signs everyone out.
 
 ## Testing
 
