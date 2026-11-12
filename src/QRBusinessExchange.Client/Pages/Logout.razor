@@ -1,22 +1,16 @@
 @page "/logout"
+@layout AuthLayout
 @inject StateService StateService
 @inject NavigationManager Navigation
 
 <PageTitle>Logging out...</PageTitle>
 
-<div class="container-fluid min-vh-100 d-flex align-items-center">
-    <div class="row w-100 justify-content-center">
-        <div class="col-12 col-sm-10 col-md-6 col-lg-4">
-            <div class="dashboard-card text-center p-5">
-                <i class="bi bi-box-arrow-right display-1 mb-4" style="color: var(--primary-color);"></i>
-                <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status">
-                    <span class="visually-hidden">Logging out...</span>
-                </div>
-                <h4 class="fw-bold mb-2">Logging Out</h4>
-                <p class="text-muted">Please wait while we securely sign you out...</p>
-            </div>
-        </div>
+<div class="auth-narrow text-center">
+    <div class="spinner-border text-white mb-3" style="width: 3rem; height: 3rem;" role="status">
+        <span class="visually-hidden">Logging out...</span>
     </div>
+    <h1 class="auth-title">Logging out</h1>
+    <p class="auth-subtitle">Please wait while we securely sign you out…</p>
 </div>
 
 @code {

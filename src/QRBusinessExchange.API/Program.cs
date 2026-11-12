@@ -1,5 +1,6 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -13,9 +14,16 @@ using QRBusinessExchange.Infrastructure.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 // Configure database
+// The connection string (no password) is in appsettings.json; the password comes from
+// user-secrets in development or the Database__Password environment variable on servers.
+var databaseConnection = DatabaseConnection.Build(
+    builder.Configuration.GetConnectionString(DatabaseConnection.ConnectionStringKey),
+    builder.Configuration[DatabaseConnection.PasswordKey],
+    "QRBusinessExchange.API");
+
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(
-        "Server=incacorporation.net;Database=www.qrbound.com;User Id=ssoAdministrator;Password=8^7lhy1F;TrustServerCertificate=True;Encrypt=False;",
+        databaseConnection.ConnectionString,
         b => b.MigrationsAssembly("QRBusinessExchange.Infrastructure")
     ));
 
@@ -25,9 +33,10 @@ builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("Emai
 builder.Services.Configure<PaymentSettings>(builder.Configuration.GetSection("PaymentSettings"));
 builder.Services.Configure<OneSignalSettings>(builder.Configuration.GetSection("OneSignalSettings"));
 
-// Configure JWT authentication
-var jwtSettings = builder.Configuration.GetSection("JwtSettings").Get<JwtSettings>() 
-    ?? new JwtSettings { SecretKey = "YourSuperSecretKeyForJWTTokenGenerationMinimum256Bits!", Issuer = "QRBusinessExchange", Audience = "QRBusinessExchangeAPI" };
+// Configure JWT authentication. The signing key comes only from user-secrets (development) or the
+// JwtSettings__SecretKey environment variable (servers); startup stops if it's missing, short or a sample value.
+var jwtSettings = builder.Configuration.GetSection("JwtSettings").Get<JwtSettings>() ?? new JwtSettings();
+var jwtSigningKey = JwtSettings.GetValidatedKeyBytes(jwtSettings.SecretKey);
 
 builder.Services.AddAuthentication(options =>
 {
@@ -44,7 +53,8 @@ builder.Services.AddAuthentication(options =>
         ValidateIssuerSigningKey = true,
         ValidIssuer = jwtSettings.Issuer,
         ValidAudience = jwtSettings.Audience,
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.SecretKey)),
+        IssuerSigningKey = new SymmetricSecurityKey(jwtSigningKey),
+        ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
         ClockSkew = TimeSpan.Zero
     };
 });
@@ -82,6 +92,11 @@ builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IGeolocationService, GeolocationService>();
 builder.Services.AddScoped<INotificationService, OneSignalService>();
 builder.Services.AddScoped<WebAuthnService>();
+
+// Password-reset links: signed and encrypted with Data Protection keys kept on the server.
+// In containers, persist the keys (PersistKeysToFileSystem on a volume) so links survive restarts.
+builder.Services.AddDataProtection().SetApplicationName("QRBusinessExchange");
+builder.Services.AddSingleton<QRBusinessExchange.API.Services.PasswordResetTokens>();
 
 // Multi-business QR / SSO login core
 builder.Services.AddMemoryCache(); // WebAuthn challenges (use a distributed cache when scaling out)
@@ -164,6 +179,14 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 var app = builder.Build();
+
+if (databaseConnection.TrustServerCertificate)
+{
+    app.Logger.LogWarning(
+        "Database traffic to {Server} is encrypted, but the server's certificate is not verified " +
+        "(TrustServerCertificate=True). Install a trusted certificate on SQL Server and set TrustServerCertificate=False.",
+        databaseConnection.DataSource);
+}
 
 // Initialize database and seed data
 using (var scope = app.Services.CreateScope())

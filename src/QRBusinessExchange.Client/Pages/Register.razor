@@ -1,4 +1,5 @@
 @page "/register"
+@layout AuthLayout
 @using System.ComponentModel.DataAnnotations
 @using QRBusinessExchange.Core.DTOs
 @using QRBusinessExchange.Client.Services
@@ -10,176 +11,164 @@
 
 <PageTitle>Create account - qrbound</PageTitle>
 
-<div class="container-fluid min-vh-100 d-flex align-items-center py-4 px-3 px-sm-4">
-    <div class="row w-100 justify-content-center">
-        <div class="col-12 col-sm-10 col-md-8 col-lg-6 col-xl-5">
+<div class="@(step == Step.Passkey && passkeyMode == PasskeyMode.Phone ? "auth-medium" : "auth-narrow")">
 
-            <div class="text-center mb-4">
-                <img src="images/qrbound-logo.png" class="brand-logo brand-logo-card" alt="qrbound - Let's get QR Bound" />
+    <div class="auth-steps" aria-label="Progress">
+        <span class="@(step == Step.Details ? "active" : "done")">1 Account</span>
+        <span class="@(step == Step.Passkey ? "active" : step == Step.Done ? "done" : "")">2 Passkey</span>
+        <span class="@(step == Step.Done ? "active" : "")">3 Done</span>
+    </div>
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger auth-alert d-flex align-items-start gap-2" role="alert">
+            <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+            <span class="flex-grow-1">@errorMessage</span>
+            <button type="button" class="btn-close btn-sm" aria-label="Dismiss" @onclick="@(() => errorMessage = null)"></button>
+        </div>
+    }
+
+    @if (step == Step.Details)
+    {
+        <h1 class="auth-title">Create your account</h1>
+        <p class="auth-subtitle">Next, you'll add a passkey so you can log in with your phone.</p>
+
+        <EditForm Model="form" OnValidSubmit="CreateAccountAsync">
+            <DataAnnotationsValidator />
+
+            <div class="row g-2">
+                <div class="col-6 auth-field">
+                    <label for="firstName" class="visually-hidden">First name</label>
+                    <InputText id="firstName" class="form-control auth-input" placeholder="First name" @bind-Value="form.FirstName" autocomplete="given-name" disabled="@working" />
+                    <ValidationMessage For="() => form.FirstName" />
+                </div>
+                <div class="col-6 auth-field">
+                    <label for="lastName" class="visually-hidden">Last name</label>
+                    <InputText id="lastName" class="form-control auth-input" placeholder="Last name" @bind-Value="form.LastName" autocomplete="family-name" disabled="@working" />
+                    <ValidationMessage For="() => form.LastName" />
+                </div>
             </div>
 
-            <!-- Progress -->
-            <div class="d-flex justify-content-center gap-2 mb-3 small" aria-label="Progress">
-                <span class="badge rounded-pill @(step == Step.Details ? "text-bg-primary" : "text-bg-success")">1 Account</span>
-                <span class="badge rounded-pill @(step == Step.Passkey ? "text-bg-primary" : step == Step.Done ? "text-bg-success" : "text-bg-light border")">2 Passkey</span>
-                <span class="badge rounded-pill @(step == Step.Done ? "text-bg-primary" : "text-bg-light border")">3 Done</span>
+            <div class="auth-field">
+                <label for="email" class="visually-hidden">Email</label>
+                <InputText id="email" type="email" class="form-control auth-input" placeholder="Email" @bind-Value="form.Email" autocomplete="email" disabled="@working" />
+                <ValidationMessage For="() => form.Email" />
             </div>
 
-            <div class="card shadow-lg border-0">
-                <div class="card-body p-4 p-sm-5">
+            <div class="auth-field">
+                <label for="company" class="visually-hidden">Company (optional)</label>
+                <InputText id="company" class="form-control auth-input" placeholder="Company (optional)" @bind-Value="form.CompanyName" autocomplete="organization" disabled="@working" />
+            </div>
 
-                    @if (!string.IsNullOrEmpty(errorMessage))
+            <div class="auth-field">
+                <label for="phone" class="visually-hidden">Phone (optional)</label>
+                <InputText id="phone" type="tel" class="form-control auth-input" placeholder="Phone (optional)" @bind-Value="form.PhoneNumber" autocomplete="tel" disabled="@working" />
+                <ValidationMessage For="() => form.PhoneNumber" />
+            </div>
+
+            <div class="auth-field">
+                <label for="password" class="visually-hidden">Password</label>
+                <InputText id="password" type="password" class="form-control auth-input" placeholder="Password (at least 8 characters)" @bind-Value="form.Password" autocomplete="new-password" disabled="@working" />
+                <ValidationMessage For="() => form.Password" />
+            </div>
+
+            <div class="auth-field mb-4">
+                <label for="confirm" class="visually-hidden">Confirm password</label>
+                <InputText id="confirm" type="password" class="form-control auth-input" placeholder="Confirm password" @bind-Value="form.ConfirmPassword" autocomplete="new-password" disabled="@working" />
+                <ValidationMessage For="() => form.ConfirmPassword" />
+            </div>
+
+            <button type="submit" class="auth-btn" disabled="@working">
+                @if (working)
+                {
+                    <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                }
+                <span>Create account</span>
+            </button>
+        </EditForm>
+
+        <hr class="auth-divider" />
+
+        <nav class="auth-links" aria-label="Account help">
+            <a href="@LoginHref">Already have an account? Log in</a>
+            <a href="/email-verification">Resend email confirmation</a>
+        </nav>
+    }
+    else if (step == Step.Passkey)
+    {
+        <h1 class="auth-title">Add a passkey</h1>
+        <p class="auth-subtitle">
+            Passkeys replace your password with your fingerprint, face or screen lock. Business apps that
+            use qrbound sign-in require one.
+        </p>
+
+        @if (passkeyMode == PasskeyMode.Choose)
+        {
+            <button type="button" class="auth-choice" @onclick="ShowPhoneQr">
+                <i class="bi bi-qr-code-scan" aria-hidden="true"></i>
+                <span>
+                    <strong>Use my phone's camera</strong>
+                    <small>Scan a QR code and create the passkey on your phone</small>
+                </span>
+            </button>
+
+            @if (passkeysSupported)
+            {
+                <button type="button" class="auth-choice" @onclick="CreatePasskeyHereAsync" disabled="@working">
+                    @if (working)
                     {
-                        <div class="alert alert-danger alert-dismissible" role="alert">
-                            <i class="bi bi-exclamation-triangle-fill me-2"></i>@errorMessage
-                            <button type="button" class="btn-close" @onclick="@(() => errorMessage = null)"></button>
-                        </div>
-                    }
-
-                    @if (step == Step.Details)
-                    {
-                        <h3 class="card-title text-center fw-bold mb-1">Create your account</h3>
-                        <p class="text-center text-muted mb-4">Next, you'll add a passkey so you can sign in with your phone.</p>
-
-                        <EditForm Model="form" OnValidSubmit="CreateAccountAsync">
-                            <DataAnnotationsValidator />
-
-                            <div class="row g-3 mb-3">
-                                <div class="col-sm-6">
-                                    <label for="firstName" class="form-label fw-semibold">First name</label>
-                                    <InputText id="firstName" class="form-control" @bind-Value="form.FirstName" autocomplete="given-name" disabled="@working" />
-                                    <ValidationMessage For="() => form.FirstName" />
-                                </div>
-                                <div class="col-sm-6">
-                                    <label for="lastName" class="form-label fw-semibold">Last name</label>
-                                    <InputText id="lastName" class="form-control" @bind-Value="form.LastName" autocomplete="family-name" disabled="@working" />
-                                    <ValidationMessage For="() => form.LastName" />
-                                </div>
-                            </div>
-
-                            <div class="mb-3">
-                                <label for="email" class="form-label fw-semibold">Email address</label>
-                                <InputText id="email" type="email" class="form-control" @bind-Value="form.Email" autocomplete="email" placeholder="name@example.com" disabled="@working" />
-                                <ValidationMessage For="() => form.Email" />
-                            </div>
-
-                            <div class="row g-3 mb-3">
-                                <div class="col-sm-6">
-                                    <label for="company" class="form-label fw-semibold">Company <span class="text-muted fw-normal">(optional)</span></label>
-                                    <InputText id="company" class="form-control" @bind-Value="form.CompanyName" autocomplete="organization" disabled="@working" />
-                                </div>
-                                <div class="col-sm-6">
-                                    <label for="phone" class="form-label fw-semibold">Phone <span class="text-muted fw-normal">(optional)</span></label>
-                                    <InputText id="phone" type="tel" class="form-control" @bind-Value="form.PhoneNumber" autocomplete="tel" disabled="@working" />
-                                    <ValidationMessage For="() => form.PhoneNumber" />
-                                </div>
-                            </div>
-
-                            <div class="row g-3 mb-4">
-                                <div class="col-sm-6">
-                                    <label for="password" class="form-label fw-semibold">Password</label>
-                                    <InputText id="password" type="password" class="form-control" @bind-Value="form.Password" autocomplete="new-password" disabled="@working" />
-                                    <ValidationMessage For="() => form.Password" />
-                                </div>
-                                <div class="col-sm-6">
-                                    <label for="confirm" class="form-label fw-semibold">Confirm password</label>
-                                    <InputText id="confirm" type="password" class="form-control" @bind-Value="form.ConfirmPassword" autocomplete="new-password" disabled="@working" />
-                                    <ValidationMessage For="() => form.ConfirmPassword" />
-                                </div>
-                            </div>
-
-                            <div class="d-grid">
-                                <button type="submit" class="btn btn-primary btn-lg" disabled="@working">
-                                    @if (working)
-                                    {
-                                        <span class="spinner-border spinner-border-sm me-2"></span>
-                                    }
-                                    Create account
-                                </button>
-                            </div>
-                        </EditForm>
-
-                        <p class="text-center text-muted small mt-4 mb-0">
-                            Already have an account? <a href="@LoginHref" class="fw-semibold text-decoration-none">Sign in</a>
-                        </p>
-                    }
-                    else if (step == Step.Passkey)
-                    {
-                        <h3 class="card-title text-center fw-bold mb-1">Add a passkey</h3>
-                        <p class="text-center text-muted mb-4">
-                            Passkeys replace your password with your fingerprint, face or screen lock. Business apps that
-                            use qrbound sign-in require one.
-                        </p>
-
-                        @if (passkeyMode == PasskeyMode.Choose)
-                        {
-                            <div class="d-grid gap-3">
-                                <button class="btn btn-outline-primary btn-lg text-start d-flex align-items-center p-3" @onclick="ShowPhoneQr">
-                                    <i class="bi bi-qr-code-scan fs-2 me-3"></i>
-                                    <span>
-                                        <span class="fw-semibold d-block">Use my phone's camera</span>
-                                        <span class="small text-muted">Scan a QR code and create the passkey on your phone</span>
-                                    </span>
-                                </button>
-
-                                @if (passkeysSupported)
-                                {
-                                    <button class="btn btn-outline-primary btn-lg text-start d-flex align-items-center p-3" @onclick="CreatePasskeyHereAsync" disabled="@working">
-                                        @if (working)
-                                        {
-                                            <span class="spinner-border me-3"></span>
-                                        }
-                                        else
-                                        {
-                                            <i class="bi bi-fingerprint fs-2 me-3"></i>
-                                        }
-                                        <span>
-                                            <span class="fw-semibold d-block">Use this device</span>
-                                            <span class="small text-muted">Windows Hello, Touch ID, Face ID or a security key</span>
-                                        </span>
-                                    </button>
-                                }
-                            </div>
-                        }
-                        else
-                        {
-                            <LinkPhonePanel AutoStart="true" OnLinked="OnPhoneLinked" />
-                            <div class="text-center mt-2">
-                                <button class="btn btn-link btn-sm" @onclick="() => passkeyMode = PasskeyMode.Choose">Back</button>
-                            </div>
-                        }
-
-                        <div class="text-center mt-4">
-                            <button class="btn btn-link btn-sm text-muted" @onclick="Finish">Skip for now</button>
-                        </div>
+                        <span class="spinner-border" aria-hidden="true"></span>
                     }
                     else
                     {
-                        <div class="text-center">
-                            <i class="bi bi-check-circle-fill display-3 text-success"></i>
-                            <h3 class="fw-bold mt-3">You're all set</h3>
-                            @if (passkeyWhere != null)
-                            {
-                                <p class="text-muted">
-                                    Your passkey is on <strong>@passkeyWhere</strong>.
-                                    @if (passkeyWhere != "this device")
-                                    {
-                                        <span>Next time, choose "Scan with your phone" on the sign-in page and scan the QR code with that phone.</span>
-                                    }
-                                </p>
-                            }
-                            else
-                            {
-                                <p class="text-muted">You can add a passkey or link your phone later in <strong>Settings</strong>.</p>
-                            }
-                            <p class="text-muted small">We sent a verification link to <strong>@form.Email</strong>.</p>
-                            <button class="btn btn-primary btn-lg" @onclick="Continue">Continue</button>
-                        </div>
+                        <i class="bi bi-fingerprint" aria-hidden="true"></i>
                     }
-                </div>
+                    <span>
+                        <strong>Use this device</strong>
+                        <small>Windows Hello, Touch ID, Face ID or a security key</small>
+                    </span>
+                </button>
+            }
+        }
+        else
+        {
+            <div class="auth-panel">
+                <LinkPhonePanel AutoStart="true" OnLinked="OnPhoneLinked" />
             </div>
+            <div class="auth-links mt-3">
+                <button type="button" class="auth-link-btn" @onclick="() => passkeyMode = PasskeyMode.Choose">Back</button>
+            </div>
+        }
+
+        <hr class="auth-divider" />
+
+        <div class="auth-links">
+            <button type="button" class="auth-link-btn" @onclick="Finish">Skip for now</button>
         </div>
-    </div>
+    }
+    else
+    {
+        <div class="text-center">
+            <i class="bi bi-check-circle-fill display-3" style="color: #7CF29A;" aria-hidden="true"></i>
+            <h1 class="auth-title mt-3">You're all set</h1>
+            @if (passkeyWhere != null)
+            {
+                <p class="auth-subtitle mb-2">
+                    Your passkey is on <strong class="text-white">@passkeyWhere</strong>.
+                    @if (passkeyWhere != "this device")
+                    {
+                        <span>Next time, choose "Log in with your phone camera" on the login page and scan the QR code with that phone.</span>
+                    }
+                </p>
+            }
+            else
+            {
+                <p class="auth-subtitle mb-2">You can add a passkey or link your phone later in <strong class="text-white">Settings</strong>.</p>
+            }
+            <p class="auth-subtitle small">We sent a verification link to <strong class="text-white">@form.Email</strong>.</p>
+            <button type="button" class="auth-btn" @onclick="Continue">Continue</button>
+        </div>
+    }
 </div>
 
 @code {

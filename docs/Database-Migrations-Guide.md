@@ -118,13 +118,27 @@ dotnet tool update --global dotnet-ef
 Server=incacorporation.net
 Database=www.qrbound.com
 User Id=ssoAdministrator
-Password=8^7lhy1F
+Password=(not stored here; see "Database password" below)
 ```
+
+The full connection string (without the password) is `ConnectionStrings:DefaultConnection` in
+`src/QRBusinessExchange.API/appsettings.json`. The API refuses to start with `Encrypt=Optional`/`False`.
+
+**Database password:** never put it in code, appsettings or docs.
+```powershell
+# Development: stored in your user profile, outside the repo
+dotnet user-secrets set "Database:Password" "<password>" --project src/QRBusinessExchange.API
+```
+On servers, set the environment variable `Database__Password` instead.
+
+`dotnet ef` reads the same settings through the API project, so run it from
+`src/QRBusinessExchange.API` (or pass `--startup-project src/QRBusinessExchange.API`).
 
 **Test Connection:**
 ```powershell
-# Using sqlcmd (if installed)
-sqlcmd -S incacorporation.net -U ssoAdministrator -P "8^7lhy1F" -Q "SELECT @@VERSION"
+# Using sqlcmd (if installed); -N encrypts, -C accepts the server's self-signed certificate
+$env:DB_PASSWORD = "<password>"
+sqlcmd -S incacorporation.net -d www.qrbound.com -U ssoAdministrator -P $env:DB_PASSWORD -N -C -Q "SELECT @@VERSION"
 ```
 
 **Firewall Requirements:**
@@ -380,7 +394,7 @@ curl -X POST "https://localhost:5001/api/Auth/login" `
 
 **Solutions:**
 1. Verify username: `ssoAdministrator`
-2. Verify password: `8^7lhy1F`
+2. Verify the password stored in user-secrets (`dotnet user-secrets list --project src/QRBusinessExchange.API`)
 3. Check SQL Server allows SQL Authentication
 4. Verify user has CREATE DATABASE permissions
 

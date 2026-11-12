@@ -1,4 +1,5 @@
 @page "/email-verification"
+@layout AuthLayout
 @using QRBusinessExchange.Client.Services
 @inject ApiService ApiService
 @inject IndexedDBService IndexedDB
@@ -6,9 +7,7 @@
 
 <PageTitle>Email Verification - qrbound</PageTitle>
 
-<div class="container mt-5">
-    <div class="row justify-content-center">
-        <div class="col-md-6 col-lg-4">
+<div class="auth-medium">
             <div class="card shadow">
                 <div class="card-body p-4">
                     <h3 class="text-center mb-4">Verify Email</h3>
@@ -69,8 +68,6 @@
                     </div>
                 </div>
             </div>
-        </div>
-    </div>
 </div>
 
 @code {

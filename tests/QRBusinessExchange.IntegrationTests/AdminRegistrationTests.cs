@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using QRBusinessExchange.API.DTOs;
 using Xunit;
@@ -14,13 +15,21 @@ namespace QRBusinessExchange.IntegrationTests;
 /// </summary>
 public class AdminRegistrationTests : IClassFixture<WebApplicationFactory<Program>>
 {
+    // Random per test run: the API no longer has built-in secrets, so the tests supply their own.
+    private static readonly string TestJwtKey = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(64));
+    private static readonly string TestAdminSecret = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+
     private readonly WebApplicationFactory<Program> _factory;
     private readonly HttpClient _client;
 
     public AdminRegistrationTests(WebApplicationFactory<Program> factory)
     {
-        _factory = factory;
-        _client = factory.CreateClient();
+        _factory = factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("JwtSettings:SecretKey", TestJwtKey);
+            builder.UseSetting("Admin:RegistrationSecret", TestAdminSecret);
+        });
+        _client = _factory.CreateClient();
     }
 
     [Fact]
@@ -41,7 +50,7 @@ public class AdminRegistrationTests : IClassFixture<WebApplicationFactory<Progra
         {
             Content = JsonContent.Create(adminRequest)
         };
-        request.Headers.Add("X-Admin-Secret", "QRBizExchange2025!Admin");
+        request.Headers.Add("X-Admin-Secret", TestAdminSecret);
 
         // Act
         var response = await _client.SendAsync(request);
@@ -125,7 +134,7 @@ public class AdminRegistrationTests : IClassFixture<WebApplicationFactory<Progra
         {
             Content = JsonContent.Create(adminRequest)
         };
-        request1.Headers.Add("X-Admin-Secret", "QRBizExchange2025!Admin");
+        request1.Headers.Add("X-Admin-Secret", TestAdminSecret);
 
         await _client.SendAsync(request1); // First registration
 
@@ -134,7 +143,7 @@ public class AdminRegistrationTests : IClassFixture<WebApplicationFactory<Progra
         {
             Content = JsonContent.Create(adminRequest)
         };
-        request2.Headers.Add("X-Admin-Secret", "QRBizExchange2025!Admin");
+        request2.Headers.Add("X-Admin-Secret", TestAdminSecret);
 
         var response = await _client.SendAsync(request2);
 
@@ -160,7 +169,7 @@ public class AdminRegistrationTests : IClassFixture<WebApplicationFactory<Progra
         {
             Content = JsonContent.Create(adminRequest)
         };
-        registerRequest.Headers.Add("X-Admin-Secret", "QRBizExchange2025!Admin");
+        registerRequest.Headers.Add("X-Admin-Secret", TestAdminSecret);
 
         await _client.SendAsync(registerRequest);
 

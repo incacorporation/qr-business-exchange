@@ -90,8 +90,22 @@ curl -X POST https://localhost:5001/api/Auth/login -H "Content-Type: application
 Server=incacorporation.net
 Database=www.qrbound.com
 User Id=ssoAdministrator
-Password=8^7lhy1F
+Password=(not stored here; see "Database password" below)
 ```
+
+The full connection string (without the password) is `ConnectionStrings:DefaultConnection` in
+`src/QRBusinessExchange.API/appsettings.json`. It always uses `Encrypt=Mandatory`.
+
+### Database password
+
+Never put the password in code, appsettings or docs.
+
+```powershell
+# Development: stored in your user profile, outside the repo
+dotnet user-secrets set "Database:Password" "<password>" --project src/QRBusinessExchange.API
+```
+
+On servers, set the environment variable `Database__Password`.
 
 ---
 

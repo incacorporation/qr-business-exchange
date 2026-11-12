@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Xunit;
 
@@ -15,8 +16,11 @@ public class EmailServiceTests : IClassFixture<WebApplicationFactory<Program>>
 
     public EmailServiceTests(WebApplicationFactory<Program> factory)
     {
-        _factory = factory;
-        _client = factory.CreateClient();
+        // The API has no built-in JWT key any more; give it a random one for this test run.
+        _factory = factory.WithWebHostBuilder(builder =>
+            builder.UseSetting("JwtSettings:SecretKey",
+                Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(64))));
+        _client = _factory.CreateClient();
     }
 
     [Fact]

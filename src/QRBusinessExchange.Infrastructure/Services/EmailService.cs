@@ -166,6 +166,63 @@ public class EmailService : IEmailService
         }
     }
 
+    /// <inheritdoc/>
+    public Task<bool> SendPasswordResetEmailAsync(string email, string firstName, string resetUrl, TimeSpan validFor)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            throw new ArgumentException("Email cannot be null or empty", nameof(email));
+        }
+
+        var url = WebUtility.HtmlEncode(resetUrl);
+        var minutes = (int)Math.Round(validFor.TotalMinutes);
+        var body = BrandedEmail(
+            $"Hi {WebUtility.HtmlEncode(firstName)},",
+            $@"<p>We received a request to reset the password for your qrbound account.</p>
+               <p style='text-align:center;margin:28px 0;'>
+                   <a href='{url}' style='display:inline-block;padding:12px 28px;background:#0B5CFF;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold;'>Choose a new password</a>
+               </p>
+               <p>This link works once and expires in {minutes} minutes.</p>
+               <p>If you didn't ask to reset your password, you can ignore this email; your password won't change.</p>
+               <p style='font-size:12px;color:#666;word-break:break-all;'>If the button doesn't work, copy this link into your browser:<br>{url}</p>");
+
+        return SendEmailAsync(email, "Reset your qrbound password", body);
+    }
+
+    /// <inheritdoc/>
+    public Task<bool> SendPasswordChangedEmailAsync(string email, string firstName, string forgotPasswordUrl)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            throw new ArgumentException("Email cannot be null or empty", nameof(email));
+        }
+
+        var body = BrandedEmail(
+            $"Hi {WebUtility.HtmlEncode(firstName)},",
+            $@"<p>The password for your qrbound account was just changed.</p>
+               <p>If this was you, there's nothing else to do.</p>
+               <p><strong>If it wasn't you,</strong> reset your password right away at
+                  <a href='{WebUtility.HtmlEncode(forgotPasswordUrl)}'>{WebUtility.HtmlEncode(forgotPasswordUrl)}</a>
+                  and check the passkeys on your account in Settings.</p>");
+
+        return SendEmailAsync(email, "Your qrbound password was changed", body);
+    }
+
+    /// <summary>Wraps content in the qrbound email layout (royal-blue header).</summary>
+    private static string BrandedEmail(string greeting, string contentHtml) => $@"
+        <html>
+        <body style='margin:0;padding:0;background:#f3f5fb;font-family:Arial,sans-serif;line-height:1.6;color:#1e2537;'>
+            <div style='max-width:560px;margin:0 auto;padding:24px;'>
+                <div style='background:#1F43AD;color:#ffffff;padding:20px;text-align:center;border-radius:10px 10px 0 0;font-size:24px;font-weight:bold;'>qrbound</div>
+                <div style='background:#ffffff;padding:28px;border-radius:0 0 10px 10px;'>
+                    <p>{greeting}</p>
+                    {contentHtml}
+                </div>
+                <p style='text-align:center;font-size:12px;color:#7a8296;'>&copy; {DateTime.UtcNow.Year} qrbound</p>
+            </div>
+        </body>
+        </html>";
+
     /// <summary>
     /// Sends an email using SMTP
     /// </summary>

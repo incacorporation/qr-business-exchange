@@ -3,7 +3,11 @@ using Microsoft.AspNetCore.Mvc;
 using QRBusinessExchange.API.DTOs;
 using QRBusinessExchange.Core.DTOs;
 using QRBusinessExchange.Core.Entities;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
+using QRBusinessExchange.API.Services;
 using QRBusinessExchange.Core.Interfaces;
+using QRBusinessExchange.Infrastructure.Configuration;
 using QRBusinessExchange.Infrastructure.Services;
 
 namespace QRBusinessExchange.API.Controllers;
@@ -15,21 +19,45 @@ namespace QRBusinessExchange.API.Controllers;
 [Route("api/[controller]")]
 public class AuthController : ControllerBase
 {
+    /// <summary>How often one email address can be sent a reset link (stops mail-bombing).</summary>
+    private static readonly TimeSpan ResetEmailInterval = TimeSpan.FromMinutes(2);
+
+    private const string ResetRequestedMessage =
+        "If an account exists for that email, we've sent it a link to reset the password.";
+
     private readonly IUserRepository _userRepository;
     private readonly JwtService _jwtService;
     private readonly IEmailService _emailService;
     private readonly ILogger<AuthController> _logger;
+    private readonly PasswordResetTokens _resetTokens;
+    private readonly IMemoryCache _cache;
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly SsoSettings _ssoSettings;
+    private readonly IWebHostEnvironment _environment;
+    private readonly IConfiguration _configuration;
 
     public AuthController(
         IUserRepository userRepository,
         JwtService jwtService,
         IEmailService emailService,
-        ILogger<AuthController> logger)
+        ILogger<AuthController> logger,
+        PasswordResetTokens resetTokens,
+        IMemoryCache cache,
+        IServiceScopeFactory scopeFactory,
+        IOptions<SsoSettings> ssoSettings,
+        IWebHostEnvironment environment,
+        IConfiguration configuration)
     {
+        _configuration = configuration;
         _userRepository = userRepository;
         _jwtService = jwtService;
         _emailService = emailService;
         _logger = logger;
+        _resetTokens = resetTokens;
+        _cache = cache;
+        _scopeFactory = scopeFactory;
+        _ssoSettings = ssoSettings.Value;
+        _environment = environment;
     }
 
     /// <summary>
@@ -200,6 +228,113 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
+    /// Email a password-reset link. Always answers the same way, whether or not the account exists,
+    /// so this can't be used to find out which emails are registered.
+    /// </summary>
+    [HttpPost("forgot-password")]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public IActionResult ForgotPassword([FromBody] Core.DTOs.ForgotPasswordRequest request)
+    {
+        var email = request.Email.Trim();
+
+        // One email per address per interval; extra requests get the same answer but send nothing.
+        var throttleKey = $"pwreset:{email.ToLowerInvariant()}";
+        if (_cache.TryGetValue(throttleKey, out _))
+        {
+            return Accepted(new { message = ResetRequestedMessage });
+        }
+        _cache.Set(throttleKey, true, ResetEmailInterval);
+
+        // Look up and send in the background so the response time doesn't reveal whether the account exists.
+        var portalBaseUrl = _ssoSettings.PortalBaseUrl.TrimEnd('/');
+        var logLinkForDevelopment = _environment.IsDevelopment();
+        _ = Task.Run(() => SendResetLinkAsync(email, portalBaseUrl, logLinkForDevelopment));
+
+        return Accepted(new { message = ResetRequestedMessage });
+    }
+
+    /// <summary>
+    /// Set a new password using the token from a reset link. The link stops working once used.
+    /// </summary>
+    [HttpPost("reset-password")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ResetPassword([FromBody] Core.DTOs.ResetPasswordRequest request)
+    {
+        var userId = _resetTokens.ReadUserId(request.Token, out var fingerprint);
+        var user = userId is Guid id ? await _userRepository.GetByIdAsync(id) : null;
+
+        if (user == null || !user.IsActive || !PasswordResetTokens.MatchesCurrentPassword(user, fingerprint))
+        {
+            return BadRequest(new
+            {
+                error = "invalid_token",
+                error_description = "This reset link is invalid, expired or already used. Request a new one."
+            });
+        }
+
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+        user.IsEmailVerified = true; // opening the emailed link proves they own the address
+        user.UpdatedAt = DateTime.UtcNow;
+        await _userRepository.UpdateAsync(user);
+
+        _logger.LogInformation("Password reset completed for user {UserId}", user.UserId);
+
+        var forgotUrl = $"{_ssoSettings.PortalBaseUrl.TrimEnd('/')}/forgot-password";
+        var (email, firstName) = (user.Email, user.FirstName);
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var emailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
+                await emailService.SendPasswordChangedEmailAsync(email, firstName, forgotUrl);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send password-changed notice for user {UserId}", user.UserId);
+            }
+        });
+
+        return Ok(new { message = "Your password has been changed. You can log in with it now." });
+    }
+
+    private async Task SendResetLinkAsync(string email, string portalBaseUrl, bool logLinkForDevelopment)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var users = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+            var user = await users.GetByEmailAsync(email);
+            if (user == null || !user.IsActive)
+            {
+                return;
+            }
+
+            var token = _resetTokens.Create(user, DateTimeOffset.UtcNow);
+            var resetUrl = $"{portalBaseUrl}/reset-password#token={Uri.EscapeDataString(token)}";
+
+            if (logLinkForDevelopment)
+            {
+                // Development only: lets you test without a working mail server. Never logged in production.
+                _logger.LogInformation("Development password-reset link for {UserId}: {ResetUrl}", user.UserId, resetUrl);
+            }
+
+            var emailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
+            var sent = await emailService.SendPasswordResetEmailAsync(user.Email, user.FirstName, resetUrl, PasswordResetTokens.Lifetime);
+            if (!sent)
+            {
+                _logger.LogWarning("Password-reset email for user {UserId} could not be sent", user.UserId);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send a password-reset email");
+        }
+    }
+
+    /// <summary>
     /// Refresh access token using refresh token
     /// </summary>
     /// <param name="request">Refresh token request</param>
@@ -241,11 +376,20 @@ public class AuthController : ControllerBase
         [FromBody] Core.DTOs.RegisterRequest request,
         [FromHeader(Name = "X-Admin-Secret")] string? adminSecret)
     {
-        // Validate admin secret (in production, use configuration)
-        const string ADMIN_SECRET = "QRBizExchange2025!Admin"; // TODO: Move to appsettings.json
-        
-        if (string.IsNullOrWhiteSpace(adminSecret) || adminSecret != ADMIN_SECRET)
+        // The secret comes only from user-secrets / the Admin__RegistrationSecret environment variable.
+        // With none configured (the default) admin self-registration is switched off entirely.
+        var configuredSecret = _configuration["Admin:RegistrationSecret"];
+        if (string.IsNullOrWhiteSpace(configuredSecret) || configuredSecret.Length < 24)
         {
+            return NotFound();
+        }
+
+        if (string.IsNullOrWhiteSpace(adminSecret) ||
+            !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                System.Text.Encoding.UTF8.GetBytes(adminSecret),
+                System.Text.Encoding.UTF8.GetBytes(configuredSecret)))
+        {
+            _logger.LogWarning("Rejected admin registration attempt from {RemoteIp}", HttpContext.Connection.RemoteIpAddress);
             return StatusCode(StatusCodes.Status403Forbidden, new { error = "Invalid or missing admin secret" });
         }
 

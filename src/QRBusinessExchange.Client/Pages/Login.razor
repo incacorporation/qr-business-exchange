@@ -1,4 +1,5 @@
 @page "/login"
+@layout AuthLayout
 @using QRBusinessExchange.Core.DTOs
 @using QRBusinessExchange.Client.Services
 @using QRBusinessExchange.Client.Components.Auth
@@ -8,158 +9,94 @@
 @inject IndexedDBService IndexedDB
 @inject PortalAuthService PortalAuth
 
-<PageTitle>Login - qrbound</PageTitle>
+<PageTitle>Log in - qrbound</PageTitle>
 
-<!-- Responsive Container with vertical centering on larger screens -->
-<div class="container-fluid min-vh-100 d-flex align-items-center py-4 px-3 px-sm-4">
-    <div class="row w-100 justify-content-center">
-        <!-- Responsive column sizing: full width on mobile, constrained on larger screens -->
-        <div class="col-12 col-sm-10 col-md-8 col-lg-6 col-xl-5 col-xxl-4">
-            
-            <!-- Logo/Branding (visible on mobile) -->
-            <div class="text-center mb-4 d-lg-none">
-                <img src="images/qrbound-logo.png" class="brand-logo brand-logo-card" alt="qrbound - Let's get QR Bound" />
-            </div>
-
-            <!-- Login Card -->
-            <div class="card shadow-lg border-0">
-                <div class="card-body p-4 p-sm-5">
-                    
-                    <!-- Hidden logo for larger screens -->
-                    <div class="text-center mb-4 d-none d-lg-block">
-                        <img src="images/qrbound-logo.png" class="brand-logo brand-logo-card" alt="qrbound - Let's get QR Bound" />
-                    </div>
-
-                    <h3 class="card-title text-center mb-4 fw-bold">Welcome Back</h3>
-                    <p class="text-center text-muted mb-4">Sign in to your account</p>
-                    
-                    <!-- Error Alert (responsive) -->
-                    @if (!string.IsNullOrEmpty(errorMessage))
-                    {
-                        <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                            <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                            <span class="d-inline-block">@errorMessage</span>
-                            <button type="button" class="btn-close" @onclick="@(() => errorMessage = string.Empty)"></button>
-                        </div>
-                    }
-
-                    <EditForm Model="loginRequest" OnValidSubmit="HandleLogin">
-                        <DataAnnotationsValidator />
-                        
-                        <!-- Email Field -->
-                        <div class="mb-3">
-                            <label for="email" class="form-label fw-semibold">
-                                <i class="bi bi-envelope me-1"></i> Email Address
-                            </label>
-                            <InputText 
-                                id="email" 
-                                @bind-Value="loginRequest.Email" 
-                                @bind-Value:after="HandleEmailChangedSync"
-                                class="form-control form-control-lg" 
-                                placeholder="name@example.com" 
-                                autocomplete="email webauthn"
-                                disabled="@isLoading" />
-                            <ValidationMessage For="@(() => loginRequest.Email)" class="text-danger small mt-1" />
-                        </div>
-
-                        <!-- Passkey Login Component -->
-                        <PasskeyLogin Email="@loginRequest.Email" OnSuccess="HandlePasskeySuccess" IsVisible="@showPasskeyOption" />
-
-                        @if (showPasskeyOption)
-                        {
-                            <!-- Divider -->
-                            <div class="position-relative my-3">
-                                <hr class="text-muted">
-                                <span class="position-absolute top-50 start-50 translate-middle bg-white px-3 text-muted small">OR</span>
-                            </div>
-                        }
-
-                        <!-- Password Field -->
-                        <div class="mb-4">
-                            <div class="d-flex justify-content-between align-items-center mb-2">
-                                <label for="password" class="form-label fw-semibold mb-0">
-                                    <i class="bi bi-lock me-1"></i> Password
-                                </label>
-                                <a href="/forgot-password" class="small text-decoration-none">Forgot password?</a>
-                            </div>
-                            <InputText 
-                                id="password" 
-                                type="password" 
-                                @bind-Value="loginRequest.Password" 
-                                class="form-control form-control-lg" 
-                                placeholder="Enter your password"
-                                autocomplete="current-password"
-                                disabled="@isLoading" />
-                            <ValidationMessage For="@(() => loginRequest.Password)" class="text-danger small mt-1" />
-                        </div>
-
-                        <!-- Remember Me (optional) -->
-                        <div class="mb-4 form-check">
-                            <input class="form-check-input" type="checkbox" id="rememberMe" disabled="@isLoading">
-                            <label class="form-check-label small" for="rememberMe">
-                                Remember me for 30 days
-                            </label>
-                        </div>
-
-                        <!-- Submit Button (responsive) -->
-                        <div class="d-grid gap-2">
-                            <button type="submit" class="btn btn-primary btn-lg fw-semibold" disabled="@isLoading">
-                                @if (isLoading)
-                                {
-                                    <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                                    <span>Signing in...</span>
-                                }
-                                else
-                                {
-                                    <i class="bi bi-box-arrow-in-right me-2"></i>
-                                    <span>Sign In</span>
-                                }
-                            </button>
-                        </div>
-                    </EditForm>
-
-                    <!-- Divider -->
-                    <div class="position-relative my-4">
-                        <hr class="text-muted">
-                        <span class="position-absolute top-50 start-50 translate-middle bg-white px-3 text-muted small">OR</span>
-                    </div>
-
-                    <!-- Passwordless options: any saved passkey, or scan a QR with a signed-in phone -->
-                    <div class="d-grid gap-2 mb-3">
-                        <button type="button" class="btn btn-outline-primary" @onclick="HandleAnyPasskeyLogin" disabled="@isLoading">
-                            <i class="bi bi-fingerprint me-2"></i>Sign in with a passkey
-                        </button>
-                        <button type="button" class="btn btn-outline-secondary" @onclick="() => showQr = !showQr" disabled="@isLoading">
-                            <i class="bi bi-qr-code-scan me-2"></i>@(showQr ? "Hide QR code" : "Sign in with your phone (QR code)")
-                        </button>
-                    </div>
-
-                    @if (showQr)
-                    {
-                        <div class="mb-4">
-                            <QrLoginPanel OnSuccess="HandlePasskeySuccess" />
-                        </div>
-                    }
-
-                    <!-- Sign Up Link -->
-                    <div class="text-center">
-                        <p class="mb-0 text-muted small">
-                            Don't have an account? 
-                            <a href="/register" class="text-decoration-none fw-semibold">Create one now</a>
-                        </p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Footer Links (responsive) -->
-            <div class="text-center mt-4">
-                <small class="text-muted">
-                    <a href="/privacy" class="text-decoration-none me-3">Privacy Policy</a>
-                    <a href="/terms" class="text-decoration-none">Terms of Service</a>
-                </small>
-            </div>
+<div class="auth-narrow">
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger auth-alert d-flex align-items-start gap-2" role="alert">
+            <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+            <span class="flex-grow-1">@errorMessage</span>
+            <button type="button" class="btn-close btn-sm" aria-label="Dismiss" @onclick="@(() => errorMessage = string.Empty)"></button>
         </div>
-    </div>
+    }
+
+    <EditForm Model="loginRequest" OnValidSubmit="HandleLogin">
+        <DataAnnotationsValidator />
+
+        <div class="auth-field">
+            <label for="email" class="visually-hidden">Email</label>
+            <InputText id="email"
+                       type="email"
+                       @bind-Value="loginRequest.Email"
+                       class="form-control auth-input"
+                       placeholder="Email"
+                       autocomplete="username webauthn"
+                       disabled="@isLoading" />
+            <ValidationMessage For="@(() => loginRequest.Email)" />
+        </div>
+
+        <div class="auth-field">
+            <label for="password" class="visually-hidden">Password</label>
+            <InputText id="password"
+                       type="password"
+                       @bind-Value="loginRequest.Password"
+                       class="form-control auth-input"
+                       placeholder="Password"
+                       autocomplete="current-password"
+                       disabled="@isLoading" />
+            <ValidationMessage For="@(() => loginRequest.Password)" />
+        </div>
+
+        <label class="auth-check" for="rememberMe">
+            <input type="checkbox" id="rememberMe" disabled="@isLoading" />
+            Remember me
+        </label>
+
+        <button type="submit" class="auth-btn" disabled="@isLoading">
+            @if (isLoading && !passkeyInProgress)
+            {
+                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                <span>Logging in…</span>
+            }
+            else
+            {
+                <span>Log in</span>
+            }
+        </button>
+    </EditForm>
+
+    <div class="auth-or">OR</div>
+
+    <button type="button" class="auth-btn" @onclick="HandleAnyPasskeyLogin" disabled="@isLoading">
+        @if (passkeyInProgress)
+        {
+            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+            <span>Waiting for your passkey…</span>
+        }
+        else
+        {
+            <span>Log in with a passkey</span>
+        }
+    </button>
+
+    @if (showQr)
+    {
+        <div class="auth-panel mt-3">
+            <QrLoginPanel OnSuccess="HandlePasskeySuccess" />
+        </div>
+    }
+
+    <hr class="auth-divider" />
+
+    <nav class="auth-links" aria-label="Account help">
+        <a href="/forgot-password">Forgot your password?</a>
+        <a href="@RegisterHref">Register as a new user</a>
+        <a href="/email-verification">Resend email confirmation</a>
+        <button type="button" class="auth-link-btn" @onclick="() => showQr = !showQr" disabled="@isLoading">
+            @(showQr ? "Hide the QR code" : "Log in with your phone camera")
+        </button>
+    </nav>
 </div>
 
 @code {
@@ -168,8 +105,10 @@
 private LoginRequest loginRequest = new();
 private string errorMessage = string.Empty;
 private bool isLoading = false;
-private bool showPasskeyOption = false;
+private bool passkeyInProgress = false;
 private bool showQr = false;
+
+private string RegisterHref => SafeReturnUrl == null ? "/register" : $"/register?returnUrl={Uri.EscapeDataString(SafeReturnUrl)}";
 
 protected override async Task OnInitializedAsync()
 {
@@ -202,10 +141,15 @@ protected override async Task OnInitializedAsync()
     private async Task HandleAnyPasskeyLogin()
     {
         isLoading = true;
+        passkeyInProgress = true;
         errorMessage = string.Empty;
         try
         {
-            var auth = await PortalAuth.SignInWithPasskeyAsync();
+            // With an email typed in, offer that account's passkeys; otherwise let the
+            // browser list every passkey saved for this site.
+            var email = loginRequest.Email?.Trim();
+            var auth = await PortalAuth.SignInWithPasskeyAsync(
+                !string.IsNullOrEmpty(email) && email.Contains('@') ? email : null);
             NavigateAfterLogin(auth.User);
         }
         catch (Exception ex)
@@ -215,6 +159,7 @@ protected override async Task OnInitializedAsync()
         finally
         {
             isLoading = false;
+            passkeyInProgress = false;
         }
     }
 
@@ -306,32 +251,6 @@ protected override async Task OnInitializedAsync()
         }
     }
 
-    private async Task HandleEmailChange()
-    {
-        // Check if user has passkeys when email changes
-        if (!string.IsNullOrEmpty(loginRequest.Email) && loginRequest.Email.Contains("@"))
-        {
-            showPasskeyOption = true;
-        }
-        else
-        {
-            showPasskeyOption = false;
-        }
-    }
-
-    private void HandleEmailChangedSync()
-    {
-        // Check if user has passkeys when email changes
-        if (!string.IsNullOrEmpty(loginRequest.Email) && loginRequest.Email.Contains("@"))
-        {
-            showPasskeyOption = true;
-        }
-        else
-        {
-            showPasskeyOption = false;
-        }
-    }
-
     private async Task HandlePasskeySuccess(AuthResponse result)
     {
         try
@@ -375,7 +294,11 @@ protected override async Task OnInitializedAsync()
 
     public class LoginRequest
     {
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Enter your email")]
+        [System.ComponentModel.DataAnnotations.EmailAddress(ErrorMessage = "Enter a valid email address")]
         public string Email { get; set; } = "";
+
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Enter your password")]
         public string Password { get; set; } = "";
     }
 }
