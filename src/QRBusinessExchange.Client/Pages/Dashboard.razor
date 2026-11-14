@@ -158,6 +158,10 @@
                             {
                                 <span class="d-block">Updated @updated.ToString("T") · refreshes every 30 seconds</span>
                             }
+                            @if (accuracyNote != null)
+                            {
+                                <span class="d-block text-warning-emphasis">@accuracyNote</span>
+                            }
                         </span>
                     }
                     @if (!pingMeEnabled)
@@ -275,7 +279,7 @@ private string? nearbyMessage;
 private int nearbyCount;
 // Search distance in feet: 25 ft up to 1 mile (the server's limit).
 private static readonly int[] RangeOptionsFeet = { 25, 50, 100, 250, 500, 1000, 2640, 5280 };
-private int selectedFeet = 50; // default: people close enough to meet
+private int selectedFeet = 500; // default: close by, yet wider than a typical computer's location error
 
 private static string RangeLabel(int feet) => feet switch
 {
@@ -355,6 +359,7 @@ private async Task GetCurrentLocationAsync()
             {
                 currentLatitude = location.Latitude;
                 currentLongitude = location.Longitude;
+                currentAccuracyMeters = location.Accuracy;
                 locationObtained = true;
                 
                 Console.WriteLine($"✓ Current location obtained (accuracy: {location.Accuracy}m)");
@@ -464,6 +469,27 @@ private async Task GetCurrentLocationAsync()
     private bool disposed;
     private DateTime? lastMapRefresh;
 
+    // How precise the browser says your position is, in metres (0 = unknown). Computers locate themselves
+    // by Wi-Fi or network, often to within only a few hundred feet; phones with GPS to about 15-30 ft.
+    private double currentAccuracyMeters;
+    private string? accuracyNote; // shown under the results when they may be incomplete
+
+    /// <summary>
+    /// A note when your position is less precise than the search distance: people that close may be
+    /// placed outside the circle (or you may be), so a wider distance is needed to find them.
+    /// </summary>
+    private string? AccuracyNote()
+    {
+        var accuracyFeet = currentAccuracyMeters / 0.3048;
+        if (currentAccuracyMeters <= 0 || accuracyFeet <= selectedFeet)
+        {
+            return null;
+        }
+
+        var rounded = accuracyFeet < 1000 ? $"{Math.Round(accuracyFeet / 10) * 10:N0} ft" : $"{accuracyFeet / 5280:0.#} mi";
+        return $"This device only knows your location to within about {rounded}, so people within {RangeLabel(selectedFeet)} may not show. Choose a wider distance, or use a phone (GPS is more precise).";
+    }
+
     /// <summary>
     /// Every 30 seconds: your current position (shared while Ping Me is on), then the people around you.
     /// The map isn't moved, so panning and zooming stay as you left them. Skipped while the page is in the
@@ -540,8 +566,9 @@ private async Task GetCurrentLocationAsync()
             nearbyCount = people.Count;
             lastMapRefresh = DateTime.Now;
             nearbyMessage = error ?? (people.Count == 0
-                ? $"Nobody with Ping Me on within {RangeLabel(selectedFeet)}."
+                ? $"Nobody with Ping Me on within {RangeLabel(selectedFeet)}." + (AccuracyNote() is { } note ? " " + note : "")
                 : null);
+            accuracyNote = people.Count > 0 ? AccuracyNote() : null;
         }
 
         nearbyUsers = users;
@@ -594,6 +621,7 @@ private async Task GetCurrentLocationAsync()
             if (await GeolocationService.GetCurrentPositionAsync() is { } position)
             {
                 (currentLatitude, currentLongitude, locationObtained) = (position.Latitude, position.Longitude, true);
+                currentAccuracyMeters = position.Accuracy;
             }
             await LoadNearbyAsync(moveMap: true);
         }
