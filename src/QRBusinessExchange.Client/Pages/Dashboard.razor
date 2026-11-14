@@ -9,6 +9,7 @@
 @inject IJSRuntime JSRuntime
 @inject GeolocationService GeolocationService
 @inject PingMeService PingMe
+@implements IDisposable
 
 <PageTitle>Dashboard - qrbound</PageTitle>
 
@@ -153,6 +154,10 @@
                         <span class="text-muted">
                             @nearbyCount @(nearbyCount == 1 ? "person" : "people") with Ping Me on within @RangeLabel(selectedFeet).
                             Tap a marker to see who it is.
+                            @if (lastMapRefresh is { } updated)
+                            {
+                                <span class="d-block">Updated @updated.ToString("T") · refreshes every 30 seconds</span>
+                            }
                         </span>
                     }
                     @if (!pingMeEnabled)
@@ -270,7 +275,7 @@ private string? nearbyMessage;
 private int nearbyCount;
 // Search distance in feet: 25 ft up to 1 mile (the server's limit).
 private static readonly int[] RangeOptionsFeet = { 25, 50, 100, 250, 500, 1000, 2640, 5280 };
-private int selectedFeet = 5280;
+private int selectedFeet = 50; // default: people close enough to meet
 
 private static string RangeLabel(int feet) => feet switch
 {
@@ -321,9 +326,13 @@ protected override async Task OnAfterRenderAsync(bool firstRender)
             
             // Initialize chart
             await InitializeChart();
-            
+
             isLoading = false;
             StateHasChanged();
+
+            // Keep your position and the people around you current while the Dashboard is open.
+            refreshTimer = new System.Threading.Timer(_ => InvokeAsync(RefreshMapAsync), null,
+                MapRefreshInterval, MapRefreshInterval);
         }
         catch (Exception ex)
         {
@@ -449,6 +458,51 @@ private async Task GetCurrentLocationAsync()
     /// Loads people with Ping Me on around your current position and puts them on the map, with a
     /// marker for you. Without your location there's nothing to search around, so the map stays empty.
     /// </summary>
+    private static readonly TimeSpan MapRefreshInterval = TimeSpan.FromSeconds(30);
+    private System.Threading.Timer? refreshTimer;
+    private bool refreshing;
+    private bool disposed;
+    private DateTime? lastMapRefresh;
+
+    /// <summary>
+    /// Every 30 seconds: your current position (shared while Ping Me is on), then the people around you.
+    /// The map isn't moved, so panning and zooming stay as you left them. Skipped while the page is in the
+    /// background or a marker's pop-up is open (redrawing the markers would close it).
+    /// </summary>
+    private async Task RefreshMapAsync()
+    {
+        if (refreshing || disposed)
+        {
+            return;
+        }
+
+        refreshing = true;
+        try
+        {
+            if (!await JSRuntime.InvokeAsync<bool>("leafletInterop.canRefresh"))
+            {
+                return;
+            }
+
+            await GetCurrentLocationAsync();
+            await LoadNearbyAsync(moveMap: false);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or TaskCanceledException or ObjectDisposedException)
+        {
+            // Try again on the next tick.
+        }
+        finally
+        {
+            refreshing = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        disposed = true;
+        refreshTimer?.Dispose();
+    }
+
     private async Task LoadNearbyAsync(bool moveMap)
     {
         nearbyMessage = null;
@@ -484,6 +538,7 @@ private async Task GetCurrentLocationAsync()
                 LastSeen = p.LastSeen
             }));
             nearbyCount = people.Count;
+            lastMapRefresh = DateTime.Now;
             nearbyMessage = error ?? (people.Count == 0
                 ? $"Nobody with Ping Me on within {RangeLabel(selectedFeet)}."
                 : null);

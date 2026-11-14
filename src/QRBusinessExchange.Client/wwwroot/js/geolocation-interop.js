@@ -45,7 +45,7 @@ window.geolocationInterop = {
                 {
                     enableHighAccuracy: true,
                     timeout: 8000,
-                    maximumAge: 60000 // Cache for 1 minute
+                    maximumAge: 20000 // reuse a fix up to 20 s old (the Dashboard map refreshes every 30 s)
                 }
             );
         });

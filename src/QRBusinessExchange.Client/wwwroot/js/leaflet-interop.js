@@ -106,6 +106,13 @@ window.leafletInterop = {
         });
     },
 
+    // Whether the Dashboard's 30-second refresh may run: the page is on screen and no pop-up is open
+    // (redrawing the markers would close the one being read).
+    canRefresh: function () {
+        if (document.visibilityState !== 'visible') return false;
+        return !(this.map && this.map.getContainer().querySelector('.leaflet-popup'));
+    },
+
     // The search distance as a circle around you (replaces the previous one).
     setRangeCircle: function (lat, lng, meters) {
         if (!this.map) return;
