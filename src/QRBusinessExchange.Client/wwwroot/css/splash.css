@@ -1,0 +1,95 @@
+/* Startup splash: the qrbound logo on its royal-blue background (same blue as the logo image and the
+   manifest background_color, so the installed-app launch screen, this splash and the auth pages match). */
+.splash {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #1F43AD;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    overflow: hidden;
+}
+
+.splash-logo {
+    /* Base size: 280px for optimal mobile display */
+    width: 280px;
+    /* Responsive scaling: up to 65vw on larger screens, down to 60vw on smaller */
+    max-width: 65vw;
+    height: auto;
+    /* Maintain aspect ratio */
+    object-fit: contain;
+}
+
+/* Only the pre-load copy in index.html fades in: Blazor swaps in a new <img> when it starts, and
+   animating that one too would replay the fade partway through the splash. */
+.splash--static .splash-logo {
+    animation: splash-in 0.9s ease-out both;
+}
+
+@keyframes splash-in {
+    from {
+        opacity: 0;
+        transform: scale(0.92) translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+/* Loading indicator for reloads after the first start (see index.html). */
+.app-loading {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #1F43AD;
+    z-index: 2000;
+}
+
+    .app-loading .spinner-border {
+        width: 3rem;
+        height: 3rem;
+        border-color: rgba(255, 255, 255, 0.25);
+        border-right-color: #ffffff;
+    }
+
+    .app-loading .visually-hidden {
+        color: #ffffff;
+    }
+
+/* Responsive adjustments for very small screens (mobile phones in portrait) */
+@media (max-width: 360px) {
+    .splash-logo {
+        width: 200px;
+        max-width: 55vw;
+    }
+}
+
+/* Responsive adjustments for tablets and larger screens */
+@media (min-width: 768px) {
+    .splash-logo {
+        width: 340px;
+        max-width: 70vw;
+    }
+}
+
+/* Landscape orientation optimization */
+@media (max-height: 500px) {
+    .splash-logo {
+        width: 200px;
+        max-width: 50vw;
+    }
+}
+
+/* Respect user motion preferences */
+@media (prefers-reduced-motion: reduce) {
+    .splash--static .splash-logo {
+        animation: none;
+        opacity: 1;
+        transform: scale(1);
+    }
+}

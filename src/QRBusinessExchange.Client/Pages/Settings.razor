@@ -1,6 +1,5 @@
 @page "/settings"
 @using QRBusinessExchange.Client.Services
-@using QRBusinessExchange.Client.Components.QRCode
 @using QRBusinessExchange.Client.Components.Tools
 @using QRBusinessExchange.Client.Components.Auth
 @inject ApiService ApiService
@@ -23,17 +22,7 @@
     else
     {
         <div class="row g-4">
-            <div class="col-md-6">
-                <div class="card shadow">
-                    <div class="card-body">
-                        <h5 class="card-title">Your QR Code</h5>
-                        <p class="text-muted">Share your profile with this QR code</p>
-                        <QRCodeCard UserId="@StateService.CurrentUser?.UserId" />
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-md-6">
+            <div class="col-12">
                 <div class="card shadow">
                     <div class="card-body">
                         <h5 class="card-title">Ping Me Feature</h5>

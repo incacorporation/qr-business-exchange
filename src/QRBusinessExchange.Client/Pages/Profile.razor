@@ -3,6 +3,7 @@
 @using QRBusinessExchange.Client.Services
 @inject ApiService ApiService
 @inject StateService StateService
+@inject PortalAuthService PortalAuth
 @inject NavigationManager Navigation
 
 <PageTitle>Edit Profile - qrbound</PageTitle>
@@ -111,14 +112,22 @@
 
     protected override async Task OnInitializedAsync()
     {
-        if (!StateService.IsAuthenticated)
+        await StateService.InitializeAsync(); // after a page refresh the sign-in is restored from storage
+        if (!StateService.IsAuthenticated || StateService.CurrentUser == null)
         {
-            Navigation.NavigateTo("/login");
+            Navigation.NavigateTo($"/login?returnUrl={Uri.EscapeDataString("/profile")}");
             return;
         }
 
-        profileDto = StateService.CurrentUser;
+        // Start from the latest saved profile (it may have been changed on another device).
+        await PortalAuth.RefreshProfileAsync();
+
+        // Edit a copy: changes reach the signed-in user only once the server has saved them.
+        profileDto = Copy(StateService.CurrentUser);
     }
+
+    private static UserProfileDto Copy(UserProfileDto user) =>
+        System.Text.Json.JsonSerializer.Deserialize<UserProfileDto>(System.Text.Json.JsonSerializer.Serialize(user))!;
 
     private async Task SaveProfile()
     {
@@ -131,25 +140,51 @@
 
         try
         {
-            var response = await ApiService.PutAsync($"api/users/{profileDto.UserId}", profileDto);
-            
+            // The API updates the signed-in user's own profile (UserController: PUT api/user/profile).
+            var response = await ApiService.PutAsync("api/user/profile", new
+            {
+                profileDto.FirstName,
+                profileDto.LastName,
+                CompanyName = profileDto.CompanyName ?? "",
+                PhoneNumber = profileDto.PhoneNumber ?? "",
+                Bio = profileDto.Bio ?? "",
+                Skills = profileDto.Skills ?? "",
+                profileDto.ServicePricing,
+                ProfileImageUrl = profileDto.ProfileImageUrl ?? ""
+            });
+
             if (response.IsSuccessStatusCode)
             {
-                var updatedProfile = await ApiService.ParseResponseAsync<UserProfileDto>(response);
-                if (updatedProfile != null)
+                var saved = await ApiService.ParseResponseAsync<UserProfileDto>(response);
+                if (saved != null && StateService.CurrentUser != null)
                 {
-                    StateService.CurrentUser = updatedProfile;
-                    successMessage = "Profile updated successfully!";
+                    // Take the saved profile fields; keep what the response doesn't carry (e.g. the role).
+                    var user = Copy(StateService.CurrentUser);
+                    user.FirstName = saved.FirstName;
+                    user.LastName = saved.LastName;
+                    user.CompanyName = saved.CompanyName;
+                    user.PhoneNumber = saved.PhoneNumber;
+                    user.Bio = saved.Bio;
+                    user.Skills = saved.Skills;
+                    user.ServicePricing = saved.ServicePricing;
+                    user.ProfileImageUrl = saved.ProfileImageUrl;
+                    StateService.CurrentUser = user;
+                    profileDto = Copy(user);
                 }
+                successMessage = "Profile updated successfully!";
+            }
+            else if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                errorMessage = "Your session has expired. Log in again, then save your changes.";
             }
             else
             {
-                errorMessage = "Failed to update profile. Please try again.";
+                errorMessage = await ApiService.ReadErrorAsync(response, "Failed to update profile. Please try again.");
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
-            errorMessage = $"An error occurred: {ex.Message}";
+            errorMessage = PortalAuthService.ConnectionProblem;
         }
         finally
         {

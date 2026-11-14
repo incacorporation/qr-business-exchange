@@ -1,0 +1,79 @@
+@page "/scan"
+@using QRBusinessExchange.Client.Services
+@using QRBusinessExchange.Client.Components.Scanner
+@inject PortalAuthService PortalAuth
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+@* Phone-only camera scanner for qrbound QR codes: the sign-in code a desktop app shows or emails, phone
+   linking, and business cards. Only codes that point back into this site are opened. *@
+
+<PageTitle>Scan a QR code - qrbound</PageTitle>
+
+@switch (view)
+{
+    case View.Checking:
+        <div class="text-center py-5"><span class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></span></div>
+        break;
+
+    case View.DesktopOnly:
+        <div class="scan-desktop text-center">
+            <i class="bi bi-phone display-4 text-primary"></i>
+            <h1 class="h4 mt-3">Open this on your phone</h1>
+            <p class="text-muted mb-0">
+                The QR scanner uses your phone's camera. Sign in to qrbound on your phone and open
+                <strong>Scan QR code</strong> from the menu.
+            </p>
+        </div>
+        break;
+
+    default:
+        <div class="scan-page">
+            <h1 class="h4 mb-1">Scan a QR code</h1>
+            <p class="text-muted small mb-3">
+                Point your camera at the qrbound QR code on your computer screen, in your email or on a business card.
+                Hold the phone about 30 cm (1 ft) away so the camera can focus.
+            </p>
+
+            <QrScanner OnDetected="OnDetectedAsync" />
+        </div>
+        break;
+}
+
+@code {
+    private enum View { Checking, DesktopOnly, Scanner }
+
+    private View view = View.Checking;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Signed-in users only: check before showing anything (an expired token counts as signed out).
+        var session = await PortalAuth.GetSessionStateAsync();
+        if (session != PortalSessionState.Active)
+        {
+            if (session == PortalSessionState.Expired)
+            {
+                await PortalAuth.SignOutAsync();
+            }
+            Navigation.NavigateTo($"/login?returnUrl={Uri.EscapeDataString("/scan")}", replace: true);
+            return;
+        }
+
+        view = ((IJSInProcessRuntime)JS).Invoke<bool>("qrScanner.isMobile") ? View.Scanner : View.DesktopOnly;
+    }
+
+    private Task<QrScanOutcome> OnDetectedAsync(string text)
+    {
+        var route = QrCodeLinks.ToAppRoute(text, new Uri(Navigation.BaseUri));
+        if (route is null)
+        {
+            return Task.FromResult(QrScanOutcome.Warning(
+                "This isn't a qrbound code",
+                "Only QR codes from qrbound sign-in emails or screens, and qrbound business cards, can be opened here.",
+                showScannedText: true));
+        }
+
+        Navigation.NavigateTo(route);
+        return Task.FromResult(QrScanOutcome.Opening());
+    }
+}

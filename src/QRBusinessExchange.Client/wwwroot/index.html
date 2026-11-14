@@ -47,6 +47,7 @@
     <!-- Custom App CSS -->
     <link rel="stylesheet" href="css/app.css" />
     <link rel="stylesheet" href="css/auth.css" />
+    <link rel="stylesheet" href="css/splash.css" />
 
     <!-- Component-scoped styles (*.razor.css), bundled by the build -->
     <link rel="stylesheet" href="QRBusinessExchange.Client.styles.css" />
@@ -54,13 +55,23 @@
 
 <body>
     <div id="app">
-        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;">
-            <div class="spinner-border text-primary" role="status" style="width:3rem;height:3rem;">
-                <span class="visually-hidden">Loading...</span>
-            </div>
-            <p class="mt-3">Loading qrbound...</p>
+        <!-- Pre-load splash; Components/SplashScreen.razor takes over with identical markup once Blazor starts. -->
+        <div class="splash splash--static" role="status" aria-live="polite">
+            <img class="splash-logo" src="images/qrbound-logo.png" alt="qrbound - Let's get QR Bound" />
+            <span class="visually-hidden">Loading qrbound…</span>
         </div>
     </div>
+    <script>
+        // The logo splash is for the first start in this tab only (App.razor sets this key).
+        // Reloads after that get a small spinner instead.
+        try {
+            if (sessionStorage.getItem('qrbound.started')) {
+                document.getElementById('app').innerHTML =
+                    '<div class="app-loading" role="status"><div class="spinner-border text-primary"></div>' +
+                    '<span class="visually-hidden">Loading qrbound…</span></div>';
+            }
+        } catch (e) { /* storage blocked: keep the splash */ }
+    </script>
 
     <div id="blazor-error-ui">
         An unhandled error has occurred.
@@ -86,6 +97,8 @@
     <script src="js/qrcode-interop.js"></script>
     <script src="js/geolocation-interop.js"></script>
     <script src="js/webauthn-interop.js"></script>
+    <script src="js/qrscanner-interop.js"></script>
+    <script src="js/app-visibility.js"></script>
     
     <!-- PWA Service Worker -->
     <script src="js/pwa-service.js"></script>

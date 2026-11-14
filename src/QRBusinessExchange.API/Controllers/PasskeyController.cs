@@ -147,6 +147,16 @@ public class PasskeyController : ControllerBase
 
             return Ok(_sessionFactory.Create(user, "passkey"));
         }
+        catch (PasskeyNotRegisteredException)
+        {
+            _logger.LogInformation("Passkey sign-in with a credential this server doesn't know");
+            return Unauthorized(new
+            {
+                error = "passkey_not_registered",
+                error_description = "This passkey isn't registered with qrbound. Log in with your password, " +
+                                    "then add a new passkey in Settings."
+            });
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Passkey authentication failed");

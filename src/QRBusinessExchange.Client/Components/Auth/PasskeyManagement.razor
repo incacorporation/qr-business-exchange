@@ -4,11 +4,15 @@
 @inject ApiService ApiService
 @inject StateService StateService
 @inject IJSRuntime JSRuntime
+@inject PortalAuthService PortalAuth
 
 <div class="passkey-management">
-    <h5 class="mb-3">
-        <i class="bi bi-fingerprint me-2"></i>Passkey Management
-    </h5>
+    @if (!string.IsNullOrEmpty(Title))
+    {
+        <h5 class="mb-3">
+            <i class="bi bi-fingerprint me-2"></i>@Title
+        </h5>
+    }
 
     @if (!isSupported || !isPlatformAuthAvailable)
     {
@@ -19,9 +23,12 @@
     }
     else
     {
-        <p class="text-muted small mb-3">
-            Passkeys provide a secure, passwordless way to sign in using biometrics, PIN, or security key.
-        </p>
+        @if (ShowIntro)
+        {
+            <p class="text-muted small mb-3">
+                Passkeys provide a secure, passwordless way to sign in using biometrics, PIN, or security key.
+            </p>
+        }
 
         @if (isLoading)
         {
@@ -85,7 +92,7 @@
                 else
                 {
                     <i class="bi bi-plus-circle me-2"></i>
-                    <span>Add Passkey</span>
+                    <span>@AddLabel</span>
                 }
             </button>
 
@@ -107,6 +114,18 @@
 </div>
 
 @code {
+    /// <summary>Heading above the list; empty hides it.</summary>
+    [Parameter] public string? Title { get; set; } = "Passkey Management";
+
+    /// <summary>Text of the button that creates a passkey on this device.</summary>
+    [Parameter] public string AddLabel { get; set; } = "Add Passkey";
+
+    /// <summary>Show the short "what are passkeys" line (off where the page explains it already).</summary>
+    [Parameter] public bool ShowIntro { get; set; } = true;
+
+    /// <summary>Raised after a passkey was created on this device.</summary>
+    [Parameter] public EventCallback OnRegistered { get; set; }
+
     private bool isSupported = false;
     private bool isPlatformAuthAvailable = false;
     private bool isLoading = true;
@@ -156,6 +175,8 @@
             if (response != null)
             {
                 passkeys = response.Passkeys;
+                // Keep the login page's default in step with the account: phone camera only while a device is registered.
+                await PortalAuth.RememberRegisteredDeviceAsync(passkeys.Count > 0);
             }
         }
         catch (Exception ex)
@@ -196,7 +217,8 @@
 
             if (!response.IsSuccessStatusCode)
             {
-                throw new Exception("Failed to initiate passkey registration");
+                throw new PasskeyStepFailedException(await ApiService.ReadErrorAsync(response,
+                    "Couldn't start creating a passkey. Please try again."));
             }
 
             var options = await ApiService.ParseResponseAsync<PasskeyRegistrationOptionsDto>(response);
@@ -238,19 +260,18 @@
 
             if (!completeResponse.IsSuccessStatusCode)
             {
-                var error = await completeResponse.Content.ReadAsStringAsync();
-                throw new Exception($"Registration failed: {error}");
+                throw new PasskeyStepFailedException(await ApiService.ReadErrorAsync(completeResponse,
+                    "The passkey couldn't be saved. Please try again."));
             }
 
-            successMessage = "Passkey registered successfully!";
+            successMessage = $"{deviceName} is registered. You can now log in on it with your passkey.";
             await LoadPasskeys();
+            await OnRegistered.InvokeAsync();
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Passkey registration error: {ex.Message}");
-            errorMessage = ex.Message.Contains("cancelled") || ex.Message.Contains("aborted")
-                ? "Passkey registration was cancelled"
-                : "Failed to register passkey. Please try again.";
+            errorMessage = DescribeRegistrationError(ex);
         }
         finally
         {
@@ -297,29 +318,53 @@
         }
     }
 
+    // e.g. "Safari on iPhone". (The old check looked for "Mac" first, and iPhones report
+    // "like Mac OS X", so every iPhone was saved as "Mac".)
     private async Task<string> GetDeviceName()
     {
         try
         {
-            var userAgent = await JSRuntime.InvokeAsync<string>("eval", "navigator.userAgent");
-            
-            if (userAgent.Contains("Windows"))
-                return "Windows PC";
-            else if (userAgent.Contains("Mac"))
-                return "Mac";
-            else if (userAgent.Contains("iPhone"))
-                return "iPhone";
-            else if (userAgent.Contains("iPad"))
-                return "iPad";
-            else if (userAgent.Contains("Android"))
-                return "Android Device";
-            else
-                return "Unknown Device";
+            var userAgent = await JSRuntime.InvokeAsync<string>("webAuthnInterop.getUserAgent");
+            return DeviceDescriber.Describe(userAgent);
         }
         catch
         {
-            return "Unknown Device";
+            return "Unknown device";
         }
+    }
+
+    /// <summary>A server-side step failed; the message is already meant for the user.</summary>
+    private sealed class PasskeyStepFailedException(string message) : Exception(message);
+
+    private static string DescribeRegistrationError(Exception ex)
+    {
+        if (ex is PasskeyStepFailedException)
+        {
+            return ex.Message;
+        }
+
+        // WebAuthn errors arrive as "<DOMException name>: <browser text>" inside a JSException.
+        var message = ex.Message;
+        if (message.Contains("InvalidStateError", StringComparison.OrdinalIgnoreCase))
+        {
+            return "This device already has a passkey for your account, so it's registered already.";
+        }
+        if (message.Contains("NotAllowedError", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("cancel", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("abort", StringComparison.OrdinalIgnoreCase))
+        {
+            return "The passkey prompt was cancelled or timed out. Nothing was registered.";
+        }
+        if (message.Contains("SecurityError", StringComparison.OrdinalIgnoreCase))
+        {
+            return "This site isn't allowed to create passkeys for its address. Please contact support.";
+        }
+        if (ex is HttpRequestException or TaskCanceledException)
+        {
+            return PortalAuthService.ConnectionProblem;
+        }
+
+        return "Couldn't register this device. Please try again.";
     }
 }
 

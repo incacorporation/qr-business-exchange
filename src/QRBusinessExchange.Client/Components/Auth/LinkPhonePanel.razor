@@ -2,6 +2,7 @@
 @using QRBusinessExchange.Core.DTOs
 @inject ApiService ApiService
 @inject IJSRuntime JS
+@inject PortalAuthService PortalAuth
 @implements IAsyncDisposable
 
 @* Computer side of "Link a phone": shows a QR code; once a phone scans it, the user picks the
@@ -153,7 +154,7 @@
             qrRendered = true;
             try
             {
-                await JS.InvokeVoidAsync("qrCodeInterop.generateQRCode", elementId, session.LinkUrl);
+                await JS.InvokeVoidAsync("qrCodeInterop.generateQRCode", elementId, session.LinkUrl, "M");
             }
             catch (Exception ex)
             {
@@ -192,6 +193,8 @@
                 {
                     case DeviceLinkStatus.Completed:
                         deviceName = dto.DeviceName;
+                        // The phone has a passkey now: the login page here can lead with the phone camera.
+                        await PortalAuth.RememberRegisteredDeviceAsync(true);
                         await InvokeAsync(StateHasChanged);
                         await InvokeAsync(() => OnLinked.InvokeAsync());
                         return;
@@ -273,8 +276,8 @@
 <style>
     .link-phone-panel .qr-frame {
         width: 100%;
-        max-width: 240px;
-        padding: 8px;
+        max-width: 284px;
+        padding: 22px; /* QR quiet zone: about 4 modules of white, which scanners need to find the code */
         background: #fff;
         border: 1px solid var(--bs-border-color);
         border-radius: .75rem;

@@ -119,6 +119,7 @@ builder.Services.AddSingleton(sp =>
 builder.Services.AddScoped<BusinessService>();
 builder.Services.AddScoped<SsoService>();
 builder.Services.AddScoped<QrLoginService>();
+builder.Services.AddScoped<ContactService>();
 builder.Services.AddSingleton<DeviceLinkService>(); // in-memory, short-lived "link a phone" sessions
 builder.Services.AddScoped<QRBusinessExchange.API.Services.PortalSessionFactory>();
 

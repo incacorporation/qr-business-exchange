@@ -439,6 +439,33 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                     b.ToTable("Connections", (string)null);
                 });
 
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.Contact", b =>
+                {
+                    b.Property<Guid>("ContactId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("AddedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("ContactUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("ContactId");
+
+                    b.HasIndex("ContactUserId")
+                        .HasDatabaseName("IX_Contacts_ContactUserId");
+
+                    b.HasIndex("OwnerUserId", "ContactUserId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Contacts_Owner_Contact");
+
+                    b.ToTable("Contacts", (string)null);
+                });
+
             modelBuilder.Entity("QRBusinessExchange.Core.Entities.EmailVerification", b =>
                 {
                     b.Property<Guid>("VerificationId")
@@ -1209,6 +1236,27 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                     b.Navigation("InitiatorUser");
 
                     b.Navigation("RecipientUser");
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.Contact", b =>
+                {
+                    b.HasOne("QRBusinessExchange.Core.Entities.User", "ContactUser")
+                        .WithMany()
+                        .HasForeignKey("ContactUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_Contacts_ContactUser");
+
+                    b.HasOne("QRBusinessExchange.Core.Entities.User", "OwnerUser")
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_Contacts_OwnerUser");
+
+                    b.Navigation("ContactUser");
+
+                    b.Navigation("OwnerUser");
                 });
 
             modelBuilder.Entity("QRBusinessExchange.Core.Entities.EmailVerification", b =>

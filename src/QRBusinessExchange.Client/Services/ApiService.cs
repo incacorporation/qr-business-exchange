@@ -60,7 +60,12 @@ public class ApiService
             {
                 if (doc.RootElement.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String)
                 {
-                    return value.GetString() ?? fallback;
+                    var text = value.GetString();
+                    // "error" is often a machine code such as "invalid_token"; only show it if it reads as a sentence.
+                    if (!string.IsNullOrWhiteSpace(text) && (name != "error" || text.Contains(' ')))
+                    {
+                        return text;
+                    }
                 }
             }
         }

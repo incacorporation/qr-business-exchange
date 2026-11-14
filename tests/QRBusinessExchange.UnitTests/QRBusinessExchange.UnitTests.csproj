@@ -21,6 +21,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Pure logic from the Blazor client (the WASM project itself isn't referenced). -->
+    <Compile Include="..\..\src\QRBusinessExchange.Client\Services\QrCodeLinks.cs" Link="Client\QrCodeLinks.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\QRBusinessExchange.Core\QRBusinessExchange.Core.csproj" />
     <ProjectReference Include="..\..\src\QRBusinessExchange.Infrastructure\QRBusinessExchange.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\QRBusinessExchange.API\QRBusinessExchange.API.csproj" />

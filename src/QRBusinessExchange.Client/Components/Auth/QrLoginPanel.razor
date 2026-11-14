@@ -43,7 +43,7 @@
         </p>
         <p class="text-muted small mb-2">
             Phone not set up yet? On a computer where you're signed in, open
-            <strong>Settings → Sign in with your phone camera</strong> and link your phone first.
+            <strong>Register device</strong> in the menu and link your phone first.
         </p>
 
         <div class="verification-code display-5 fw-bold mb-2" aria-label="Verification number">@session!.VerificationCode</div>
@@ -115,7 +115,7 @@
             qrRendered = true;
             try
             {
-                await JS.InvokeVoidAsync("qrCodeInterop.generateQRCode", elementId, session.ApproveUrl);
+                await JS.InvokeVoidAsync("qrCodeInterop.generateQRCode", elementId, session.ApproveUrl, "M");
             }
             catch (Exception ex)
             {
@@ -188,8 +188,8 @@
 <style>
     .qr-login-panel .qr-frame {
         width: 100%;
-        max-width: 272px;
-        padding: 8px;
+        max-width: 300px;
+        padding: 22px; /* QR quiet zone: about 4 modules of white, which scanners need to find the code */
         background: #fff;
         border: 1px solid var(--bs-border-color);
         border-radius: .75rem;

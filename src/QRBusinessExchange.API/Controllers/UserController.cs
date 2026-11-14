@@ -39,7 +39,7 @@ public class UserController : ControllerBase
             return NotFound(new { error = "User not found" });
         }
 
-        return Ok(MapToUserDto(user));
+        return Ok(MapToOwnProfile(user));
     }
 
     /// <summary>
@@ -82,10 +82,35 @@ public class UserController : ControllerBase
         if (request.ServicePricing.HasValue)
             user.ServicePricing = request.ServicePricing;
 
+        if (request.ProfileImageUrl != null)
+        {
+            var imageUrl = request.ProfileImageUrl.Trim();
+            if (imageUrl.Length == 0)
+            {
+                user.ProfileImageUrl = null;
+            }
+            else if (imageUrl == user.ProfileImageUrl)
+            {
+                // Unchanged (e.g. an uploaded picture's /images/profiles/... path): keep it.
+            }
+            else if (imageUrl.Length > 500)
+            {
+                return BadRequest(new { error = "The profile image URL is too long (500 characters at most)." });
+            }
+            else if (Uri.TryCreate(imageUrl, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp))
+            {
+                user.ProfileImageUrl = imageUrl;
+            }
+            else
+            {
+                return BadRequest(new { error = "The profile image URL must be a web address starting with https://" });
+            }
+        }
+
         user.UpdatedAt = DateTime.UtcNow;
         
         var updatedUser = await _userRepository.UpdateAsync(user);
-        return Ok(MapToUserDto(updatedUser));
+        return Ok(MapToOwnProfile(updatedUser));
     }
 
     /// <summary>
@@ -152,7 +177,7 @@ public class UserController : ControllerBase
         user.UpdatedAt = DateTime.UtcNow;
 
         var updatedUser = await _userRepository.UpdateAsync(user);
-        return Ok(MapToUserDto(updatedUser));
+        return Ok(MapToOwnProfile(updatedUser));
     }
 
     /// <summary>
@@ -206,6 +231,14 @@ public class UserController : ControllerBase
         }
 
         throw new UnauthorizedAccessException("User ID not found in token");
+    }
+
+    /// <summary>The signed-in user's own profile: the public fields plus the role (not shown on public profiles).</summary>
+    private static UserDto MapToOwnProfile(QRBusinessExchange.Core.Entities.User user)
+    {
+        var dto = MapToUserDto(user);
+        dto.Role = user.Role;
+        return dto;
     }
 
     private static UserDto MapToUserDto(QRBusinessExchange.Core.Entities.User user)

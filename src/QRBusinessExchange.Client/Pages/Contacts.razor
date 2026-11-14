@@ -1,0 +1,267 @@
+@page "/contacts"
+@using QRBusinessExchange.Core.DTOs
+@using QRBusinessExchange.Client.Components.Scanner
+@inject PortalAuthService PortalAuth
+@inject ApiService ApiService
+@inject StateService StateService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+@* People saved by scanning their business card. Phones get the scanner above the list; computers
+   (no usable camera for this) see the list only. *@
+
+<PageTitle>Contacts - qrbound</PageTitle>
+
+@if (!ready)
+{
+    <div class="text-center py-5"><span class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></span></div>
+}
+else
+{
+    <div class="contacts-page">
+        <h1 class="h3 mb-1">Contacts</h1>
+        <p class="text-muted mb-3">
+            @if (isMobile)
+            {
+                <text>Scan someone's qrbound business card to add them.</text>
+            }
+            else
+            {
+                <text>People you added by scanning their qrbound business card with your phone.</text>
+            }
+        </p>
+
+        @if (isMobile)
+        {
+            <section class="mb-4" aria-label="Scan a business card">
+                <QrScanner OnDetected="OnCardScannedAsync" Compact="true" />
+            </section>
+        }
+
+        @if (loadError != null)
+        {
+            <div class="alert alert-danger d-flex align-items-center gap-2">
+                <span class="flex-grow-1">@loadError</span>
+                <button class="btn btn-sm btn-outline-danger" @onclick="LoadAsync">Try again</button>
+            </div>
+        }
+        else if (contacts == null)
+        {
+            <div class="text-center py-4"><span class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading contacts…</span></span></div>
+        }
+        else if (contacts.Count == 0)
+        {
+            <div class="contacts-empty text-center text-muted">
+                <i class="bi bi-person-lines-fill display-5"></i>
+                <p class="mt-2 mb-0">No contacts yet.</p>
+                <p class="small mb-0">
+                    @(isMobile
+                        ? "Point the camera above at someone's business card to add them."
+                        : "Open Contacts on your phone and scan someone's business card to add them.")
+                </p>
+            </div>
+        }
+        else
+        {
+            <div class="d-flex align-items-center gap-2 mb-2">
+                <h2 class="h6 mb-0 flex-grow-1">@contacts.Count @(contacts.Count == 1 ? "contact" : "contacts")</h2>
+            </div>
+
+            @if (contacts.Count > 5)
+            {
+                <input type="search" class="form-control mb-3" placeholder="Search contacts"
+                       aria-label="Search contacts" @bind="search" @bind:event="oninput" />
+            }
+
+            <ul class="list-group contacts-list">
+                @foreach (var contact in Filtered)
+                {
+                    <li class="list-group-item @(contact.UserId == highlighted ? "is-new" : "")" @key="contact.UserId">
+                        <div class="d-flex align-items-center gap-3">
+                            <a href="/user/@contact.UserId" class="contact-avatar" aria-hidden="true" tabindex="-1">
+                                @if (!string.IsNullOrEmpty(contact.ProfileImageUrl))
+                                {
+                                    <img src="@contact.ProfileImageUrl" alt="" />
+                                }
+                                else
+                                {
+                                    @Initials(contact)
+                                }
+                            </a>
+                            <div class="flex-grow-1 min-w-0">
+                                <a href="/user/@contact.UserId" class="fw-semibold text-reset text-decoration-none d-block text-truncate">
+                                    @contact.FirstName @contact.LastName
+                                </a>
+                                @if (!string.IsNullOrEmpty(contact.CompanyName))
+                                {
+                                    <div class="small text-muted text-truncate">@contact.CompanyName</div>
+                                }
+                                <div class="small contact-links">
+                                    <a href="mailto:@contact.Email" class="text-truncate"><i class="bi bi-envelope me-1"></i>@contact.Email</a>
+                                    @if (!string.IsNullOrEmpty(contact.PhoneNumber))
+                                    {
+                                        <a href="tel:@contact.PhoneNumber"><i class="bi bi-telephone me-1"></i>@contact.PhoneNumber</a>
+                                    }
+                                </div>
+                                <div class="small text-muted">Added @contact.AddedAt.ToLocalTime().ToString("MMM d, yyyy")</div>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-danger" title="Remove from contacts"
+                                    aria-label="@($"Remove {contact.FirstName} {contact.LastName} from contacts")"
+                                    disabled="@(removing == contact.UserId)" @onclick="() => RemoveAsync(contact)">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </li>
+                }
+            </ul>
+
+            @if (!Filtered.Any())
+            {
+                <p class="text-muted small mt-2">No contacts match “@search”.</p>
+            }
+        }
+    </div>
+}
+
+@code {
+    private bool ready;
+    private bool isMobile;
+    private List<ContactDto>? contacts;
+    private string? loadError;
+    private string search = "";
+    private Guid? highlighted;
+    private Guid? removing;
+
+    private IEnumerable<ContactDto> Filtered =>
+        string.IsNullOrWhiteSpace(search)
+            ? contacts!
+            : contacts!.Where(c => $"{c.FirstName} {c.LastName} {c.CompanyName} {c.Email}"
+                .Contains(search.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Signed-in users only (an expired token counts as signed out).
+        var session = await PortalAuth.GetSessionStateAsync();
+        if (session != PortalSessionState.Active)
+        {
+            if (session == PortalSessionState.Expired)
+            {
+                await PortalAuth.SignOutAsync();
+            }
+            Navigation.NavigateTo($"/login?returnUrl={Uri.EscapeDataString("/contacts")}", replace: true);
+            return;
+        }
+
+        isMobile = ((IJSInProcessRuntime)JS).Invoke<bool>("qrScanner.isMobile");
+        ready = true;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        loadError = null;
+        contacts = null;
+        try
+        {
+            var response = await ApiService.GetResponseAsync("api/contacts");
+            if (response.IsSuccessStatusCode)
+            {
+                contacts = await ApiService.ParseResponseAsync<List<ContactDto>>(response) ?? new();
+            }
+            else
+            {
+                loadError = await ApiService.ReadErrorAsync(response, "Your contacts couldn't be loaded.");
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            loadError = PortalAuthService.ConnectionProblem;
+        }
+    }
+
+    private async Task<QrScanOutcome> OnCardScannedAsync(string text)
+    {
+        var userId = QrCodeLinks.ToBusinessCardUserId(text, new Uri(Navigation.BaseUri));
+        if (userId == null)
+        {
+            return QrScanOutcome.Warning("This isn't a qrbound business card",
+                "Scan the QR code on another member's Business Card page.", showScannedText: true);
+        }
+
+        if (userId == StateService.CurrentUser?.UserId)
+        {
+            return QrScanOutcome.Warning("That's your own business card",
+                "Scan someone else's card to add them to your contacts.");
+        }
+
+        var existing = contacts?.FirstOrDefault(c => c.UserId == userId);
+        if (existing != null)
+        {
+            Highlight(existing.UserId);
+            return QrScanOutcome.Success($"{existing.FirstName} {existing.LastName} is already in your contacts", existing.CompanyName);
+        }
+
+        try
+        {
+            var response = await ApiService.PostAsync("api/contacts", new AddContactRequest { UserId = userId.Value });
+            if (!response.IsSuccessStatusCode)
+            {
+                return QrScanOutcome.Warning("The contact couldn't be added",
+                    await ApiService.ReadErrorAsync(response, "Please scan the card again."));
+            }
+
+            var added = await ApiService.ParseResponseAsync<ContactDto>(response);
+            if (added == null)
+            {
+                return QrScanOutcome.Warning("The contact couldn't be added", "Please scan the card again.");
+            }
+
+            contacts ??= new();
+            contacts.RemoveAll(c => c.UserId == added.UserId);
+            contacts.Insert(0, added);
+            search = "";
+            Highlight(added.UserId);
+            StateHasChanged();
+            return QrScanOutcome.Success($"{added.FirstName} {added.LastName} added to your contacts", added.CompanyName);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            return QrScanOutcome.Warning("The contact couldn't be added", PortalAuthService.ConnectionProblem);
+        }
+    }
+
+    private void Highlight(Guid userId) => highlighted = userId;
+
+    private async Task RemoveAsync(ContactDto contact)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Remove {contact.FirstName} {contact.LastName} from your contacts?"))
+        {
+            return;
+        }
+
+        removing = contact.UserId;
+        try
+        {
+            var response = await ApiService.DeleteAsync($"api/contacts/{contact.UserId}");
+            if (response.IsSuccessStatusCode)
+            {
+                contacts?.Remove(contact);
+            }
+            else
+            {
+                await JS.InvokeVoidAsync("alert", await ApiService.ReadErrorAsync(response, "The contact couldn't be removed. Please try again."));
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            await JS.InvokeVoidAsync("alert", PortalAuthService.ConnectionProblem);
+        }
+        finally
+        {
+            removing = null;
+        }
+    }
+
+    private static string Initials(ContactDto c) =>
+        $"{(c.FirstName.Length > 0 ? c.FirstName[0] : ' ')}{(c.LastName.Length > 0 ? c.LastName[0] : ' ')}".Trim().ToUpperInvariant();
+}

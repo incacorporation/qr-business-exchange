@@ -1,7 +1,9 @@
 // QR Code Interop for Blazor WebAssembly
 window.qrCodeInterop = {
     
-    generateQRCode: function (elementId, text) {
+    // level: error correction 'L' | 'M' | 'Q' | 'H' (default 'H', for printed business cards that may get
+    // scuffed). On-screen sign-in codes use 'M': far fewer modules, so phones read them off a monitor easily.
+    generateQRCode: function (elementId, text, level) {
         return new Promise((resolve, reject) => {
             try {
                 const timeout = setTimeout(() => {
@@ -34,7 +36,7 @@ window.qrCodeInterop = {
                     height: 256,
                     colorDark: '#000000',
                     colorLight: '#ffffff',
-                    correctLevel: QRCode.CorrectLevel.H
+                    correctLevel: QRCode.CorrectLevel[level] ?? QRCode.CorrectLevel.H
                 });
 
                 clearTimeout(timeout);

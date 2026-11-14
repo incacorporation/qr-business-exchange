@@ -84,6 +84,9 @@ public class ApplicationDbContext : IdentityDbContext
     /// <summary>QR code login sessions</summary>
     public DbSet<QrLoginSession> QrLoginSessions { get; set; } = null!;
 
+    /// <summary>People saved by scanning their business card</summary>
+    public DbSet<Contact> Contacts { get; set; } = null!;
+
     /// <summary>
     /// Configures the database schema using Fluent API
     /// </summary>
@@ -111,6 +114,7 @@ public class ApplicationDbContext : IdentityDbContext
         ConfigureUser(modelBuilder);
         ConfigureQRCode(modelBuilder);
         ConfigureConnection(modelBuilder);
+        ConfigureContact(modelBuilder);
         ConfigureSubscription(modelBuilder);
         ConfigurePayment(modelBuilder);
         ConfigureAdvertisement(modelBuilder);
@@ -328,6 +332,39 @@ public class ApplicationDbContext : IdentityDbContext
 
             entity.Property(e => e.ScansCount)
                 .HasDefaultValue(0);
+        });
+    }
+
+    /// <summary>
+    /// Configures the Contact entity (business cards a user has saved)
+    /// </summary>
+    private static void ConfigureContact(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Contact>(entity =>
+        {
+            entity.ToTable("Contacts");
+            entity.HasKey(e => e.ContactId);
+
+            entity.HasOne(e => e.OwnerUser)
+                .WithMany()
+                .HasForeignKey(e => e.OwnerUserId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_Contacts_OwnerUser");
+
+            // Restrict: SQL Server allows only one cascade path to Users.
+            entity.HasOne(e => e.ContactUser)
+                .WithMany()
+                .HasForeignKey(e => e.ContactUserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("FK_Contacts_ContactUser");
+
+            // One entry per person per list; also serves "my contacts" lookups.
+            entity.HasIndex(e => new { e.OwnerUserId, e.ContactUserId })
+                .IsUnique()
+                .HasDatabaseName("IX_Contacts_Owner_Contact");
+
+            entity.HasIndex(e => e.ContactUserId)
+                .HasDatabaseName("IX_Contacts_ContactUserId");
         });
     }
 

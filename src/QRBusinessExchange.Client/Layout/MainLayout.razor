@@ -1,7 +1,10 @@
+@using Microsoft.JSInterop
 @inherits LayoutComponentBase
 @inject StateService StateService
 @inject NavigationManager Navigation
-@implements IDisposable
+@inject PortalAuthService PortalAuth
+@inject IJSRuntime JS
+@implements IAsyncDisposable
 
 <div class="page @(navOpen ? "nav-open" : "") @(StateService.IsAuthenticated ? "has-bottom-nav" : "")">
 
@@ -74,6 +77,27 @@
                         </NavLink>
                     </div>
                     <div class="nav-item px-3">
+                        <NavLink href="business-card" class="nav-link">
+                            <i class="bi bi-qr-code"></i> Business Card
+                        </NavLink>
+                    </div>
+                    <div class="nav-item px-3">
+                        <NavLink href="contacts" class="nav-link">
+                            <i class="bi bi-person-lines-fill"></i> Contacts
+                        </NavLink>
+                    </div>
+                    @* Phone only: the scanner uses the camera, so it's hidden in the desktop layout. *@
+                    <div class="nav-item px-3 d-lg-none">
+                        <NavLink href="scan" class="nav-link">
+                            <i class="bi bi-qr-code-scan"></i> Scan QR code
+                        </NavLink>
+                    </div>
+                    <div class="nav-item px-3">
+                        <NavLink href="register-device" class="nav-link">
+                            <i class="bi bi-fingerprint"></i> Register device
+                        </NavLink>
+                    </div>
+                    <div class="nav-item px-3">
                         <NavLink href="profile" class="nav-link">
                             <i class="bi bi-person-circle"></i> Profile
                         </NavLink>
@@ -81,7 +105,7 @@
                     @* Connections and Analytics links removed until those pages exist (/connections, /analytics). *@
                     <div class="nav-item px-3">
                         <NavLink href="businesses" class="nav-link">
-                            <i class="bi bi-buildings"></i> Businesses &amp; SSO
+                            <i class="bi bi-buildings"></i> Business Profile
                         </NavLink>
                     </div>
                     <div class="nav-item px-3">
@@ -162,7 +186,7 @@
                 <i class="bi bi-speedometer2"></i><span>Dashboard</span>
             </NavLink>
             <NavLink href="businesses" class="bottom-nav-item">
-                <i class="bi bi-buildings"></i><span>Businesses</span>
+                <i class="bi bi-buildings"></i><span>Business</span>
             </NavLink>
             <NavLink href="profile" class="bottom-nav-item">
                 <i class="bi bi-person"></i><span>Profile</span>
@@ -177,13 +201,57 @@
 
 @code {
     private bool navOpen;
+    private DotNetObjectReference<MainLayout>? selfRef;
+    private DateTime lastProfileRefresh = DateTime.MinValue;
 
     protected override async Task OnInitializedAsync()
     {
         await StateService.InitializeAsync();
-        StateService.OnStateChanged += StateHasChanged;
+        StateService.OnStateChanged += OnStateChanged;
         Navigation.LocationChanged += OnLocationChanged;
+
+        // The stored profile may be out of date (changed on another device): reload it in the background.
+        _ = RefreshProfileAsync(force: true);
     }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            selfRef = DotNetObjectReference.Create(this);
+            try
+            {
+                await JS.InvokeVoidAsync("appVisibility.watch", selfRef);
+            }
+            catch (JSException ex)
+            {
+                // AppVisibility interop may not be available; silently continue
+                // The app will function normally, just without tab visibility monitoring
+                System.Diagnostics.Debug.WriteLine($"AppVisibility interop unavailable: {ex.Message}");
+            }
+        }
+    }
+
+    /// <summary>The tab or installed app is in the foreground again.</summary>
+    [JSInvokable]
+    public Task OnAppVisible() => RefreshProfileAsync(force: false);
+
+    /// <summary>Another tab of this browser saved a newer profile.</summary>
+    [JSInvokable]
+    public Task OnProfileChangedElsewhere() => RefreshProfileAsync(force: true);
+
+    private async Task RefreshProfileAsync(bool force)
+    {
+        // Switching tabs often shouldn't mean a request every time.
+        if (!force && DateTime.UtcNow - lastProfileRefresh < TimeSpan.FromSeconds(30))
+        {
+            return;
+        }
+        lastProfileRefresh = DateTime.UtcNow;
+        await PortalAuth.RefreshProfileAsync();
+    }
+
+    private void OnStateChanged() => InvokeAsync(StateHasChanged);
 
     private void ToggleNav() => navOpen = !navOpen;
 
@@ -199,9 +267,15 @@
         }
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
-        StateService.OnStateChanged -= StateHasChanged;
+        StateService.OnStateChanged -= OnStateChanged;
         Navigation.LocationChanged -= OnLocationChanged;
+        try
+        {
+            await JS.InvokeVoidAsync("appVisibility.unwatch");
+        }
+        catch (JSDisconnectedException) { }
+        selfRef?.Dispose();
     }
 }

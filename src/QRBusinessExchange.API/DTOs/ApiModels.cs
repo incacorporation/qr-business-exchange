@@ -72,6 +72,9 @@ public class UpdateProfileRequest
     public string? Bio { get; set; }
     public string? Skills { get; set; }
     public decimal? ServicePricing { get; set; }
+
+    /// <summary>Link to a profile picture (http or https); empty removes it.</summary>
+    public string? ProfileImageUrl { get; set; }
 }
 
 public class UpdateLocationRequest

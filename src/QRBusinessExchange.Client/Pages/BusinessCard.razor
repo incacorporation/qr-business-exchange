@@ -1,0 +1,54 @@
+@page "/business-card"
+@using QRBusinessExchange.Client.Components.QRCode
+@inject PortalAuthService PortalAuth
+@inject StateService StateService
+@inject NavigationManager Navigation
+
+@* The signed-in user's profile QR code, to show, download, print or share. *@
+
+<PageTitle>Business Card - qrbound</PageTitle>
+
+@if (!ready)
+{
+    <div class="text-center py-5"><span class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></span></div>
+}
+else
+{
+    <div class="business-card mx-auto">
+        <h1 class="h3 mb-1">Business Card</h1>
+        <p class="text-muted mb-4">Let people scan this code to see your profile and add you to their contacts.</p>
+
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                <QRCodeCard UserId="@StateService.CurrentUser?.UserId" />
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool ready;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Signed-in users only (an expired token counts as signed out).
+        var session = await PortalAuth.GetSessionStateAsync();
+        if (session != PortalSessionState.Active || StateService.CurrentUser == null)
+        {
+            if (session == PortalSessionState.Expired)
+            {
+                await PortalAuth.SignOutAsync();
+            }
+            Navigation.NavigateTo($"/login?returnUrl={Uri.EscapeDataString("/business-card")}", replace: true);
+            return;
+        }
+
+        ready = true;
+    }
+}
+
+<style>
+    .business-card {
+        max-width: 480px;
+    }
+</style>

@@ -191,12 +191,13 @@ public class WebAuthnService
     {
         var expectedChallenge = ConsumeChallenge(challengeString, email: null, purpose: purpose ?? "login");
 
+        // A passkey the server has never seen: e.g. one saved for another domain or an earlier setup.
+        // Reported separately so the user can be told to add a new one instead of "authentication failed".
+        var credential = await _passkeyRepository.GetByCredentialIdAsync(DecodeBase64Url(assertion.RawId))
+            ?? throw new PasskeyNotRegisteredException();
+
         try
         {
-            var credentialId = DecodeBase64Url(assertion.RawId);
-
-            var credential = await _passkeyRepository.GetByCredentialIdAsync(credentialId)
-                ?? throw new InvalidOperationException("Credential not found");
 
             var clientDataJSON = DecodeBase64Url(assertion.Response.ClientDataJSON);
             var authenticatorData = DecodeBase64Url(assertion.Response.AuthenticatorData);
@@ -490,5 +491,16 @@ public class WebAuthnService
             case 3: base64 += "="; break;
         }
         return Convert.FromBase64String(base64);
+    }
+}
+
+/// <summary>
+/// The passkey used to sign in isn't registered with this server (unknown credential ID).
+/// </summary>
+public sealed class PasskeyNotRegisteredException : InvalidOperationException
+{
+    public PasskeyNotRegisteredException()
+        : base("This passkey isn't registered with qrbound.")
+    {
     }
 }
