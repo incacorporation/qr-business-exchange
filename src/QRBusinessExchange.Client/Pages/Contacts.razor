@@ -97,7 +97,10 @@ else
                                     <div class="small text-muted text-truncate">@contact.CompanyName</div>
                                 }
                                 <div class="small contact-links">
-                                    <a href="mailto:@contact.Email" class="text-truncate"><i class="bi bi-envelope me-1"></i>@contact.Email</a>
+                                    @if (!string.IsNullOrEmpty(contact.Email))
+                                    {
+                                        <a href="mailto:@contact.Email" class="text-truncate"><i class="bi bi-envelope me-1"></i>@contact.Email</a>
+                                    }
                                     @if (!string.IsNullOrEmpty(contact.PhoneNumber))
                                     {
                                         <a href="tel:@contact.PhoneNumber"><i class="bi bi-telephone me-1"></i>@contact.PhoneNumber</a>

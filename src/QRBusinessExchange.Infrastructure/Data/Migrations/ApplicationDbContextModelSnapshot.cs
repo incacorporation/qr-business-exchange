@@ -1053,6 +1053,27 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                     b.Property<decimal?>("ServicePricing")
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<bool>("ShowBio")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("ShowCompanyName")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("ShowEmail")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("ShowPhoneNumber")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("ShowProfileImage")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("ShowServicePricing")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("ShowSkills")
+                        .HasColumnType("bit");
+
                     b.Property<string>("Skills")
                         .HasColumnType("nvarchar(max)");
 

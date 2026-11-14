@@ -1,6 +1,7 @@
 @page "/profile"
 @using QRBusinessExchange.Core.DTOs
 @using QRBusinessExchange.Client.Services
+@using QRBusinessExchange.Client.Components.Profile
 @inject ApiService ApiService
 @inject StateService StateService
 @inject PortalAuthService PortalAuth
@@ -34,6 +35,11 @@
                         <EditForm Model="profileDto" OnValidSubmit="SaveProfile" FormName="profileForm">
                             <DataAnnotationsValidator />
                             
+                            <p class="text-muted small mb-3">
+                                Tick <strong>Show on my card</strong> for each detail that people who scan your business card,
+                                and your contacts, may see. Unticked details stay visible only to you. Your name is always shown.
+                            </p>
+
                             <div class="row">
                                 <div class="col-md-6 mb-3">
                                     <label for="firstName" class="form-label">First Name</label>
@@ -47,38 +53,62 @@
                             </div>
 
                             <div class="mb-3">
-                                <label for="email" class="form-label">Email</label>
+                                <div class="profile-label-row">
+                                    <label for="email" class="form-label">Email</label>
+                                    <ShowOnCardCheckbox Id="show-email" Field="your email" @bind-Value="visibility.ShowEmail" />
+                                </div>
                                 <InputText id="email" @bind-Value="profileDto.Email" class="form-control" disabled />
                             </div>
 
                             <div class="mb-3">
-                                <label for="companyName" class="form-label">Company Name</label>
+                                <div class="profile-label-row">
+                                    <label for="companyName" class="form-label">Company Name</label>
+                                    <ShowOnCardCheckbox Id="show-company" Field="your company name" @bind-Value="visibility.ShowCompanyName" />
+                                </div>
                                 <InputText id="companyName" @bind-Value="profileDto.CompanyName" class="form-control" />
                             </div>
 
                             <div class="mb-3">
-                                <label for="phoneNumber" class="form-label">Phone Number</label>
+                                <div class="profile-label-row">
+                                    <label for="phoneNumber" class="form-label">Phone Number</label>
+                                    <ShowOnCardCheckbox Id="show-phone" Field="your phone number" @bind-Value="visibility.ShowPhoneNumber" />
+                                </div>
                                 <InputText id="phoneNumber" @bind-Value="profileDto.PhoneNumber" class="form-control" />
                             </div>
 
                             <div class="mb-3">
-                                <label for="bio" class="form-label">Bio</label>
+                                <div class="profile-label-row">
+                                    <label for="bio" class="form-label">Bio</label>
+                                    <ShowOnCardCheckbox Id="show-bio" Field="your bio" @bind-Value="visibility.ShowBio" />
+                                </div>
                                 <InputTextArea id="bio" @bind-Value="profileDto.Bio" class="form-control" rows="4" />
                             </div>
 
                             <div class="mb-3">
-                                <label for="skills" class="form-label">Skills (comma-separated)</label>
-                                <InputText id="skills" @bind-Value="profileDto.Skills" class="form-control" 
-                                          placeholder="e.g., Web Development, Marketing, Design" />
+                                <div class="profile-label-row">
+                                    <label for="skills" class="form-label">Skills (comma-separated)</label>
+                                    <ShowOnCardCheckbox Id="show-skills" Field="your skills" @bind-Value="visibility.ShowSkills" />
+                                </div>
+                                @* Read-only: choosing happens in the picker, which opens on click or focus. *@
+                                <input id="skills" class="form-control skills-input" readonly value="@profileDto.Skills"
+                                       placeholder="e.g., Web Development, Marketing, Design"
+                                       aria-haspopup="dialog" title="Choose industries and skills"
+                                       @onclick="OpenSkillsPicker" @onfocus="OpenSkillsPicker" />
                             </div>
 
                             <div class="mb-3">
-                                <label for="servicePricing" class="form-label">Service Pricing ($)</label>
+                                <div class="profile-label-row">
+                                    <label for="servicePricing" class="form-label">Service Pricing ($)</label>
+                                    <ShowOnCardCheckbox Id="show-pricing" Field="your service pricing" @bind-Value="visibility.ShowServicePricing" />
+                                </div>
                                 <InputNumber id="servicePricing" @bind-Value="profileDto.ServicePricing" class="form-control" />
                             </div>
 
                             <div class="mb-3">
-                                <label for="profileImage" class="form-label">Profile Image URL</label>
+                                <div class="profile-label-row">
+                                    <label for="profileImage" class="form-label">Profile Image URL</label>
+                                    <ShowOnCardCheckbox Id="show-image" Field="your profile picture" @bind-Value="visibility.ShowProfileImage" />
+                                </div>
                                 <InputText id="profileImage" @bind-Value="profileDto.ProfileImageUrl" class="form-control" />
                             </div>
 
@@ -97,6 +127,8 @@
                                 <button type="button" class="btn btn-secondary" @onclick="Cancel">Cancel</button>
                             </div>
                         </EditForm>
+
+                        <SkillsPickerModal IsOpen="skillsPickerOpen" Value="@profileDto.Skills" OnClose="OnSkillsPicked" />
                     }
                 </div>
             </div>
@@ -109,6 +141,22 @@
     private string errorMessage = string.Empty;
     private string successMessage = string.Empty;
     private bool isLoading = false;
+    private bool skillsPickerOpen;
+
+    private void OpenSkillsPicker() => skillsPickerOpen = true;
+
+    // Close in the picker: put the chosen skills in the Skills box (saved with Save Changes).
+    private void OnSkillsPicked(string skills)
+    {
+        skillsPickerOpen = false;
+        if (profileDto != null)
+        {
+            profileDto.Skills = skills;
+        }
+    }
+
+    // What the business card shows; kept on the copy being edited, so it's saved with the other fields.
+    private ProfileVisibility visibility => profileDto!.Visibility ??= new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -150,7 +198,8 @@
                 Bio = profileDto.Bio ?? "",
                 Skills = profileDto.Skills ?? "",
                 profileDto.ServicePricing,
-                ProfileImageUrl = profileDto.ProfileImageUrl ?? ""
+                ProfileImageUrl = profileDto.ProfileImageUrl ?? "",
+                Visibility = visibility
             });
 
             if (response.IsSuccessStatusCode)
@@ -168,6 +217,7 @@
                     user.Skills = saved.Skills;
                     user.ServicePricing = saved.ServicePricing;
                     user.ProfileImageUrl = saved.ProfileImageUrl;
+                    user.Visibility = saved.Visibility ?? visibility;
                     StateService.CurrentUser = user;
                     profileDto = Copy(user);
                 }
@@ -198,3 +248,28 @@
         Navigation.NavigateTo("/dashboard");
     }
 }
+
+<style>
+    /* Field label on the left, "Show on my card" on the right */
+    .profile-label-row {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    .profile-label-row .show-on-card {
+        white-space: nowrap;
+    }
+
+    /* The Skills box opens a picker; show it as clickable rather than greyed out */
+    .skills-input[readonly] {
+        background-color: var(--bs-body-bg);
+        cursor: pointer;
+    }
+
+    .profile-label-row .show-on-card .form-check-label {
+        color: var(--bs-secondary-color);
+    }
+</style>

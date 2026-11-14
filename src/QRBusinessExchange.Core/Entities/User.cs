@@ -44,6 +44,16 @@ public class User
 
     public decimal? ServicePricing { get; set; }
 
+    // What people who open this user's business card (public profile) or have them in their contacts may see.
+    // The name is always shown. All default to shown, which is how profiles behaved before these existed.
+    public bool ShowEmail { get; set; } = true;
+    public bool ShowCompanyName { get; set; } = true;
+    public bool ShowPhoneNumber { get; set; } = true;
+    public bool ShowBio { get; set; } = true;
+    public bool ShowSkills { get; set; } = true;
+    public bool ShowServicePricing { get; set; } = true;
+    public bool ShowProfileImage { get; set; } = true;
+
     public bool IsEmailVerified { get; set; } = false;
 
     public bool IsActive { get; set; } = true;

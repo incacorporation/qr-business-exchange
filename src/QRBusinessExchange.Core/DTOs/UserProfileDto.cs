@@ -84,4 +84,22 @@ public class UserProfileDto
     /// Date and time of the user's last login
     /// </summary>
     public DateTime? LastLoginAt { get; set; }
+
+    /// <summary>Which fields the user shows on their business card (only filled in for their own profile).</summary>
+    public ProfileVisibility? Visibility { get; set; }
+}
+
+/// <summary>
+/// Which profile fields people who open the user's business card, or have them in their contacts, can see.
+/// The name is always shown; everything is shown unless the user turns it off.
+/// </summary>
+public class ProfileVisibility
+{
+    public bool ShowEmail { get; set; } = true;
+    public bool ShowCompanyName { get; set; } = true;
+    public bool ShowPhoneNumber { get; set; } = true;
+    public bool ShowBio { get; set; } = true;
+    public bool ShowSkills { get; set; } = true;
+    public bool ShowServicePricing { get; set; } = true;
+    public bool ShowProfileImage { get; set; } = true;
 }

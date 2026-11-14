@@ -49,14 +49,21 @@
                             }
                         </div>
 
-                        <div class="mb-3">
-                            <h5>Contact Information</h5>
-                            <p><strong>Email:</strong> @userProfile.Email</p>
-                            @if (!string.IsNullOrEmpty(userProfile.PhoneNumber))
-                            {
-                                <p><strong>Phone:</strong> @userProfile.PhoneNumber</p>
-                            }
-                        </div>
+                        @* Only the fields this person chose to show on their business card arrive here. *@
+                        @if (!string.IsNullOrEmpty(userProfile.Email) || !string.IsNullOrEmpty(userProfile.PhoneNumber))
+                        {
+                            <div class="mb-3">
+                                <h5>Contact Information</h5>
+                                @if (!string.IsNullOrEmpty(userProfile.Email))
+                                {
+                                    <p><strong>Email:</strong> <a href="mailto:@userProfile.Email">@userProfile.Email</a></p>
+                                }
+                                @if (!string.IsNullOrEmpty(userProfile.PhoneNumber))
+                                {
+                                    <p><strong>Phone:</strong> <a href="tel:@userProfile.PhoneNumber">@userProfile.PhoneNumber</a></p>
+                                }
+                            </div>
+                        }
 
                         @if (!string.IsNullOrEmpty(userProfile.Bio))
                         {

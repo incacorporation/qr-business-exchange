@@ -107,6 +107,17 @@ public class UserController : ControllerBase
             }
         }
 
+        if (request.Visibility is { } show)
+        {
+            user.ShowEmail = show.ShowEmail ?? user.ShowEmail;
+            user.ShowCompanyName = show.ShowCompanyName ?? user.ShowCompanyName;
+            user.ShowPhoneNumber = show.ShowPhoneNumber ?? user.ShowPhoneNumber;
+            user.ShowBio = show.ShowBio ?? user.ShowBio;
+            user.ShowSkills = show.ShowSkills ?? user.ShowSkills;
+            user.ShowServicePricing = show.ShowServicePricing ?? user.ShowServicePricing;
+            user.ShowProfileImage = show.ShowProfileImage ?? user.ShowProfileImage;
+        }
+
         user.UpdatedAt = DateTime.UtcNow;
         
         var updatedUser = await _userRepository.UpdateAsync(user);
@@ -131,7 +142,7 @@ public class UserController : ControllerBase
             return NotFound(new { error = "User not found" });
         }
 
-        return Ok(MapToUserDto(user));
+        return Ok(MapToPublicProfile(user));
     }
 
     /// <summary>
@@ -238,6 +249,30 @@ public class UserController : ControllerBase
     {
         var dto = MapToUserDto(user);
         dto.Role = user.Role;
+        dto.Visibility = new ProfileVisibilityDto
+        {
+            ShowEmail = user.ShowEmail,
+            ShowCompanyName = user.ShowCompanyName,
+            ShowPhoneNumber = user.ShowPhoneNumber,
+            ShowBio = user.ShowBio,
+            ShowSkills = user.ShowSkills,
+            ShowServicePricing = user.ShowServicePricing,
+            ShowProfileImage = user.ShowProfileImage
+        };
+        return dto;
+    }
+
+    /// <summary>What anyone opening the user's business card sees: the name plus the fields they chose to show.</summary>
+    private static UserDto MapToPublicProfile(QRBusinessExchange.Core.Entities.User user)
+    {
+        var dto = MapToUserDto(user);
+        if (!user.ShowEmail) dto.Email = string.Empty;
+        if (!user.ShowCompanyName) dto.CompanyName = null;
+        if (!user.ShowPhoneNumber) dto.PhoneNumber = null;
+        if (!user.ShowBio) dto.Bio = null;
+        if (!user.ShowSkills) dto.Skills = null;
+        if (!user.ShowServicePricing) dto.ServicePricing = null;
+        if (!user.ShowProfileImage) dto.ProfileImageUrl = null;
         return dto;
     }
 

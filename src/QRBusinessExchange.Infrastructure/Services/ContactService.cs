@@ -28,10 +28,11 @@ public class ContactService
                 UserId = c.ContactUserId,
                 FirstName = c.ContactUser.FirstName,
                 LastName = c.ContactUser.LastName,
-                CompanyName = c.ContactUser.CompanyName,
-                Email = c.ContactUser.Email,
-                PhoneNumber = c.ContactUser.PhoneNumber,
-                ProfileImageUrl = c.ContactUser.ProfileImageUrl,
+                // Only what the person chose to show on their business card.
+                CompanyName = c.ContactUser.ShowCompanyName ? c.ContactUser.CompanyName : null,
+                Email = c.ContactUser.ShowEmail ? c.ContactUser.Email : "",
+                PhoneNumber = c.ContactUser.ShowPhoneNumber ? c.ContactUser.PhoneNumber : null,
+                ProfileImageUrl = c.ContactUser.ShowProfileImage ? c.ContactUser.ProfileImageUrl : null,
                 AddedAt = c.AddedAt
             })
             .ToListAsync();
@@ -81,10 +82,10 @@ public class ContactService
             UserId = person.UserId,
             FirstName = person.FirstName,
             LastName = person.LastName,
-            CompanyName = person.CompanyName,
-            Email = person.Email,
-            PhoneNumber = person.PhoneNumber,
-            ProfileImageUrl = person.ProfileImageUrl,
+            CompanyName = person.ShowCompanyName ? person.CompanyName : null,
+            Email = person.ShowEmail ? person.Email : "",
+            PhoneNumber = person.ShowPhoneNumber ? person.PhoneNumber : null,
+            ProfileImageUrl = person.ShowProfileImage ? person.ProfileImageUrl : null,
             AddedAt = addedAt
         };
     }
