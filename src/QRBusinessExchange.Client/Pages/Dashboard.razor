@@ -8,6 +8,7 @@
 @inject NavigationManager Navigation
 @inject IJSRuntime JSRuntime
 @inject GeolocationService GeolocationService
+@inject PingMeService PingMe
 
 <PageTitle>Dashboard - qrbound</PageTitle>
 
@@ -138,10 +139,22 @@
                 </div>
                 <LeafletMap @ref="mapComponent" Users="@nearbyUsers" CurrentUserId="@StateService.CurrentUser?.UserId" 
                            DefaultLat="@currentLatitude" DefaultLng="@currentLongitude" />
-                <div class="mt-3">
-                    <span class="badge bg-success me-2"><i class="fas fa-circle"></i> Ping Me Enabled</span>
-                    <span class="badge bg-secondary me-2"><i class="fas fa-circle"></i> Free Users</span>
-                    <span class="badge bg-warning"><i class="fas fa-circle"></i> Premium Users</span>
+                <div class="mt-3 small" aria-live="polite">
+                    @if (!string.IsNullOrEmpty(nearbyMessage))
+                    {
+                        <span class="text-muted"><i class="fas fa-info-circle me-1"></i>@nearbyMessage</span>
+                    }
+                    else if (locationObtained)
+                    {
+                        <span class="text-muted">
+                            @nearbyCount @(nearbyCount == 1 ? "person" : "people") with Ping Me on within @selectedDistance @(selectedDistance == 1 ? "mile" : "miles").
+                            The blue marker is you; tap a marker to see who it is.
+                        </span>
+                    }
+                    @if (!pingMeEnabled)
+                    {
+                        <div class="text-muted mt-1">Turn on <strong>Ping Me</strong> below so people nearby can find you too.</div>
+                    }
                 </div>
             </div>
         </div>
@@ -168,10 +181,14 @@
                             <i class="fas fa-broadcast-tower"></i>
                             <div class="tool-content">
                                 <h5>Ping Me Status</h5>
-                                <p>Allow other users to find and contact you</p>
+                                <p>@(pingMeEnabled ? "On: people nearby can find you on their map" : "Off: you don't appear on nearby maps")</p>
+                                @if (!string.IsNullOrEmpty(pingMeMessage))
+                                {
+                                    <p class="text-danger small mb-0">@pingMeMessage</p>
+                                }
                             </div>
                             <label class="switch">
-                                <input type="checkbox" @bind="pingMeEnabled" @bind:after="TogglePingMe">
+                                <input type="checkbox" @bind="pingMeEnabled" @bind:after="TogglePingMe" disabled="@pingMeBusy" aria-label="Ping Me">
                                 <span class="slider"></span>
                             </label>
                         </div>
@@ -242,7 +259,11 @@ private int connectionCount = 45;
 private int qrScans = 128;
 private int profileViews = 234;
 private int pendingRequests = 12;
-private bool pingMeEnabled = true;
+private bool pingMeEnabled;
+private bool pingMeBusy;
+private string? pingMeMessage;
+private string? nearbyMessage;
+private int nearbyCount;
 private int selectedDistance = 5;
 private string? qrCodeUrl;
 
@@ -266,10 +287,9 @@ protected override async Task OnInitializedAsync()
         return;
     }
 
-    // Initialize map data with default location first
-    // (will be updated after we get real location)
-    InitializeMapData();
-    
+    // Ping Me comes from the server, so the switch is the same on every device.
+    pingMeEnabled = await PingMe.LoadAsync();
+
     // Load other dashboard data
     await LoadDashboardData();
 }
@@ -283,12 +303,8 @@ protected override async Task OnAfterRenderAsync(bool firstRender)
             // Get user's current location AFTER render (JS runtime available)
             await GetCurrentLocationAsync();
             
-            // Re-initialize map data with current location
-            if (locationObtained)
-            {
-                InitializeMapData();
-                StateHasChanged(); // Update UI with new location
-            }
+            // People nearby need your real position; without it the map stays on the default spot, empty.
+            await LoadNearbyAsync(moveMap: true);
             
             // Initialize chart
             await InitializeChart();
@@ -319,7 +335,10 @@ private async Task GetCurrentLocationAsync()
                 currentLongitude = location.Longitude;
                 locationObtained = true;
                 
-                Console.WriteLine($"✓ Current location: {currentLatitude}, {currentLongitude} (accuracy: {location.Accuracy}m)");
+                Console.WriteLine($"✓ Current location obtained (accuracy: {location.Accuracy}m)");
+
+                // While Ping Me is on, keep the position others see up to date.
+                await PingMe.ShareIfEnabledAsync(currentLatitude, currentLongitude);
             }
             else
             {
@@ -341,41 +360,14 @@ private async Task GetCurrentLocationAsync()
         {
             Console.WriteLine("Manually requesting current location...");
             
-            var location = await GeolocationService.GetCurrentPositionAsync();
-            
-            if (location != null)
+            await GetCurrentLocationAsync();
+            if (locationObtained)
             {
-                currentLatitude = location.Latitude;
-                currentLongitude = location.Longitude;
-                locationObtained = true;
-                
-                Console.WriteLine($"✓ Location obtained: {currentLatitude}, {currentLongitude}");
-                
-                // Reinitialize map data with new location and current distance
-                InitializeMapData(selectedDistance);
-                
-                // Update map view to current location with appropriate zoom
-                if (mapComponent != null)
-                {
-                    int zoom = selectedDistance switch
-                    {
-                        1 => 14,
-                        5 => 12,
-                        10 => 11,
-                        25 => 10,
-                        50 => 9,
-                        _ => 12
-                    };
-                    
-                    await mapComponent.RefreshMarkers(nearbyUsers);
-                    await mapComponent.SetViewAsync(currentLatitude, currentLongitude, zoom);
-                }
-                
-                StateHasChanged();
+                await LoadNearbyAsync(moveMap: true);
             }
             else
             {
-                Console.WriteLine("⚠ Could not obtain current location");
+                nearbyMessage = "Your location isn't available. Allow location access for qrbound in your browser, then try again.";
             }
         }
         catch (Exception ex)
@@ -417,18 +409,7 @@ private async Task GetCurrentLocationAsync()
                 };
             }
 
-            // Optionally load nearby users from API (if available)
-            // This will replace mock data with real data
-            var users = await ApiService.GetAsync<List<UserLocationDto>>("api/users/nearby");
-            if (users != null && users.Any())
-            {
-                nearbyUsers = users;
-                Console.WriteLine($"Loaded {nearbyUsers.Count} nearby users from API");
-            }
-            else
-            {
-                Console.WriteLine("No nearby users from API, using mock data");
-            }
+            // Nearby people are loaded once your location is known (LoadNearbyAsync).
         }
         catch (Exception ex)
         {
@@ -451,77 +432,69 @@ private async Task GetCurrentLocationAsync()
         }
     }
 
-    private void InitializeMapData()
+    /// <summary>
+    /// Loads people with Ping Me on around your current position and puts them on the map, with a
+    /// marker for you. Without your location there's nothing to search around, so the map stays empty.
+    /// </summary>
+    private async Task LoadNearbyAsync(bool moveMap)
     {
-        InitializeMapData(selectedDistance);
-    }
+        nearbyMessage = null;
+        var users = new List<UserLocationDto>();
 
-    private void InitializeMapData(int distanceMiles)
-    {
-        try
+        if (!locationObtained)
         {
-            // 1 degree of latitude is approximately 69 miles
-            // 1 degree of longitude is approximately 69 miles * cos(latitude)
-            double milesPerDegree = 69.0;
-            double distanceDegrees = distanceMiles / milesPerDegree;
-            
-            // Calculate offsets based on selected distance
-            // Generate users at various distances within the selected radius
-            var random = new Random();
-            var users = new List<UserLocationDto>();
-            
-            // Add current user at center
+            nearbyMessage = "Allow location access to see business professionals near you.";
+        }
+        else
+        {
             users.Add(new UserLocationDto
             {
-                UserId = StateService.CurrentUser?.UserId ?? Guid.NewGuid(),
+                UserId = StateService.CurrentUser?.UserId ?? Guid.Empty,
                 FirstName = StateService.CurrentUser?.FirstName ?? "You",
                 LastName = StateService.CurrentUser?.LastName ?? "",
-                CompanyName = StateService.CurrentUser?.CompanyName,
                 Latitude = currentLatitude,
                 Longitude = currentLongitude
             });
 
-            // Generate mock users at different distances
-            var mockUsers = new[]
+            var (people, error) = await PingMe.GetNearbyAsync(currentLatitude, currentLongitude, selectedDistance);
+            users.AddRange(people.Select(p => new UserLocationDto
             {
-                new { FirstName = "John", LastName = "Smith", Company = "Smith Tech Solutions", DistanceRatio = 0.3 },
-                new { FirstName = "Jane", LastName = "Doe", Company = "Doe Consulting", DistanceRatio = 0.5 },
-                new { FirstName = "Mike", LastName = "Johnson", Company = "Johnson Enterprises", DistanceRatio = 0.7 },
-                new { FirstName = "Sarah", LastName = "Williams", Company = "Williams & Associates", DistanceRatio = 0.9 },
-                new { FirstName = "David", LastName = "Brown", Company = "Brown Industries", DistanceRatio = 0.4 },
-                new { FirstName = "Emily", LastName = "Davis", Company = "Davis Solutions", DistanceRatio = 0.6 }
-            };
-
-            foreach (var mockUser in mockUsers)
-            {
-                // Only include users within the selected distance
-                double actualDistance = distanceDegrees * mockUser.DistanceRatio;
-                
-                // Generate random angle for distribution around center
-                double angle = random.NextDouble() * 2 * Math.PI;
-                double latOffset = actualDistance * Math.Cos(angle);
-                double lngOffset = actualDistance * Math.Sin(angle);
-
-                users.Add(new UserLocationDto
-                {
-                    UserId = Guid.NewGuid(),
-                    FirstName = mockUser.FirstName,
-                    LastName = mockUser.LastName,
-                    CompanyName = mockUser.Company,
-                    Latitude = currentLatitude + latOffset,
-                    Longitude = currentLongitude + lngOffset
-                });
-            }
-
-            nearbyUsers = users;
-            Console.WriteLine($"Initialized {nearbyUsers.Count} nearby users within {distanceMiles} miles centered at: {currentLatitude}, {currentLongitude}");
+                UserId = p.UserId,
+                FirstName = p.FirstName,
+                LastName = p.LastName,
+                CompanyName = p.CompanyName,
+                ProfileImageUrl = p.ProfileImageUrl,
+                Latitude = p.Latitude,
+                Longitude = p.Longitude,
+                DistanceMiles = p.DistanceMiles
+            }));
+            nearbyCount = people.Count;
+            nearbyMessage = error ?? (people.Count == 0
+                ? $"Nobody with Ping Me on within {selectedDistance} {(selectedDistance == 1 ? "mile" : "miles")} right now."
+                : null);
         }
-        catch (Exception ex)
+
+        nearbyUsers = users;
+        if (mapComponent != null && await mapComponent.WaitUntilReadyAsync(TimeSpan.FromSeconds(5)))
         {
-            Console.WriteLine($"Error initializing map data: {ex.Message}");
-            nearbyUsers = new List<UserLocationDto>(); // Empty list as fallback
+            await mapComponent.RefreshMarkers(nearbyUsers);
+            if (moveMap)
+            {
+                await mapComponent.SetViewAsync(currentLatitude, currentLongitude, ZoomFor(selectedDistance));
+            }
         }
+        StateHasChanged();
     }
+
+    private static int ZoomFor(int miles) => miles switch
+    {
+        1 => 14,
+        5 => 12,
+        10 => 11,
+        25 => 10,
+        50 => 9,
+        _ => 12
+    };
 
     private void TrackAdClick()
     {
@@ -529,76 +502,37 @@ private async Task GetCurrentLocationAsync()
         // TODO: Track ad impression/click
     }
 
-    private async Task UpdateMapDistance()
-    {
-        try
-        {
-            Console.WriteLine($"Map distance changed to: {selectedDistance} miles");
-            
-            // Load nearby users based on distance from API
-            // When API is available, uncomment this:
-            // var userId = StateService.CurrentUser?.UserId;
-            // if (userId.HasValue)
-            // {
-            //     nearbyUsers = await ApiService.GetAsync<List<UserLocationDto>>(
-            //         $"api/location/nearby?userId={userId}&distance={selectedDistance}");
-            // }
-            
-            // For now, generate mock data based on distance
-            InitializeMapData(selectedDistance);
-            
-            // Refresh the map markers
-            if (mapComponent != null)
-            {
-                await mapComponent.RefreshMarkers(nearbyUsers);
-                
-                // Adjust zoom level based on distance
-                int zoom = selectedDistance switch
-                {
-                    1 => 14,
-                    5 => 12,
-                    10 => 11,
-                    25 => 10,
-                    50 => 9,
-                    _ => 12
-                };
-                
-                await mapComponent.SetViewAsync(currentLatitude, currentLongitude, zoom);
-                Console.WriteLine($"Map updated with {nearbyUsers.Count} users at zoom level {zoom}");
-            }
-            
-            StateHasChanged();
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error updating map distance: {ex.Message}");
-        }
-    }
+    private Task UpdateMapDistance() => LoadNearbyAsync(moveMap: true);
 
     private async Task TogglePingMe()
     {
-        try
+        pingMeBusy = true;
+        pingMeMessage = null;
+        StateHasChanged();
+
+        var result = await PingMe.SetAsync(pingMeEnabled);
+        pingMeEnabled = result.Enabled; // back to the saved value if it failed
+        pingMeMessage = result.Error;
+        if (result.Error == null && result.Enabled)
         {
-            Console.WriteLine($"Ping Me toggled: {pingMeEnabled}");
-            
-            var userId = StateService.CurrentUser?.UserId;
-            if (userId.HasValue)
+            // Turning it on just shared this position; show the map around it (no second upload).
+            if (await GeolocationService.GetCurrentPositionAsync() is { } position)
             {
-                // TODO: Update ping me status via API
-                // await ApiService.PutAsync($"api/location/pingme", new { enabled = pingMeEnabled });
+                (currentLatitude, currentLongitude, locationObtained) = (position.Latitude, position.Longitude, true);
             }
+            await LoadNearbyAsync(moveMap: true);
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error toggling ping me: {ex.Message}");
-        }
+
+        pingMeBusy = false;
+        StateHasChanged();
     }
 
     private async Task ShowQRCode()
     {
         try
         {
-            var profileUrl = $"{Navigation.BaseUri}profile/{StateService.CurrentUser?.UserId}";
+            // Same link as the Business Card page: the public profile (QrCodeLinks accepts /user/{id}).
+            var profileUrl = $"{Navigation.BaseUri}user/{StateService.CurrentUser?.UserId}";
             qrCodeUrl = profileUrl;
             
             // Generate QR code

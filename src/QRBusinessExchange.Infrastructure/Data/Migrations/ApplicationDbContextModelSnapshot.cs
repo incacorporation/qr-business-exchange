@@ -639,6 +639,28 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                     b.ToTable("Payments", (string)null);
                 });
 
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.ProfileImage", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<byte[]>("Data")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("UserId");
+
+                    b.ToTable("ProfileImages", (string)null);
+                });
+
             modelBuilder.Entity("QRBusinessExchange.Core.Entities.QRCode", b =>
                 {
                     b.Property<Guid>("QRCodeId")
@@ -1117,8 +1139,8 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                         .HasColumnType("decimal(10, 8)");
 
                     b.Property<decimal>("Longitude")
-                        .HasPrecision(10, 8)
-                        .HasColumnType("decimal(10, 8)");
+                        .HasPrecision(11, 8)
+                        .HasColumnType("decimal(11, 8)");
 
                     b.Property<bool>("PingMeEnabled")
                         .ValueGeneratedOnAdd()
@@ -1312,6 +1334,18 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("FK_Payments_Users");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.ProfileImage", b =>
+                {
+                    b.HasOne("QRBusinessExchange.Core.Entities.User", "User")
+                        .WithOne()
+                        .HasForeignKey("QRBusinessExchange.Core.Entities.ProfileImage", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_ProfileImages_Users");
 
                     b.Navigation("User");
                 });

@@ -113,4 +113,14 @@ public class ApiService
         await ApplyAuthAsync();
         return await _httpClient.DeleteAsync(endpoint);
     }
+
+    /// <summary>Uploads one file as multipart/form-data (field name "file").</summary>
+    public async Task<HttpResponseMessage> PostFileAsync(string endpoint, byte[] data, string fileName, string contentType)
+    {
+        await ApplyAuthAsync();
+        using var file = new ByteArrayContent(data);
+        file.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+        using var form = new MultipartFormDataContent { { file, "file", fileName } };
+        return await _httpClient.PostAsync(endpoint, form);
+    }
 }

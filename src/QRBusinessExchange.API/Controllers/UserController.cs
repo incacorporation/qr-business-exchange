@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using QRBusinessExchange.API.DTOs;
 using QRBusinessExchange.Core.Interfaces;
+using QRBusinessExchange.Infrastructure.Services;
 
 namespace QRBusinessExchange.API.Controllers;
 
@@ -15,10 +16,12 @@ public class UserController : ControllerBase
 {
     private readonly IUserRepository _userRepository;
     private readonly ILogger<UserController> _logger;
+    private readonly ProfileImageService _images;
 
-    public UserController(IUserRepository userRepository, ILogger<UserController> logger)
+    public UserController(IUserRepository userRepository, ILogger<UserController> logger, ProfileImageService images)
     {
         _userRepository = userRepository;
+        _images = images;
         _logger = logger;
     }
 
@@ -146,83 +149,100 @@ public class UserController : ControllerBase
     }
 
     /// <summary>
-    /// Upload profile image
+    /// Upload a profile picture (personal photo or business logo): JPG, JPEG, PNG or GIF, up to 5 MB.
+    /// The file's bytes decide its type, not its name. Replaces any earlier picture.
     /// </summary>
-    /// <param name="file">Image file</param>
-    /// <returns>Updated user profile with new image URL</returns>
     [HttpPost("profile-image")]
+    [RequestSizeLimit(ProfileImageService.MaxBytes + 1024 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = ProfileImageService.MaxBytes + 1024 * 1024)]
     [ProducesResponseType(typeof(UserDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> UploadProfileImage(IFormFile file)
+    public async Task<IActionResult> UploadProfileImage(IFormFile? file)
     {
         if (file == null || file.Length == 0)
         {
-            return BadRequest(new { error = "No file uploaded" });
+            return BadRequest(new { error = "Choose a picture to upload." });
         }
-
-        if (file.Length > 5 * 1024 * 1024) // 5MB limit
+        if (file.Length > ProfileImageService.MaxBytes)
         {
-            return BadRequest(new { error = "File size exceeds 5MB limit" });
-        }
-
-        var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif" };
-        var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
-        
-        if (!allowedExtensions.Contains(extension))
-        {
-            return BadRequest(new { error = "Invalid file type. Only JPG, PNG, and GIF are allowed" });
+            return BadRequest(new { error = "The picture is larger than 5 MB. Choose a smaller one." });
         }
 
         var userId = GetCurrentUserId();
+        using var buffer = new MemoryStream();
+        await file.CopyToAsync(buffer);
+
+        try
+        {
+            await _images.SaveAsync(userId, buffer.ToArray(), version => ImageUrl(userId, version));
+        }
+        catch (SsoException ex)
+        {
+            return StatusCode(ex.StatusCode, new { error = ex.Message });
+        }
+
         var user = await _userRepository.GetByIdAsync(userId);
-        
-        if (user == null)
+        return user == null ? NotFound(new { error = "User not found" }) : Ok(MapToOwnProfile(user));
+    }
+
+    /// <summary>Remove your profile picture.</summary>
+    [HttpDelete("profile-image")]
+    [ProducesResponseType(typeof(UserDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> RemoveProfileImage()
+    {
+        var userId = GetCurrentUserId();
+        await _images.RemoveAsync(userId);
+        var user = await _userRepository.GetByIdAsync(userId);
+        return user == null ? NotFound(new { error = "User not found" }) : Ok(MapToOwnProfile(user));
+    }
+
+    /// <summary>Your own picture, even when it's hidden from your card (for the Edit Profile preview).</summary>
+    [HttpGet("profile-image")]
+    public async Task<IActionResult> GetOwnProfileImage()
+    {
+        var image = await _images.GetOwnAsync(GetCurrentUserId());
+        if (image is not { } found)
         {
-            return NotFound(new { error = "User not found" });
+            return NotFound();
         }
 
-        // In a real implementation, upload to cloud storage (e.g., Azure Blob, AWS S3)
-        // For now, just set a placeholder URL
-        var fileName = $"{userId}_{DateTime.UtcNow.Ticks}{extension}";
-        user.ProfileImageUrl = $"/images/profiles/{fileName}";
-        user.UpdatedAt = DateTime.UtcNow;
-
-        var updatedUser = await _userRepository.UpdateAsync(user);
-        return Ok(MapToOwnProfile(updatedUser));
+        Response.Headers.CacheControl = "private, no-cache";
+        return ImageFile(found.ContentType, found.Data);
     }
 
     /// <summary>
-    /// Update user location
+    /// Someone's picture, as linked from their business card and contact entries. Not found when they
+    /// have none or untick "Show on my card".
     /// </summary>
-    /// <param name="request">Location coordinates</param>
-    /// <returns>Success message</returns>
-    [HttpPut("location")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> UpdateLocation([FromBody] UpdateLocationRequest request)
+    [HttpGet("{id:guid}/image")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetProfileImage(Guid id)
     {
-        var userId = GetCurrentUserId();
-        
-        // In a real implementation, update UserLocation table
-        // For now, just return success
-        return Ok(new { message = "Location updated successfully" });
+        var image = await _images.GetPublicAsync(id);
+        if (image is not { } found)
+        {
+            return NotFound();
+        }
+
+        // Addresses carry a version (?v=), so a new upload is a new address; a day keeps hiding it timely.
+        Response.Headers.CacheControl = "public, max-age=86400";
+        return ImageFile(found.ContentType, found.Data);
     }
 
-    /// <summary>
-    /// Update ping me status
-    /// </summary>
-    /// <param name="enabled">Enable or disable ping me</param>
-    /// <returns>Success message</returns>
-    [HttpPut("ping-status")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    public async Task<IActionResult> UpdatePingStatus([FromQuery] bool enabled)
+    private FileContentResult ImageFile(string contentType, byte[] data)
     {
-        var userId = GetCurrentUserId();
-        
-        // In a real implementation, update UserLocation.PingMeEnabled
-        // For now, just return success
-        return Ok(new { message = $"Ping Me {(enabled ? "enabled" : "disabled")} successfully" });
+        // Never let a browser treat the bytes as anything but the image type checked on upload.
+        Response.Headers.XContentTypeOptions = "nosniff";
+        Response.Headers.ContentSecurityPolicy = "default-src 'none'; sandbox";
+        return File(data, contentType);
     }
+
+    /// <summary>Absolute address of the user's picture on this API (the web app runs on another host).</summary>
+    private string ImageUrl(Guid userId, DateTime version) =>
+        $"{Request.Scheme}://{Request.Host}{Request.PathBase}/api/user/{userId}/image?v={version.Ticks}";
+
+
+    // Location and Ping Me live in LocationController (api/location/...).
 
     private Guid GetCurrentUserId()
     {

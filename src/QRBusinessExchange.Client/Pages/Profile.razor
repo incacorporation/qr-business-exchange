@@ -106,10 +106,10 @@
 
                             <div class="mb-3">
                                 <div class="profile-label-row">
-                                    <label for="profileImage" class="form-label">Profile Image URL</label>
+                                    <label for="profileImage" class="form-label">Profile Picture or Logo</label>
                                     <ShowOnCardCheckbox Id="show-image" Field="your profile picture" @bind-Value="visibility.ShowProfileImage" />
                                 </div>
-                                <InputText id="profileImage" @bind-Value="profileDto.ProfileImageUrl" class="form-control" />
+                                <ProfilePictureUpload InputId="profileImage" OnChanged="OnPictureChanged" />
                             </div>
 
                             <div class="d-flex gap-2">
@@ -144,6 +144,21 @@
     private bool skillsPickerOpen;
 
     private void OpenSkillsPicker() => skillsPickerOpen = true;
+
+    // A picture upload or removal is saved straight away: show it everywhere without waiting for Save Changes.
+    private void OnPictureChanged(string? url)
+    {
+        if (profileDto != null)
+        {
+            profileDto.ProfileImageUrl = url;
+        }
+        if (StateService.CurrentUser is { } current)
+        {
+            var user = Copy(current);
+            user.ProfileImageUrl = url;
+            StateService.CurrentUser = user;
+        }
+    }
 
     // Close in the picker: put the chosen skills in the Skills box (saved with Save Changes).
     private void OnSkillsPicked(string skills)
@@ -198,7 +213,7 @@
                 Bio = profileDto.Bio ?? "",
                 Skills = profileDto.Skills ?? "",
                 profileDto.ServicePricing,
-                ProfileImageUrl = profileDto.ProfileImageUrl ?? "",
+                // The picture is saved by its own upload (ProfilePictureUpload), not with this form.
                 Visibility = visibility
             });
 

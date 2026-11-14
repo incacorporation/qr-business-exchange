@@ -25,6 +25,7 @@ builder.Services.AddScoped<GeolocationService>();
 builder.Services.AddScoped<PwaService>();
 builder.Services.AddScoped<WebAuthnService>();
 builder.Services.AddScoped<PortalAuthService>();
+builder.Services.AddScoped<PingMeService>();
 
 // Add authorization
 builder.Services.AddAuthorizationCore();

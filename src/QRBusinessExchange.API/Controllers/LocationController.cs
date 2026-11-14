@@ -1,7 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using QRBusinessExchange.API.DTOs;
+using QRBusinessExchange.API.Extensions;
+using QRBusinessExchange.Core.DTOs;
 using QRBusinessExchange.Core.Interfaces;
+using QRBusinessExchange.Infrastructure.Services;
 
 namespace QRBusinessExchange.API.Controllers;
 
@@ -16,64 +19,62 @@ public class LocationController : ControllerBase
     private readonly IUserRepository _userRepository;
     private readonly IGeolocationService _geolocationService;
     private readonly ILogger<LocationController> _logger;
+    private readonly NearbyService _nearby;
 
     public LocationController(
         IUserRepository userRepository,
         IGeolocationService geolocationService,
-        ILogger<LocationController> logger)
+        ILogger<LocationController> logger,
+        NearbyService nearby)
     {
+        _nearby = nearby;
         _userRepository = userRepository;
         _geolocationService = geolocationService;
         _logger = logger;
     }
 
-    /// <summary>
-    /// Get nearby users within specified radius
-    /// </summary>
-    /// <param name="request">Location and radius parameters</param>
-    /// <returns>List of nearby users</returns>
-    [HttpGet("nearby")]
-    [ProducesResponseType(typeof(IEnumerable<UserLocationDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> GetNearbyUsers([FromQuery] decimal latitude, [FromQuery] decimal longitude, [FromQuery] int radiusYards = 1000)
-    {
-        if (radiusYards <= 0 || radiusYards > 50000)
-        {
-            return BadRequest(new { error = "Radius must be between 1 and 50000 yards" });
-        }
-
-        // In a real implementation, query UserLocation table with spatial queries
-        // For now, return an empty list
-        var nearbyUsers = new List<UserLocationDto>();
-
-        return Ok(nearbyUsers);
-    }
+    /// <summary>Your Ping Me setting and when your location was last shared.</summary>
+    [HttpGet("ping-me")]
+    [ProducesResponseType(typeof(PingMeStatusDto), StatusCodes.Status200OK)]
+    public Task<IActionResult> GetPingMe() => WithUser(u => _nearby.GetStatusAsync(u));
 
     /// <summary>
-    /// Update current user's location
+    /// Turn Ping Me on or off. Off hides you from nearby maps straight away. On needs a shared
+    /// location (409 location_required otherwise); POST update with pingMeEnabled=true does both.
     /// </summary>
-    /// <param name="request">Location coordinates</param>
-    /// <returns>Success message</returns>
+    [HttpPut("ping-me")]
+    [ProducesResponseType(typeof(PingMeStatusDto), StatusCodes.Status200OK)]
+    public Task<IActionResult> SetPingMe([FromBody] SetPingMeRequest request) =>
+        WithUser(u => _nearby.SetPingMeAsync(u, request.Enabled));
+
+    /// <summary>Share your current position (and optionally turn Ping Me on or off).</summary>
     [HttpPost("update")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> UpdateLocation([FromBody] UpdateLocationRequest request)
+    [ProducesResponseType(typeof(PingMeStatusDto), StatusCodes.Status200OK)]
+    public Task<IActionResult> UpdateLocation([FromBody] ShareLocationRequest request) =>
+        WithUser(u => _nearby.ShareLocationAsync(u, request.Latitude, request.Longitude, request.PingMeEnabled));
+
+    /// <summary>People with Ping Me on near the given point, nearest first.</summary>
+    [HttpGet("nearby")]
+    [ProducesResponseType(typeof(List<NearbyUserDto>), StatusCodes.Status200OK)]
+    public Task<IActionResult> GetNearbyUsers([FromQuery] double latitude, [FromQuery] double longitude, [FromQuery] double radiusMiles = 5) =>
+        WithUser(u => _nearby.GetNearbyAsync(u, latitude, longitude, radiusMiles));
+
+    private async Task<IActionResult> WithUser<T>(Func<Guid, Task<T>> action)
     {
-        var userId = GetCurrentUserId();
-
-        if (request.Latitude < -90 || request.Latitude > 90)
+        var userId = User.GetUserId();
+        if (userId == null)
         {
-            return BadRequest(new { error = "Latitude must be between -90 and 90" });
+            return Unauthorized();
         }
 
-        if (request.Longitude < -180 || request.Longitude > 180)
+        try
         {
-            return BadRequest(new { error = "Longitude must be between -180 and 180" });
+            return Ok(await action(userId.Value));
         }
-
-        // In a real implementation, update UserLocation table
-        // For now, just return success
-        return Ok(new { message = "Location updated successfully" });
+        catch (SsoException ex)
+        {
+            return StatusCode(ex.StatusCode, new SsoErrorResponse { Error = ex.Error, ErrorDescription = ex.Message });
+        }
     }
 
     /// <summary>

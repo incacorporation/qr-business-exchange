@@ -87,6 +87,9 @@ public class ApplicationDbContext : IdentityDbContext
     /// <summary>People saved by scanning their business card</summary>
     public DbSet<Contact> Contacts { get; set; } = null!;
 
+    /// <summary>Uploaded profile pictures and business logos</summary>
+    public DbSet<ProfileImage> ProfileImages { get; set; } = null!;
+
     /// <summary>
     /// Configures the database schema using Fluent API
     /// </summary>
@@ -115,6 +118,7 @@ public class ApplicationDbContext : IdentityDbContext
         ConfigureQRCode(modelBuilder);
         ConfigureConnection(modelBuilder);
         ConfigureContact(modelBuilder);
+        ConfigureProfileImage(modelBuilder);
         ConfigureSubscription(modelBuilder);
         ConfigurePayment(modelBuilder);
         ConfigureAdvertisement(modelBuilder);
@@ -332,6 +336,25 @@ public class ApplicationDbContext : IdentityDbContext
 
             entity.Property(e => e.ScansCount)
                 .HasDefaultValue(0);
+        });
+    }
+
+    /// <summary>
+    /// Configures the ProfileImage entity (one uploaded picture per user)
+    /// </summary>
+    private static void ConfigureProfileImage(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<ProfileImage>(entity =>
+        {
+            entity.ToTable("ProfileImages");
+            entity.HasKey(e => e.UserId);
+            entity.Property(e => e.Data).HasColumnType("varbinary(max)");
+
+            entity.HasOne(e => e.User)
+                .WithOne()
+                .HasForeignKey<ProfileImage>(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_ProfileImages_Users");
         });
     }
 
@@ -653,7 +676,7 @@ public class ApplicationDbContext : IdentityDbContext
                 .HasPrecision(10, 8);
 
             entity.Property(e => e.Longitude)
-                .HasPrecision(10, 8);
+                .HasPrecision(11, 8); // -180 to 180 needs three whole digits
         });
     }
 

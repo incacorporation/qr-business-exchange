@@ -108,18 +108,7 @@
                 {
                     if (_disposed) break;
 
-                    var companyLine = string.IsNullOrEmpty(user.CompanyName) 
-                        ? "" 
-                        : $"<p class='mb-1 text-muted'><i class='fas fa-building'></i> {user.CompanyName}</p>";
-                    
-                    var popupContent = $@"
-                        <div class='text-center p-2'>
-                            <h6 class='mb-2'><i class='fas fa-user'></i> {user.FirstName} {user.LastName}</h6>
-                            {companyLine}
-                            <a href='/profile/{user.UserId}' class='btn btn-sm btn-primary mt-2'>
-                                <i class='fas fa-eye'></i> View Profile
-                            </a>
-                        </div>";
+                    var popupContent = PopupHtml(user);
 
                     await JS.InvokeVoidAsync("leafletInterop.addMarker", 
                         user.Latitude, 
@@ -143,6 +132,44 @@
         }
     }
 
+    /// <summary>
+    /// Marker pop-up. Names and companies are typed by users, so everything is HTML-encoded: the pop-up is
+    /// inserted as HTML and would otherwise run whatever markup someone puts in their profile.
+    /// </summary>
+    private string PopupHtml(UserLocationDto user)
+    {
+        static string E(string? text) => System.Net.WebUtility.HtmlEncode(text ?? "");
+
+        if (user.UserId == CurrentUserId)
+        {
+            return "<div class='text-center p-1'><h6 class='mb-0'>You are here</h6></div>";
+        }
+
+        var company = string.IsNullOrEmpty(user.CompanyName)
+            ? ""
+            : $"<p class='mb-1 text-muted'><i class='fas fa-building'></i> {E(user.CompanyName)}</p>";
+        var distance = user.DistanceMiles is { } miles
+            ? $"<p class='mb-1 small text-muted'>{(miles < 0.1 ? "Less than 0.1" : miles.ToString("0.#"))} mi away</p>"
+            : "";
+
+        return $"<div class='text-center p-2'>"
+             + $"<h6 class='mb-2'><i class='fas fa-user'></i> {E(user.FirstName)} {E(user.LastName)}</h6>"
+             + company + distance
+             + $"<a href='/user/{user.UserId}' class='btn btn-sm btn-primary mt-2'><i class='fas fa-eye'></i> View Profile</a>"
+             + "</div>";
+    }
+
+    /// <summary>Waits (up to the timeout) for the map to finish loading, so markers aren't dropped.</summary>
+    public async Task<bool> WaitUntilReadyAsync(TimeSpan timeout)
+    {
+        var until = DateTime.UtcNow + timeout;
+        while (!_isInitialized && !_disposed && DateTime.UtcNow < until)
+        {
+            await Task.Delay(100);
+        }
+        return _isInitialized && !_disposed;
+    }
+
     public async Task RefreshMarkers(List<UserLocationDto> newUsers)
     {
         if (!_isInitialized || _disposed)
@@ -162,16 +189,7 @@
                 {
                     if (_disposed) break;
 
-                    var companyLine = string.IsNullOrEmpty(user.CompanyName) 
-                        ? "" 
-                        : $"<p class='mb-1'>{user.CompanyName}</p>";
-                    
-                    var popupContent = $@"
-                        <div class='text-center'>
-                            <h6>{user.FirstName} {user.LastName}</h6>
-                            {companyLine}
-                            <a href='/profile/{user.UserId}' class='btn btn-sm btn-primary'>View Profile</a>
-                        </div>";
+                    var popupContent = PopupHtml(user);
 
                     await JS.InvokeVoidAsync("leafletInterop.addMarker", 
                         user.Latitude, 

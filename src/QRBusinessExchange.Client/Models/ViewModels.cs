@@ -15,6 +15,9 @@ public class UserLocationDto
     public double Latitude { get; set; }
     public double Longitude { get; set; }
     public string? ProfileImageUrl { get; set; }
+
+    /// <summary>Distance from you, from the nearby search (null for your own marker).</summary>
+    public double? DistanceMiles { get; set; }
 }
 
 public class LoginResponse
