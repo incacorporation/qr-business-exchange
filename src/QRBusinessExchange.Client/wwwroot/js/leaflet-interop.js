@@ -106,7 +106,7 @@ window.leafletInterop = {
         });
     },
 
-    // Whether the Dashboard's 30-second refresh may run: the page is on screen and no pop-up is open
+    // Whether the Dashboard's periodic map refresh may run: the page is on screen and no pop-up is open
     // (redrawing the markers would close the one being read).
     canRefresh: function () {
         if (document.visibilityState !== 'visible') return false;

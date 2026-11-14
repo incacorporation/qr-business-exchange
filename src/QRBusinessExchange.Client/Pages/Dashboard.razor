@@ -156,7 +156,7 @@
                             Tap a marker to see who it is.
                             @if (lastMapRefresh is { } updated)
                             {
-                                <span class="d-block">Updated @updated.ToString("T") · refreshes every 30 seconds</span>
+                                <span class="d-block">Updated @updated.ToString("T") · refreshes every @MapRefreshInterval.TotalSeconds seconds</span>
                             }
                             @if (accuracyNote != null)
                             {
@@ -463,7 +463,7 @@ private async Task GetCurrentLocationAsync()
     /// Loads people with Ping Me on around your current position and puts them on the map, with a
     /// marker for you. Without your location there's nothing to search around, so the map stays empty.
     /// </summary>
-    private static readonly TimeSpan MapRefreshInterval = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan MapRefreshInterval = TimeSpan.FromSeconds(10);
     private System.Threading.Timer? refreshTimer;
     private bool refreshing;
     private bool disposed;
@@ -491,7 +491,7 @@ private async Task GetCurrentLocationAsync()
     }
 
     /// <summary>
-    /// Every 30 seconds: your current position (shared while Ping Me is on), then the people around you.
+    /// Every MapRefreshInterval (10 seconds): your current position (shared while Ping Me is on), then the people around you.
     /// The map isn't moved, so panning and zooming stay as you left them. Skipped while the page is in the
     /// background or a marker's pop-up is open (redrawing the markers would close it).
     /// </summary>
