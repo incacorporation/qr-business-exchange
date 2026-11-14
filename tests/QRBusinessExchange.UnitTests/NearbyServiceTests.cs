@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using QRBusinessExchange.Infrastructure.Services;
 
 namespace QRBusinessExchange.UnitTests;
@@ -13,6 +14,22 @@ public class NearbyServiceTests
     public void DistanceMiles_MatchesKnownDistances(double lat1, double lon1, double lat2, double lon2, double expected, double tolerance)
     {
         Assert.InRange(NearbyService.DistanceMiles(lat1, lon1, lat2, lon2), expected - tolerance, expected + tolerance);
+    }
+
+    [Theory]
+    [InlineData(1.01)] // just over the 1-mile limit
+    [InlineData(5)]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task GetNearby_RejectsDistancesOutside25FtTo1Mile(double radiusMiles)
+    {
+        // Validation happens before any database access, so a context with no server is enough.
+        var options = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<QRBusinessExchange.Infrastructure.Data.ApplicationDbContext>()
+            .UseSqlServer("Server=tcp:127.0.0.1,1;Database=none;Connect Timeout=1;Encrypt=False").Options;
+        var service = new NearbyService(new QRBusinessExchange.Infrastructure.Data.ApplicationDbContext(options));
+
+        var ex = await Assert.ThrowsAsync<SsoException>(() => service.GetNearbyAsync(Guid.NewGuid(), 29.76, -95.37, radiusMiles));
+        Assert.Equal("invalid_radius", ex.Error);
     }
 
     [Fact]

@@ -64,7 +64,18 @@ window.leafletInterop = {
         });
     },
 
-    addMarker: function (lat, lng, popupContent, isCurrentUser) {
+    // Map pin drawn as SVG in the given colour (no image files to download).
+    pinIcon: function (color) {
+        // An older copy of the app passes true/false ("is this you") instead of a colour.
+        if (color === true) color = '#D4A017';
+        const safe = /^#[0-9a-fA-F]{3,8}$/.test(typeof color === 'string' ? color : '') ? color : '#0D6EFD';
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="40" viewBox="0 0 28 40" aria-hidden="true">`
+            + `<path d="M14 1C7 1 1.5 6.5 1.5 13.5c0 9.4 12.5 25 12.5 25s12.5-15.6 12.5-25C26.5 6.5 21 1 14 1z" fill="${safe}" stroke="#fff" stroke-width="2"/>`
+            + `<circle cx="14" cy="13.5" r="5" fill="#fff"/></svg>`;
+        return L.divIcon({ html: svg, className: 'qb-pin', iconSize: [28, 40], iconAnchor: [14, 39], popupAnchor: [0, -34] });
+    },
+
+    addMarker: function (lat, lng, popupContent, color) {
         const self = this;
         return new Promise((resolve, reject) => {
             try {
@@ -78,22 +89,8 @@ window.leafletInterop = {
                     reject(new Error('Add marker timeout'));
                 }, 3000);
 
-                // Create custom icon for current user
-                let markerOptions = {};
-                if (isCurrentUser) {
-                    markerOptions = {
-                        icon: L.icon({
-                            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
-                            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-                            iconSize: [25, 41],
-                            iconAnchor: [12, 41],
-                            popupAnchor: [1, -34],
-                            shadowSize: [41, 41]
-                        })
-                    };
-                }
-
-                const marker = L.marker([lat, lng], markerOptions).addTo(self.map);
+                // Gold for you, green for your contacts, blue for everyone else (chosen by the caller).
+                const marker = L.marker([lat, lng], { icon: self.pinIcon(color), zIndexOffset: (color === true || color === '#D4A017') ? 1000 : 0 }).addTo(self.map);
                 self.markers.push(marker);
                 
                 if (popupContent) {
@@ -107,6 +104,17 @@ window.leafletInterop = {
                 reject(error);
             }
         });
+    },
+
+    // The search distance as a circle around you (replaces the previous one).
+    setRangeCircle: function (lat, lng, meters) {
+        if (!this.map) return;
+        if (this.rangeCircle) {
+            this.rangeCircle.remove();
+        }
+        this.rangeCircle = L.circle([lat, lng], {
+            radius: meters, color: '#D4A017', weight: 2, fillColor: '#D4A017', fillOpacity: 0.08, interactive: false
+        }).addTo(this.map);
     },
 
     clearMarkers: function () {

@@ -18,6 +18,12 @@ public class UserLocationDto
 
     /// <summary>Distance from you, from the nearby search (null for your own marker).</summary>
     public double? DistanceMiles { get; set; }
+
+    /// <summary>In your contacts (green marker).</summary>
+    public bool IsContact { get; set; }
+
+    /// <summary>When the person last shared their position (null for your own marker).</summary>
+    public DateTime? LastSeen { get; set; }
 }
 
 public class LoginResponse

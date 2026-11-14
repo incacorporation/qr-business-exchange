@@ -128,18 +128,22 @@
                             }
                             Use My Location
                         </button>
-                        <select class="form-select d-inline-block w-auto" @bind="selectedDistance" @bind:after="UpdateMapDistance">
-                            <option value="1">1 mile</option>
-                            <option value="5">5 miles</option>
-                            <option value="10">10 miles</option>
-                            <option value="25">25 miles</option>
-                            <option value="50">50 miles</option>
+                        <select class="form-select d-inline-block w-auto" @bind="selectedFeet" @bind:after="UpdateMapDistance" aria-label="Search distance">
+                            @foreach (var feet in RangeOptionsFeet)
+                            {
+                                <option value="@feet">@RangeLabel(feet)</option>
+                            }
                         </select>
                     </div>
                 </div>
                 <LeafletMap @ref="mapComponent" Users="@nearbyUsers" CurrentUserId="@StateService.CurrentUser?.UserId" 
                            DefaultLat="@currentLatitude" DefaultLng="@currentLongitude" />
-                <div class="mt-3 small" aria-live="polite">
+                <div class="map-legend small mt-3" aria-label="Map key">
+                    <span><span class="map-legend-dot" style="background: @LeafletMap.YouColor"></span>You</span>
+                    <span><span class="map-legend-dot" style="background: @LeafletMap.ContactColor"></span>Your contacts</span>
+                    <span><span class="map-legend-dot" style="background: @LeafletMap.OtherColor"></span>Others with Ping Me on</span>
+                </div>
+                <div class="mt-2 small" aria-live="polite">
                     @if (!string.IsNullOrEmpty(nearbyMessage))
                     {
                         <span class="text-muted"><i class="fas fa-info-circle me-1"></i>@nearbyMessage</span>
@@ -147,8 +151,8 @@
                     else if (locationObtained)
                     {
                         <span class="text-muted">
-                            @nearbyCount @(nearbyCount == 1 ? "person" : "people") with Ping Me on within @selectedDistance @(selectedDistance == 1 ? "mile" : "miles").
-                            The blue marker is you; tap a marker to see who it is.
+                            @nearbyCount @(nearbyCount == 1 ? "person" : "people") with Ping Me on within @RangeLabel(selectedFeet).
+                            Tap a marker to see who it is.
                         </span>
                     }
                     @if (!pingMeEnabled)
@@ -264,7 +268,16 @@ private bool pingMeBusy;
 private string? pingMeMessage;
 private string? nearbyMessage;
 private int nearbyCount;
-private int selectedDistance = 5;
+// Search distance in feet: 25 ft up to 1 mile (the server's limit).
+private static readonly int[] RangeOptionsFeet = { 25, 50, 100, 250, 500, 1000, 2640, 5280 };
+private int selectedFeet = 5280;
+
+private static string RangeLabel(int feet) => feet switch
+{
+    5280 => "1 mile",
+    2640 => "½ mile",
+    _ => $"{feet:N0} ft"
+};
 private string? qrCodeUrl;
 
 private int totalConnections = 0;
@@ -456,7 +469,7 @@ private async Task GetCurrentLocationAsync()
                 Longitude = currentLongitude
             });
 
-            var (people, error) = await PingMe.GetNearbyAsync(currentLatitude, currentLongitude, selectedDistance);
+            var (people, error) = await PingMe.GetNearbyAsync(currentLatitude, currentLongitude, selectedFeet / 5280.0);
             users.AddRange(people.Select(p => new UserLocationDto
             {
                 UserId = p.UserId,
@@ -466,11 +479,13 @@ private async Task GetCurrentLocationAsync()
                 ProfileImageUrl = p.ProfileImageUrl,
                 Latitude = p.Latitude,
                 Longitude = p.Longitude,
-                DistanceMiles = p.DistanceMiles
+                DistanceMiles = p.DistanceMiles,
+                IsContact = p.IsContact,
+                LastSeen = p.LastSeen
             }));
             nearbyCount = people.Count;
             nearbyMessage = error ?? (people.Count == 0
-                ? $"Nobody with Ping Me on within {selectedDistance} {(selectedDistance == 1 ? "mile" : "miles")} right now."
+                ? $"Nobody with Ping Me on within {RangeLabel(selectedFeet)}."
                 : null);
         }
 
@@ -480,20 +495,25 @@ private async Task GetCurrentLocationAsync()
             await mapComponent.RefreshMarkers(nearbyUsers);
             if (moveMap)
             {
-                await mapComponent.SetViewAsync(currentLatitude, currentLongitude, ZoomFor(selectedDistance));
+                await mapComponent.SetViewAsync(currentLatitude, currentLongitude, ZoomFor(selectedFeet));
+            }
+            if (locationObtained)
+            {
+                await mapComponent.SetRangeAsync(currentLatitude, currentLongitude, selectedFeet * 0.3048);
             }
         }
         StateHasChanged();
     }
 
-    private static int ZoomFor(int miles) => miles switch
+    // Map zoom that fits the search circle (OpenStreetMap tiles go up to zoom 19).
+    private static int ZoomFor(int feet) => feet switch
     {
-        1 => 14,
-        5 => 12,
-        10 => 11,
-        25 => 10,
-        50 => 9,
-        _ => 12
+        <= 100 => 19,
+        <= 250 => 18,
+        <= 500 => 17,
+        <= 1000 => 16,
+        <= 2640 => 15,
+        _ => 14
     };
 
     private void TrackAdClick()

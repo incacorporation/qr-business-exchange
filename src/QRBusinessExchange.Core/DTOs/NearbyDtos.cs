@@ -13,16 +13,19 @@ public class NearbyUserDto
     /// <summary>Only when the person shows it on their business card.</summary>
     public string? ProfileImageUrl { get; set; }
 
-    /// <summary>Rounded to about 100 m, so the map shows the area rather than an exact spot.</summary>
+    /// <summary>Rounded to about 10 m.</summary>
     public double Latitude { get; set; }
 
-    /// <summary>Rounded to about 100 m, so the map shows the area rather than an exact spot.</summary>
+    /// <summary>Rounded to about 10 m.</summary>
     public double Longitude { get; set; }
 
     public double DistanceMiles { get; set; }
 
     /// <summary>When the person's location was last shared.</summary>
     public DateTime LastSeen { get; set; }
+
+    /// <summary>The person is in the searcher's contacts.</summary>
+    public bool IsContact { get; set; }
 }
 
 /// <summary>The signed-in user's Ping Me setting.</summary>

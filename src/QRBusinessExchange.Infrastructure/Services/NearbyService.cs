@@ -16,10 +16,8 @@ namespace QRBusinessExchange.Infrastructure.Services;
 /// </remarks>
 public class NearbyService
 {
-    /// <summary>People whose location is older than this are left off nearby maps (they've likely moved on).</summary>
-    public static readonly TimeSpan LocationFreshFor = TimeSpan.FromHours(24);
-
-    public const double MaxRadiusMiles = 50;
+    /// <summary>Widest search: Ping Me is for meeting people close by (the app offers 25 ft to 1 mile).</summary>
+    public const double MaxRadiusMiles = 1;
 
     /// <summary>Most people returned by one nearby search, nearest first.</summary>
     public const int MaxResults = 200;
@@ -121,9 +119,10 @@ public class NearbyService
     }
 
     /// <summary>
-    /// People with Ping Me on within the radius of the given point, nearest first. The searcher is left out,
-    /// as are people whose location is older than <see cref="LocationFreshFor"/>. Company and picture follow
-    /// each person's "Show on my card" choices; positions are rounded to about 100 m.
+    /// People with Ping Me on within the radius of the given point, nearest first. The searcher is left out;
+    /// everyone else with Ping Me on is included however long ago they shared their position (LastSeen
+    /// says when), and IsContact marks people in the searcher's contacts. Company and picture follow
+    /// each person's "Show on my card" choices; positions are rounded to about 10 m (searches go down to 25 ft, so coarser rounding would misplace pins).
     /// </summary>
     public async Task<List<NearbyUserDto>> GetNearbyAsync(Guid userId, double latitude, double longitude, double radiusMiles)
     {
@@ -143,11 +142,9 @@ public class NearbyService
         var maxLat = (decimal)(latitude + latDelta);
         var minLng = (decimal)(longitude - lngDelta);
         var maxLng = (decimal)(longitude + lngDelta);
-        var since = Now - LocationFreshFor;
 
         var candidates = await _db.UserLocations
             .Where(l => l.PingMeEnabled
-                        && l.LastUpdated >= since
                         && l.UserId != userId
                         && l.User.IsActive
                         && l.Latitude >= minLat && l.Latitude <= maxLat
@@ -161,7 +158,8 @@ public class NearbyService
                 l.User.FirstName,
                 l.User.LastName,
                 CompanyName = l.User.ShowCompanyName ? l.User.CompanyName : null,
-                ProfileImageUrl = l.User.ShowProfileImage ? l.User.ProfileImageUrl : null
+                ProfileImageUrl = l.User.ShowProfileImage ? l.User.ProfileImageUrl : null,
+                IsContact = _db.Contacts.Any(c => c.OwnerUserId == userId && c.ContactUserId == l.UserId)
             })
             .ToListAsync();
 
@@ -179,10 +177,11 @@ public class NearbyService
                 LastName = x.c.LastName,
                 CompanyName = x.c.CompanyName,
                 ProfileImageUrl = x.c.ProfileImageUrl,
-                Latitude = Math.Round((double)x.c.Latitude, 3),
-                Longitude = Math.Round((double)x.c.Longitude, 3),
-                DistanceMiles = Math.Round(x.Miles, 1),
-                LastSeen = x.c.LastUpdated
+                Latitude = Math.Round((double)x.c.Latitude, 4),
+                Longitude = Math.Round((double)x.c.Longitude, 4),
+                DistanceMiles = Math.Round(x.Miles, 4),
+                LastSeen = x.c.LastUpdated,
+                IsContact = x.c.IsContact
             })
             .ToList();
     }

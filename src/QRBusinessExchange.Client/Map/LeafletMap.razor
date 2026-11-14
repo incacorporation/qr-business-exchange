@@ -114,7 +114,7 @@
                         user.Latitude, 
                         user.Longitude, 
                         popupContent,
-                        user.UserId == CurrentUserId);
+                        MarkerColor(user));
                     
                     Console.WriteLine($"Added marker for {user.FirstName} {user.LastName}");
                 }
@@ -131,6 +131,12 @@
             Console.WriteLine($"Stack trace: {ex.StackTrace}");
         }
     }
+
+    /// <summary>Marker colour: you are gold, your contacts green, everyone else blue.</summary>
+    public const string YouColor = "#D4A017", ContactColor = "#198754", OtherColor = "#0D6EFD";
+
+    private string MarkerColor(UserLocationDto user) =>
+        user.UserId == CurrentUserId ? YouColor : user.IsContact ? ContactColor : OtherColor;
 
     /// <summary>
     /// Marker pop-up. Names and companies are typed by users, so everything is HTML-encoded: the pop-up is
@@ -149,14 +155,38 @@
             ? ""
             : $"<p class='mb-1 text-muted'><i class='fas fa-building'></i> {E(user.CompanyName)}</p>";
         var distance = user.DistanceMiles is { } miles
-            ? $"<p class='mb-1 small text-muted'>{(miles < 0.1 ? "Less than 0.1" : miles.ToString("0.#"))} mi away</p>"
+            ? $"<p class='mb-1 small text-muted'>{E(DistanceText(miles))}</p>"
+            : "";
+        var contact = user.IsContact
+            ? "<p class='mb-1 small text-success'><i class='fas fa-check-circle'></i> In your contacts</p>"
+            : "";
+        var seen = user.LastSeen is { } lastSeen
+            ? $"<p class='mb-1 small text-muted'>Location shared {E(Ago(lastSeen))}</p>"
             : "";
 
         return $"<div class='text-center p-2'>"
              + $"<h6 class='mb-2'><i class='fas fa-user'></i> {E(user.FirstName)} {E(user.LastName)}</h6>"
-             + company + distance
+             + company + contact + distance + seen
              + $"<a href='/user/{user.UserId}' class='btn btn-sm btn-primary mt-2'><i class='fas fa-eye'></i> View Profile</a>"
              + "</div>";
+    }
+
+    // Feet up to 1,000 ft (searches start at 25 ft), miles beyond.
+    private static string DistanceText(double miles)
+    {
+        var feet = miles * 5280;
+        return feet < 10 ? "Right here"
+            : feet < 1000 ? $"{Math.Round(feet / 5) * 5:N0} ft away"
+            : $"{miles:0.##} mi away";
+    }
+
+    private static string Ago(DateTime utc)
+    {
+        var age = DateTime.UtcNow - DateTime.SpecifyKind(utc, DateTimeKind.Utc);
+        return age.TotalMinutes < 2 ? "just now"
+            : age.TotalHours < 1 ? $"{(int)age.TotalMinutes} minutes ago"
+            : age.TotalDays < 1 ? $"{(int)age.TotalHours} hour{((int)age.TotalHours == 1 ? "" : "s")} ago"
+            : $"{(int)age.TotalDays} day{((int)age.TotalDays == 1 ? "" : "s")} ago";
     }
 
     /// <summary>Waits (up to the timeout) for the map to finish loading, so markers aren't dropped.</summary>
@@ -195,7 +225,7 @@
                         user.Latitude, 
                         user.Longitude, 
                         popupContent,
-                        user.UserId == CurrentUserId);
+                        MarkerColor(user));
                 }
             }
         }
@@ -207,6 +237,17 @@
         {
             Console.WriteLine($"Error refreshing markers: {ex.Message}");
         }
+    }
+
+    /// <summary>Draws the search distance as a circle around the given point.</summary>
+    public async Task SetRangeAsync(double lat, double lng, double meters)
+    {
+        if (!_isInitialized || _disposed) return;
+        try
+        {
+            await JS.InvokeVoidAsync("leafletInterop.setRangeCircle", lat, lng, meters);
+        }
+        catch (JSDisconnectedException) { }
     }
 
     public async Task SetViewAsync(double lat, double lng, int zoom)

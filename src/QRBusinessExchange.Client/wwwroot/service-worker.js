@@ -1,7 +1,7 @@
 // Service Worker for qrbound PWA
-const CACHE_NAME = 'qr-business-exchange-v4';
-const STATIC_CACHE = 'qr-business-static-v4';
-const RUNTIME_CACHE = 'qr-business-runtime-v4';
+const CACHE_NAME = 'qr-business-exchange-v5';
+const STATIC_CACHE = 'qr-business-static-v5';
+const RUNTIME_CACHE = 'qr-business-runtime-v5';
 
 // Files to cache immediately on install
 const STATIC_FILES = [
@@ -94,8 +94,12 @@ async function networkFirst(request) {
         // Always check with the server (it answers 304 Not Modified when nothing changed). Without this,
         // the browser's HTTP cache can hand back an old copy for days, since the site sends no
         // Cache-Control header, and a fixed script (e.g. webauthn-interop.js) never reaches users.
-        // Page navigations can't be re-created with options, so they're fetched as they are.
-        const fresh = request.mode === 'navigate' ? request : new Request(request, { cache: 'no-cache' });
+        // Page loads too: an old index.html would start the previous build of the app (its _framework
+        // files are still cached), which then runs against the new scripts. A navigation request can't be
+        // copied with new options, so its address is fetched afresh.
+        const fresh = request.mode === 'navigate'
+            ? new Request(request.url, { cache: 'no-cache', credentials: 'same-origin' })
+            : new Request(request, { cache: 'no-cache' });
         const response = await fetch(fresh);
         if (isCacheable(response)) {
             putInCache(request, response);
