@@ -21,6 +21,13 @@
       "runtimeArgs": ["run", "--project", "src/QRBusinessExchange.Web", "--launch-profile", "https"],
       "port": 7089,
       "url": "https://localhost:7089"
+    },
+    {
+      "name": "mlm",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/mlm.qrbound.com", "--launch-profile", "http"],
+      "port": 5017,
+      "url": "http://localhost:5017"
     }
   ]
 }

@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/mlm.qrbound.com/mlm.qrbound.com.csproj" />
     <Project Path="src/QRBusinessExchange.API/QRBusinessExchange.API.csproj" />
     <Project Path="src/QRBusinessExchange.Client/QRBusinessExchange.Client.csproj" />
     <Project Path="src/QRBusinessExchange.Core/QRBusinessExchange.Core.csproj" />
@@ -7,6 +8,7 @@
     <Project Path="src/QRBusinessExchange.Web/QRBusinessExchange.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/mlm.qrbound.com.UnitTests/mlm.qrbound.com.UnitTests.csproj" />
     <Project Path="tests/QRBusinessExchange.IntegrationTests/QRBusinessExchange.IntegrationTests.csproj" />
     <Project Path="tests/QRBusinessExchange.UnitTests/QRBusinessExchange.UnitTests.csproj" />
   </Folder>

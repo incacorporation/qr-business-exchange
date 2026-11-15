@@ -1,0 +1,95 @@
+@page "/admin/leads"
+@layout AdminLayout
+@rendermode InteractiveServer
+@inject LeadService LeadData
+@inject AiAssistant Ai
+
+<SeoHead Title="Leads" Description="Leads." NoIndex="true" />
+<h1>Leads</h1>
+<p class="muted">Sorted by score. Scores update daily; leads without consent are never contacted.</p>
+
+@if (_leads is null)
+{
+    <p>Loading…</p>
+}
+else
+{
+    <table class="table leads">
+        <thead><tr><th>Score</th><th>Lead</th><th>Interest</th><th>Source</th><th>Owner</th><th>Status</th><th>Next action</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var l in _leads)
+            {
+                <tr class="@(l.ConsentToContact ? "" : "no-consent")">
+                    <td><span class="score s@(l.Score / 25)">@l.Score</span></td>
+                    <td><strong>@l.Name</strong><br /><small>@l.Email</small>
+                        @if (!string.IsNullOrWhiteSpace(l.Message)) { <br /><small class="muted">“@l.Message”</small> }</td>
+                    <td>@l.Interest</td>
+                    <td>@l.Source</td>
+                    <td>@l.OwnerMember?.Name</td>
+                    <td>
+                        <select value="@l.Status" @onchange="e => SetStatus(l, e.Value?.ToString())" aria-label="Status for @l.Name">
+                            @foreach (var s in Enum.GetValues<LeadStatus>()) { <option value="@s">@s</option> }
+                        </select>
+                    </td>
+                    <td><small>@l.NextAction</small><br /><small class="muted">@l.ScoreReason</small></td>
+                    <td class="actions">
+                        @if (Ai.IsAvailable && l.ConsentToContact)
+                        {
+                            <button class="btn btn-small" disabled="@(_busy == l.Id)" @onclick="() => AiScore(l)">AI score</button>
+                            <button class="btn btn-small btn-ghost" disabled="@(_busy == l.Id)" @onclick="() => Draft(l)">Draft email</button>
+                        }
+                    </td>
+                </tr>
+                @if (_drafts.TryGetValue(l.Id, out var draft))
+                {
+                    <tr class="draft"><td colspan="8"><strong>Draft for @l.Name</strong> (review before sending)<pre>@draft</pre></td></tr>
+                }
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<Lead>? _leads;
+    private int? _busy;
+    private readonly Dictionary<int, string> _drafts = [];
+
+    protected override async Task OnInitializedAsync() => _leads = await LeadData.GetLeadsAsync();
+
+    private async Task SetStatus(Lead lead, string? value)
+    {
+        if (!Enum.TryParse<LeadStatus>(value, out var status)) return;
+        await LeadData.UpdateAsync(lead.Id, l =>
+        {
+            l.Status = status;
+            if (status == LeadStatus.Contacted) l.LastContactUtc = DateTime.UtcNow;
+        });
+        _leads = await LeadData.GetLeadsAsync();
+    }
+
+    private async Task AiScore(Lead lead)
+    {
+        _busy = lead.Id;
+        var baseline = LeadScorer.Score(lead, DateTime.UtcNow);
+        var insight = await Ai.ScoreLeadAsync(lead, baseline);
+        if (insight is not null)
+        {
+            await LeadData.UpdateAsync(lead.Id, l =>
+            {
+                l.Score = Math.Clamp(insight.Score, 0, 100);
+                l.ScoreReason = "AI: " + insight.Reason;
+                l.NextAction = insight.NextAction;
+            });
+            _leads = await LeadData.GetLeadsAsync();
+        }
+        _busy = null;
+    }
+
+    private async Task Draft(Lead lead)
+    {
+        _busy = lead.Id;
+        var text = await Ai.DraftOutreachAsync(lead, lead.OwnerMember?.Name ?? "the QRBound team", "email");
+        _drafts[lead.Id] = text ?? "The AI couldn't draft this one. Try again, or write it yourself.";
+        _busy = null;
+    }
+}

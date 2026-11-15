@@ -1,0 +1,36 @@
+@inherits LayoutComponentBase
+
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="site-header">
+    <div class="wrap nav">
+        <a class="brand" href="/">QR<span>Bound</span></a>
+        <nav aria-label="Main">
+            <NavLink href="/products">Products</NavLink>
+            <NavLink href="/opportunity">Opportunity</NavLink>
+            <NavLink href="/income-disclosure">Income disclosure</NavLink>
+            <NavLink href="/faq">FAQ</NavLink>
+            <NavLink href="/admin" class="btn btn-small">Back office</NavLink>
+        </nav>
+    </div>
+</header>
+
+<main id="main">
+    @Body
+</main>
+
+<footer class="site-footer">
+    <div class="wrap">
+        <p>
+            QRBound sells QR and NFC networking tools through independent members. Members are paid on
+            product sales to customers, never for recruiting. Most members earn little or nothing; see our
+            <a href="/income-disclosure">income disclosure</a> before you join.
+        </p>
+        <p>&copy; @DateTime.UtcNow.Year QRBound &middot; <a href="/faq">FAQ</a> &middot; <a href="/sitemap.xml">Sitemap</a></p>
+    </div>
+</footer>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>

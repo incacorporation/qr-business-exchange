@@ -1,0 +1,53 @@
+@page "/products/{Slug}"
+@inject NetworkService Network
+@inject NavigationManager Nav
+
+@if (_product is null)
+{
+    <SeoHead Title="Product not found" Description="This product isn't available." NoIndex="true" />
+    <section class="wrap narrow"><h1>Product not found</h1><p><a href="/products">See all products</a>.</p></section>
+}
+else
+{
+    <SeoHead Title="@_product.Name" Description="@Truncate(_product.Description, 155)"
+             Path="@($"/products/{_product.Slug}")" OgType="product" JsonLd="_jsonLd" />
+    <section class="wrap narrow">
+        <p class="crumbs"><a href="/products">Products</a> / @_product.Name</p>
+        <h1>@_product.Name</h1>
+        <p class="price">@_product.Price.ToString("C")</p>
+        <p class="lead">@_product.Description</p>
+        <p>Buy from a member near you, or leave your details and one will get in touch.</p>
+        <a class="btn" href="/r/qrbound?interest=Customer&product=@_product.Slug">Ask about this product</a>
+    </section>
+}
+
+@code {
+    [Parameter] public string Slug { get; set; } = "";
+    private Product? _product;
+    private object? _jsonLd;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _product = await Network.GetProductAsync(Slug);
+        if (_product is null) return;
+        _jsonLd = new Dictionary<string, object>
+        {
+            ["@context"] = "https://schema.org",
+            ["@type"] = "Product",
+            ["name"] = _product.Name,
+            ["sku"] = _product.Sku,
+            ["description"] = _product.Description,
+            ["brand"] = new Dictionary<string, object> { ["@type"] = "Brand", ["name"] = "QRBound" },
+            ["offers"] = new Dictionary<string, object>
+            {
+                ["@type"] = "Offer",
+                ["price"] = _product.Price.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture),
+                ["priceCurrency"] = "USD",
+                ["availability"] = "https://schema.org/InStock",
+                ["url"] = $"https://mlm.qrbound.com/products/{_product.Slug}",
+            },
+        };
+    }
+
+    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..(max - 1)].TrimEnd() + "…";
+}

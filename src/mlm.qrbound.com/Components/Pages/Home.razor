@@ -1,0 +1,62 @@
+﻿@page "/"
+@inject NetworkService Network
+
+<SeoHead Title="QR & NFC Digital Business Cards for Local Businesses | QRBound"
+         Description="Smart QR and NFC business cards linked to a live digital profile. Update your details any time, capture leads at events, and never reprint cards again."
+         Path="/" JsonLd="_jsonLd" />
+
+<section class="hero">
+    <div class="wrap">
+        <h1>Business cards that never go out of date</h1>
+        <p class="lead">
+            QRBound cards link to a live digital profile. Change your number, title or offer once and every
+            card you've ever handed out updates. Capture leads at events with one scan.
+        </p>
+        <p>
+            <a class="btn" href="/products">See the products</a>
+            <a class="btn btn-ghost" href="/opportunity">Become a member</a>
+        </p>
+    </div>
+</section>
+
+<section class="wrap">
+    <h2>Popular with local businesses</h2>
+    <div class="cards">
+        @foreach (var p in _products)
+        {
+            <article class="card">
+                <h3><a href="/products/@p.Slug">@p.Name</a></h3>
+                <p>@p.Description</p>
+                <p class="price">@p.Price.ToString("C")</p>
+            </article>
+        }
+    </div>
+</section>
+
+<section class="wrap">
+    <h2>Why QRBound</h2>
+    <ul class="ticks">
+        <li><strong>No reprints.</strong> Edit your profile online and every printed card points to the new details.</li>
+        <li><strong>Leads, not lost cards.</strong> Visitors can save your contact or leave theirs in one tap.</li>
+        <li><strong>Secure sign-in.</strong> Passkeys instead of passwords for your profile.</li>
+        <li><strong>Local support.</strong> An independent member near you sets you up and answers questions.</li>
+    </ul>
+</section>
+
+@code {
+    private List<Product> _products = [];
+    private object? _jsonLd;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _products = await Network.GetProductsAsync();
+        _jsonLd = new Dictionary<string, object>
+        {
+            ["@context"] = "https://schema.org",
+            ["@type"] = "Organization",
+            ["name"] = "QRBound",
+            ["url"] = "https://mlm.qrbound.com",
+            ["description"] = "QR and NFC digital business cards sold through independent members.",
+        };
+    }
+}

@@ -1,0 +1,29 @@
+@inherits LayoutComponentBase
+@inject AiAssistant Ai
+
+<div class="admin">
+    <aside class="admin-nav">
+        <a class="brand" href="/">QR<span>Bound</span></a>
+        <small>Back office</small>
+        <nav aria-label="Back office">
+            <NavLink href="/admin" Match="NavLinkMatch.All">Dashboard</NavLink>
+            <NavLink href="/admin/network">Network</NavLink>
+            <NavLink href="/admin/leads">Leads</NavLink>
+            <NavLink href="/admin/commissions">Commissions</NavLink>
+            <NavLink href="/admin/compliance">Compliance check</NavLink>
+            <NavLink href="/admin/seo">SEO pages</NavLink>
+        </nav>
+        <p class="ai-status @(Ai.IsAvailable ? "on" : "off")">
+            @(Ai.IsAvailable ? "AI assistant on" : "AI off — set ANTHROPIC_API_KEY")
+        </p>
+    </aside>
+    <section class="admin-main">
+        @Body
+    </section>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>

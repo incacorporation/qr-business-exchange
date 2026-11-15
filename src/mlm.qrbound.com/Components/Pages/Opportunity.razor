@@ -1,0 +1,48 @@
+@page "/opportunity"
+@inject CompensationSettings Plan
+
+<SeoHead Title="Sell QR Business Cards as an Independent Member — How Pay Works"
+         Description="How QRBound members are paid: a retail commission on customer sales and small team overrides, with no fees to join, no inventory and a published income disclosure."
+         Path="/opportunity" />
+
+<section class="wrap narrow">
+    <h1>Becoming a QRBound member</h1>
+    <p class="lead">
+        Members introduce local businesses to QRBound products and are paid on what those customers buy.
+        It's a sales role. Most members earn a modest amount or nothing, so read the
+        <a href="/income-disclosure">income disclosure</a> first.
+    </p>
+
+    <h2>How pay works</h2>
+    <ul class="ticks">
+        <li><strong>@Pct(Plan.RetailRate) retail commission</strong> on the volume of every customer order you refer.</li>
+        <li><strong>Team overrides</strong> of @string.Join(", ", Plan.OverrideRates.Select(Pct)) on customer sales
+            made by members you introduced, up to @Plan.OverrideRates.Length levels depending on rank.</li>
+        <li><strong>Nothing for recruiting.</strong> Enrolling someone pays nothing; only their customers' purchases count.</li>
+        <li><strong>Your own purchases can't qualify you on their own.</strong> They count toward the
+            @Plan.ActiveThreshold.ToString("0") volume activity requirement only up to the volume you sell to customers.</li>
+        <li><strong>A fair cap.</strong> Total payouts are capped at @Pct(Plan.PayoutCap) of sales, and no single
+            team leg can supply more than @Pct(Plan.MaxLegShare) of a rank requirement.</li>
+    </ul>
+
+    <h2>What it costs</h2>
+    <p>Joining is free. There are no starter kits to buy, no monthly minimums and no inventory. If you buy
+        product for yourself and change your mind, unused product can be returned within 12 months for a 90% refund.</p>
+
+    <h2>Ranks</h2>
+    <table class="table">
+        <thead><tr><th>Rank</th><th>Team customer volume</th><th>Active frontline</th><th>Override levels</th></tr></thead>
+        <tbody>
+            @foreach (var r in Plan.Ranks)
+            {
+                <tr><td>@r.Rank</td><td>@r.GroupVolume.ToString("N0")</td><td>@r.ActiveFrontline</td><td>@r.PaidLevels</td></tr>
+            }
+        </tbody>
+    </table>
+
+    <p><a class="btn" href="/r/qrbound?interest=Business">Talk to us about joining</a></p>
+</section>
+
+@code {
+    private static string Pct(decimal d) => d.ToString("0.#%");
+}

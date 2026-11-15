@@ -1,0 +1,27 @@
+@page "/admin/network"
+@layout AdminLayout
+@rendermode InteractiveServer
+@inject NetworkService NetworkData
+
+<SeoHead Title="Network" Description="Genealogy." NoIndex="true" />
+<h1>Network</h1>
+<p class="muted">Genealogy for @_period. CV = customer volume, GV = whole-team customer volume. Inactive members are greyed out
+    and are skipped by compression, so their upline still gets paid.</p>
+
+@if (_root is null)
+{
+    <p>Loading…</p>
+}
+else
+{
+    <ul class="tree">
+        <GenealogyBranch Node="_root" Depth="0" />
+    </ul>
+}
+
+@code {
+    private readonly string _period = NetworkService.PeriodOf(DateTime.UtcNow);
+    private GenealogyNode? _root;
+
+    protected override async Task OnInitializedAsync() => _root = await NetworkData.GetGenealogyAsync(_period);
+}

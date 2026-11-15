@@ -1,0 +1,67 @@
+@page "/admin/compliance"
+@layout AdminLayout
+@rendermode InteractiveServer
+@inject AiAssistant Ai
+
+<SeoHead Title="Compliance check" Description="Compliance check." NoIndex="true" />
+<h1>Compliance check</h1>
+<p class="muted">Paste a social post, flyer or email before it goes out. The rule check always runs; the AI review adds a
+    compliant rewrite when the assistant is on.</p>
+
+<textarea class="big" rows="7" @bind="_text" @bind:event="oninput" aria-label="Marketing text to check"
+          placeholder="e.g. Join my team and earn $5,000/month passive income. Fire your boss!"></textarea>
+<p>
+    <button class="btn" @onclick="CheckAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_text))">Check</button>
+    @if (_busy) { <span class="muted">Reviewing…</span> }
+</p>
+
+@if (_ruleIssues is not null)
+{
+    <section class="panel">
+        <h2>Rule check: @(_ruleIssues.Count == 0 ? "no problems found" : $"{_ruleIssues.Count} problem(s)")</h2>
+        @if (_ruleIssues.Count > 0)
+        {
+            <ul class="issues">
+                @foreach (var i in _ruleIssues) { <li><mark>@i.Phrase</mark> <span class="badge">@i.Category</span> @i.Why</li> }
+            </ul>
+        }
+    </section>
+}
+
+@if (_ai is not null)
+{
+    <section class="panel">
+        <h2>AI review: @(_ai.Compliant ? "compliant" : "needs changes")</h2>
+        @if (_ai.Findings.Count > 0)
+        {
+            <ul class="issues">
+                @foreach (var f in _ai.Findings) { <li><mark>@f.Phrase</mark> <span class="badge">@f.Category</span> @f.Why</li> }
+            </ul>
+        }
+        <h3>Suggested compliant version</h3>
+        <pre>@_ai.CompliantRewrite</pre>
+    </section>
+}
+else if (_aiFailed)
+{
+    <p class="muted">The AI review didn't return a result. The rule check above still applies.</p>
+}
+
+@code {
+    private string _text = "";
+    private bool _busy, _aiFailed;
+    private IReadOnlyList<ComplianceIssue>? _ruleIssues;
+    private AiComplianceReview? _ai;
+
+    private async Task CheckAsync()
+    {
+        _busy = true; _ai = null; _aiFailed = false;
+        _ruleIssues = ComplianceRules.Check(_text);
+        if (Ai.IsAvailable)
+        {
+            _ai = await Ai.ReviewComplianceAsync(_text);
+            _aiFailed = _ai is null;
+        }
+        _busy = false;
+    }
+}
