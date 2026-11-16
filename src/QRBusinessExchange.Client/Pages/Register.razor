@@ -50,28 +50,14 @@
             </div>
 
             <div class="auth-field">
-                <label for="email" class="visually-hidden">Email</label>
-                <InputText id="email" type="email" class="form-control auth-input" placeholder="Email" @bind-Value="form.Email" autocomplete="email" disabled="@working" />
-                <ValidationMessage For="() => form.Email" />
-            </div>
-
-            <div class="auth-field">
                 <label for="company" class="visually-hidden">Company (optional)</label>
                 <InputText id="company" class="form-control auth-input" placeholder="Company (optional)" @bind-Value="form.CompanyName" autocomplete="organization" disabled="@working" />
             </div>
 
             <div class="auth-field">
-                <label for="phone" class="visually-hidden">Phone (optional)</label>
-                <InputText id="phone" type="tel" class="form-control auth-input" placeholder="Phone (optional)" @bind-Value="form.PhoneNumber" autocomplete="tel" disabled="@working" />
-                <ValidationMessage For="() => form.PhoneNumber" />
-            </div>
-
-            @* Text-message consent: optional, unchecked by default, and never a condition of signing up. *@
-            <div class="auth-field form-check sms-consent">
-                <InputCheckbox id="smsOptIn" class="form-check-input" @bind-Value="form.SmsOptIn" disabled="@working" />
-                <label for="smsOptIn" class="form-check-label">
-                    <SmsConsentText />
-                </label>
+                <label for="email" class="visually-hidden">Email</label>
+                <InputText id="email" type="email" class="form-control auth-input" placeholder="Email" @bind-Value="form.Email" autocomplete="email" disabled="@working" />
+                <ValidationMessage For="() => form.Email" />
             </div>
 
             <div class="auth-field">
@@ -80,10 +66,24 @@
                 <ValidationMessage For="() => form.Password" />
             </div>
 
-            <div class="auth-field mb-4">
+            <div class="auth-field">
                 <label for="confirm" class="visually-hidden">Confirm password</label>
                 <InputText id="confirm" type="password" class="form-control auth-input" placeholder="Confirm password" @bind-Value="form.ConfirmPassword" autocomplete="new-password" disabled="@working" />
                 <ValidationMessage For="() => form.ConfirmPassword" />
+            </div>
+
+            <div class="auth-field">
+                <label for="phone" class="visually-hidden">Mobile phone number (optional)</label>
+                <InputText id="phone" type="tel" class="form-control auth-input" placeholder="Mobile phone number (optional)" @bind-Value="form.PhoneNumber" autocomplete="tel" disabled="@working" />
+                <ValidationMessage For="() => form.PhoneNumber" />
+            </div>
+
+            @* Text-message consent: optional, never pre-selected, and never a condition of signing up. *@
+            <div class="auth-field form-check sms-consent mb-4">
+                <InputCheckbox id="smsOptIn" class="form-check-input" @bind-Value="form.SmsOptIn" disabled="@working" />
+                <label for="smsOptIn" class="form-check-label">
+                    <SmsConsentText />
+                </label>
             </div>
 
             <button type="submit" class="auth-btn" disabled="@working">

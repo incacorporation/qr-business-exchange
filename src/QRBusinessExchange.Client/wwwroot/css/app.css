@@ -1377,3 +1377,17 @@ input:focus-visible + .slider {
     margin-top: 1.75rem;
     scroll-margin-top: 4.5rem;
 }
+
+/* Text-message consent wording (sign-up and Settings): one line per point */
+.sms-consent-lead {
+    display: block;
+    margin-bottom: 0.25rem;
+}
+
+.sms-consent-details {
+    display: block;
+}
+
+.sms-consent-details > span {
+    display: block;
+}

@@ -345,10 +345,14 @@
 
 .sms-consent .form-check-label {
     color: var(--auth-muted);
-    font-size: 0.8rem;
+    font-size: 0.82rem;
     line-height: 1.4;
 }
 
 .sms-consent a {
     color: var(--auth-link);
+}
+
+.sms-consent .sms-consent-lead {
+    color: #fff;
 }
