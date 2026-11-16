@@ -4,6 +4,9 @@
 @inject ApiService ApiService
 @inject StateService StateService
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject PortalAuthService PortalAuth
+@using QRBusinessExchange.Client.Pages
 
 <PageTitle>Subscriptions - qrbound</PageTitle>
 
@@ -15,6 +18,10 @@
             @if (!StateService.IsAuthenticated)
             {
                 <p class="mb-0">Already have an account? <a href="/login?returnUrl=%2Fsubscriptions">Log in</a> to change your plan.</p>
+            }
+            else
+            {
+                <p class="mb-0">Paid plans can't be bought online yet: choose <strong>Contact us</strong> on a plan and we'll set it up.</p>
             }
         </div>
     </div>
@@ -46,7 +53,7 @@
                     }
                     else
                     {
-                        <button class="btn btn-outline-secondary" @onclick='() => ChangePlan("Free")'>Downgrade</button>
+                        <button class="btn btn-outline-secondary" disabled="@busy" @onclick="SwitchToFreeAsync">Switch to Free</button>
                     }
                 </div>
             </div>
@@ -58,7 +65,7 @@
                     <h4 class="card-title">Basic</h4>
                     <h2 class="mb-3">$9.99<small class="text-muted">/month</small></h2>
                     <ul class="list-unstyled mb-4 flex-grow-1">
-                        <li><i class="bi bi-check text-success"></i> 100 credits/month</li>
+                        <li><i class="bi bi-check text-success"></i> 50 credits/month</li>
                         <li><i class="bi bi-check text-success"></i> Custom QR code</li>
                         <li><i class="bi bi-check text-success"></i> Full map access</li>
                         <li><i class="bi bi-check text-success"></i> Priority email support</li>
@@ -74,9 +81,7 @@
                     }
                     else
                     {
-                        <button class="btn btn-primary" @onclick='() => ChangePlan("Basic")'>
-                            @(GetPlanOrder(StateService.SubscriptionType) < GetPlanOrder("Basic") ? "Upgrade" : "Change")
-                        </button>
+                        <a class="btn btn-outline-primary" href="@ContactHref("Basic")">Contact us</a>
                     }
                 </div>
             </div>
@@ -88,7 +93,7 @@
                     <h4 class="card-title">Premium</h4>
                     <h2 class="mb-3">$29.99<small class="text-muted">/month</small></h2>
                     <ul class="list-unstyled mb-4 flex-grow-1">
-                        <li><i class="bi bi-check text-success"></i> 500 credits/month</li>
+                        <li><i class="bi bi-check text-success"></i> 200 credits/month</li>
                         <li><i class="bi bi-check text-success"></i> All Basic features</li>
                         <li><i class="bi bi-check text-success"></i> Advanced analytics</li>
                         <li><i class="bi bi-check text-success"></i> Ping Me feature</li>
@@ -104,9 +109,7 @@
                     }
                     else
                     {
-                        <button class="btn btn-primary" @onclick='() => ChangePlan("Premium")'>
-                            @(GetPlanOrder(StateService.SubscriptionType) < GetPlanOrder("Premium") ? "Upgrade" : "Change")
-                        </button>
+                        <a class="btn btn-outline-primary" href="@ContactHref("Premium")">Contact us</a>
                     }
                 </div>
             </div>
@@ -118,7 +121,7 @@
                     <h4 class="card-title">Enterprise</h4>
                     <h2 class="mb-3">$99.99<small class="text-muted">/month</small></h2>
                     <ul class="list-unstyled mb-4 flex-grow-1">
-                        <li><i class="bi bi-check text-success"></i> Unlimited credits</li>
+                        <li><i class="bi bi-check text-success"></i> 1,000 credits/month</li>
                         <li><i class="bi bi-check text-success"></i> All Premium features</li>
                         <li><i class="bi bi-check text-success"></i> API access</li>
                         <li><i class="bi bi-check text-success"></i> Custom integrations</li>
@@ -134,7 +137,7 @@
                     }
                     else
                     {
-                        <button class="btn btn-primary" @onclick='() => ChangePlan("Enterprise")'>Upgrade</button>
+                        <a class="btn btn-outline-primary" href="@ContactHref("Enterprise")">Contact us</a>
                     }
                 </div>
             </div>
@@ -171,49 +174,51 @@
 
     private bool IsCurrent(string planType) => StateService.IsAuthenticated && StateService.SubscriptionType == planType;
 
-    private async Task ChangePlan(string planType)
-    {
-        message = "Processing subscription change...";
-        StateHasChanged();
+    private bool busy;
 
+    // Show the plan as it is on the server now (it may have been changed by qrbound staff).
+    protected override async Task OnInitializedAsync()
+    {
+        if (StateService.IsAuthenticated)
+        {
+            await PortalAuth.RefreshSubscriptionAsync();
+        }
+    }
+
+    // There is no online checkout yet: paid plans are set up by email.
+    private static string ContactHref(string planType) =>
+        $"mailto:{LegalInfo.ContactEmail}?subject={Uri.EscapeDataString($"qrbound {planType} plan")}";
+
+    private async Task SwitchToFreeAsync()
+    {
+        if (!await JS.InvokeAsync<bool>("confirm",
+                $"Switch from {StateService.SubscriptionType} to the Free plan? Your current plan and its remaining credits end now."))
+        {
+            return;
+        }
+
+        busy = true;
+        message = "Switching to the Free plan...";
         try
         {
-            var response = await ApiService.PostAsync("api/subscriptions/change", new { 
-                UserId = StateService.CurrentUser?.UserId,
-                NewPlanType = planType 
-            });
-            
+            var response = await ApiService.PostAsync("api/subscription/downgrade", new { });
             if (response.IsSuccessStatusCode)
             {
-                var updatedSubscription = await ApiService.ParseResponseAsync<SubscriptionDto>(response);
-                if (updatedSubscription != null)
-                {
-                    StateService.CurrentSubscription = updatedSubscription;
-                    message = $"Successfully changed to {planType} plan!";
-                }
+                StateService.CurrentSubscription = null; // no active subscription = Free
+                message = "You're on the Free plan now.";
             }
             else
             {
-                message = "Failed to change subscription. Please try again or contact support.";
+                message = await ApiService.ReadErrorAsync(response, "Couldn't switch plans. Please try again or contact us.");
             }
         }
         catch (Exception ex)
         {
-            message = $"Error: {ex.Message}";
+            message = $"Couldn't reach qrbound: {ex.Message}";
         }
-        
-        StateHasChanged();
-    }
-
-    private int GetPlanOrder(string planType)
-    {
-        return planType switch
+        finally
         {
-            "Free" => 0,
-            "Basic" => 1,
-            "Premium" => 2,
-            "Enterprise" => 3,
-            _ => 0
-        };
+            busy = false;
+        }
     }
 }

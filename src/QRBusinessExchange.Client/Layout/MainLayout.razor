@@ -284,7 +284,7 @@
             return;
         }
         lastProfileRefresh = DateTime.UtcNow;
-        await PortalAuth.RefreshProfileAsync();
+        await Task.WhenAll(PortalAuth.RefreshProfileAsync(), PortalAuth.RefreshSubscriptionAsync());
     }
 
     private void OnStateChanged() => InvokeAsync(StateHasChanged);

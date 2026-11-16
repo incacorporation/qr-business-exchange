@@ -234,6 +234,35 @@ public class PortalAuthService
         }
     }
 
+    /// <summary>
+    /// Loads the signed-in user's active plan, so the Plans page and the header badge show it (no active
+    /// subscription means Free). Leaves the current value alone if the server can't be reached.
+    /// </summary>
+    public async Task RefreshSubscriptionAsync()
+    {
+        if (await GetSessionStateAsync() != PortalSessionState.Active)
+        {
+            return;
+        }
+
+        try
+        {
+            var response = await _api.GetResponseAsync("api/subscription/current");
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                _state.CurrentSubscription = null;
+            }
+            else if (response.IsSuccessStatusCode)
+            {
+                _state.CurrentSubscription = await _api.ParseResponseAsync<SubscriptionDto>(response);
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            // Offline: keep showing what we had.
+        }
+    }
+
     public Task SignOutAsync() => _state.ResetAsync();
 
     /// <summary>Shown when the qrbound API can't be reached (offline, server down, request timed out).</summary>
