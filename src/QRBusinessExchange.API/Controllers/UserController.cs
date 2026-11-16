@@ -45,6 +45,61 @@ public class UserController : ControllerBase
         return Ok(MapToOwnProfile(user));
     }
 
+    /// <summary>The signed-in user's text-message consent (the Settings checkbox).</summary>
+    [HttpGet("sms-consent")]
+    [ProducesResponseType(typeof(Core.DTOs.SmsConsentDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetSmsConsent()
+    {
+        var user = await _userRepository.GetByIdAsync(GetCurrentUserId());
+        return user == null ? NotFound(new { error = "User not found" }) : Ok(ToSmsConsent(user));
+    }
+
+    /// <summary>
+    /// Opts in to, or out of, account and security text messages. Opting in records the number, time and IP
+    /// address as proof of consent and needs a phone number on the profile; opting out keeps that record but
+    /// stops all texts.
+    /// </summary>
+    [HttpPut("sms-consent")]
+    [ProducesResponseType(typeof(Core.DTOs.SmsConsentDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> SetSmsConsent([FromBody] Core.DTOs.SetSmsConsentRequest request)
+    {
+        var user = await _userRepository.GetByIdAsync(GetCurrentUserId());
+        if (user == null)
+        {
+            return NotFound(new { error = "User not found" });
+        }
+
+        if (request.OptIn)
+        {
+            var phone = user.PhoneNumber?.Trim();
+            if (string.IsNullOrEmpty(phone))
+            {
+                return BadRequest(new { error = "Add your mobile number to your profile first, then turn on text messages." });
+            }
+
+            user.SmsOptIn = true;
+            user.SmsOptInAt = DateTime.UtcNow;
+            user.SmsOptInPhone = phone;
+            user.SmsOptInIp = HttpContext.Connection.RemoteIpAddress?.ToString();
+        }
+        else
+        {
+            user.SmsOptIn = false;
+        }
+
+        user.UpdatedAt = DateTime.UtcNow;
+        await _userRepository.UpdateAsync(user);
+        return Ok(ToSmsConsent(user));
+    }
+
+    private static Core.DTOs.SmsConsentDto ToSmsConsent(Core.Entities.User user) => new()
+    {
+        OptIn = user.SmsOptIn,
+        OptInAt = user.SmsOptIn ? user.SmsOptInAt : null,
+        PhoneNumber = string.IsNullOrWhiteSpace(user.PhoneNumber) ? null : user.PhoneNumber
+    };
+
     /// <summary>
     /// Update current user profile
     /// </summary>

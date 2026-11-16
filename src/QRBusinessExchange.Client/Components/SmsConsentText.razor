@@ -1,0 +1,10 @@
+@* The text-message consent wording, the same on the sign-up page and in Settings. *@
+Yes, text me qrbound account and security alerts (such as sign-in alerts and verification codes)
+at @NumberText. Optional; not required to create an account. Message frequency varies.
+Msg &amp; data rates may apply. Reply STOP to opt out, HELP for help.
+See our <a href="/privacy" target="_blank">Privacy Policy</a> and <a href="/terms" target="_blank">Terms</a>.
+
+@code {
+    /// <summary>Where the texts go, e.g. "the number above" or the number itself.</summary>
+    [Parameter] public string NumberText { get; set; } = "the number above";
+}
