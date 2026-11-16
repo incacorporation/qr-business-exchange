@@ -205,7 +205,7 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var context = services.GetRequiredService<ApplicationDbContext>();
-        await DbInitializer.Initialize(context);
+        await DbInitializer.Initialize(context, services.GetRequiredService<ILogger<Program>>(), app.Configuration["Admin:SeedPassword"]);
     }
     catch (Exception ex)
     {

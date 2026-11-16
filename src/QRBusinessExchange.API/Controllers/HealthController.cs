@@ -59,11 +59,7 @@ public class HealthController : ControllerBase
                     message = "Cannot connect to database",
                     timestamp = DateTime.UtcNow
                 });
-            }
-
-            // Check if database exists
-            var exists = await _context.Database.EnsureCreatedAsync();
-            
+            }            
             // Count users (to verify table exists)
             var userCount = await _context.Users.CountAsync();
 

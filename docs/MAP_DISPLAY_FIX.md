@@ -252,7 +252,7 @@ console.log('Width:', mapEl.offsetWidth);
 - Or manually clear: F12 ? Application ? Clear storage
 
 ### **3. Navigate to Dashboard**
-- Login: `webmaster@qrbound.com` / `V-Md*%G@khh!0715`
+- Log in with your own account
 - Navigate to `/dashboard`
 
 ### **4. Check Console**
