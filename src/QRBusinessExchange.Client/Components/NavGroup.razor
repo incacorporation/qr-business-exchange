@@ -1,0 +1,102 @@
+@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.JSInterop
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@implements IDisposable
+
+@* A collapsible section of the side menu. It remembers whether the user left it open or closed, and always
+   opens when it holds the current page. *@
+
+<div class="nav-group @(open ? "open" : "")">
+    <button type="button" class="nav-group-toggle" aria-expanded="@(open ? "true" : "false")" aria-controls="@PanelId"
+            @onclick="Toggle">
+        <i class="bi @Icon" aria-hidden="true"></i>
+        <span class="flex-grow-1 text-start">@Title</span>
+        <i class="bi bi-chevron-down nav-group-chevron" aria-hidden="true"></i>
+    </button>
+    <div id="@PanelId" class="nav-group-items" hidden="@(!open)">
+        @ChildContent
+    </div>
+</div>
+
+@code {
+    /// <summary>Section name shown in the menu.</summary>
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    /// <summary>Bootstrap icon class, e.g. "bi-people".</summary>
+    [Parameter] public string Icon { get; set; } = "bi-folder";
+
+    /// <summary>Stable name used to remember the open/closed choice.</summary>
+    [Parameter, EditorRequired] public string Key { get; set; } = string.Empty;
+
+    /// <summary>The pages in this section (paths without the leading slash): the section opens on them.</summary>
+    [Parameter] public string[] Paths { get; set; } = [];
+
+    /// <summary>Open the first time, before the user has chosen.</summary>
+    [Parameter] public bool OpenByDefault { get; set; } = true;
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private bool open;
+    private string StorageKey => $"qrbound.nav.{Key}";
+    private string PanelId => $"nav-group-{Key}";
+
+    protected override void OnInitialized()
+    {
+        open = ReadSaved() ?? OpenByDefault;
+        OpenIfCurrent();
+        Navigation.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        if (!open && OpenIfCurrent())
+        {
+            InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private bool OpenIfCurrent()
+    {
+        var path = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0].TrimEnd('/');
+        var current = Paths.Any(p => string.Equals(path, p, StringComparison.OrdinalIgnoreCase)
+                                     || path.StartsWith(p + "/", StringComparison.OrdinalIgnoreCase));
+        if (current)
+        {
+            open = true;
+        }
+        return current;
+    }
+
+    private void Toggle()
+    {
+        open = !open;
+        try
+        {
+            ((IJSInProcessRuntime)JS).InvokeVoid("localStorage.setItem", StorageKey, open ? "1" : "0");
+        }
+        catch
+        {
+            // Storage blocked: the choice just isn't remembered.
+        }
+    }
+
+    private bool? ReadSaved()
+    {
+        try
+        {
+            return ((IJSInProcessRuntime)JS).Invoke<string?>("localStorage.getItem", StorageKey) switch
+            {
+                "1" => true,
+                "0" => false,
+                _ => null
+            };
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public void Dispose() => Navigation.LocationChanged -= OnLocationChanged;
+}

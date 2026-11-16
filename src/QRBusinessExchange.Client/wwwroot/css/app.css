@@ -1391,3 +1391,65 @@ input:focus-visible + .slider {
 .sms-consent-details > span {
     display: block;
 }
+
+/* ==========================================
+   Side menu sections (NavGroup)
+   ========================================== */
+.sidebar .nav-group {
+    margin-top: 0.5rem;
+}
+
+.sidebar .nav-group-toggle {
+    display: flex;
+    align-items: center;
+    width: calc(100% - 2rem);
+    margin: 0 1rem;
+    min-height: 2.25rem;
+    padding: 0 0.875rem;
+    background: none;
+    border: 0;
+    border-radius: var(--radius);
+    color: rgba(226, 232, 250, 0.55);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.sidebar .nav-group-toggle:hover,
+.sidebar .nav-group-toggle:focus-visible {
+    background-color: rgba(255, 255, 255, 0.05);
+    color: white;
+}
+
+.sidebar .nav-group-toggle > .bi:first-child {
+    margin-right: 0.6rem;
+    font-size: 0.95rem;
+}
+
+.sidebar .nav-group-chevron {
+    font-size: 0.8rem;
+    transition: transform 0.15s ease;
+}
+
+.sidebar .nav-group.open .nav-group-chevron {
+    transform: rotate(180deg);
+}
+
+/* Sub-items sit a little further in, under their section */
+.sidebar .nav-group-items .nav-link {
+    padding-left: 1.75rem;
+}
+
+/* Logout, set apart from the sections above */
+.sidebar .nav-item-separated {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sidebar .nav-group-chevron {
+        transition: none;
+    }
+}

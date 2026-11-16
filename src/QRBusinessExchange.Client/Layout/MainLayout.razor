@@ -76,51 +76,65 @@
                             <i class="bi bi-speedometer2"></i> Dashboard
                         </NavLink>
                     </div>
-                    <div class="nav-item px-3">
-                        <NavLink href="business-card" class="nav-link">
-                            <i class="bi bi-qr-code"></i> Business Card
-                        </NavLink>
-                    </div>
-                    <div class="nav-item px-3">
-                        <NavLink href="contacts" class="nav-link">
-                            <i class="bi bi-person-lines-fill"></i> Contacts
-                        </NavLink>
-                    </div>
-                    @* Phone only: the scanner uses the camera, so it's hidden in the desktop layout. *@
-                    <div class="nav-item px-3 d-lg-none">
-                        <NavLink href="scan" class="nav-link">
-                            <i class="bi bi-qr-code-scan"></i> Scan QR code
-                        </NavLink>
-                    </div>
-                    <div class="nav-item px-3">
-                        <NavLink href="register-device" class="nav-link">
-                            <i class="bi bi-fingerprint"></i> Register device
-                        </NavLink>
-                    </div>
-                    <div class="nav-item px-3">
-                        <NavLink href="profile" class="nav-link">
-                            <i class="bi bi-person-circle"></i> Profile
-                        </NavLink>
-                    </div>
+
                     @* Connections and Analytics links removed until those pages exist (/connections, /analytics). *@
-                    <div class="nav-item px-3">
-                        <NavLink href="businesses" class="nav-link">
-                            <i class="bi bi-buildings"></i> Business Profile
-                        </NavLink>
-                    </div>
-                    <div class="nav-item px-3">
-                        <NavLink href="settings" class="nav-link">
-                            <i class="bi bi-gear-fill"></i> Settings
-                        </NavLink>
-                    </div>
-                    <div class="nav-item px-3">
-                        <NavLink href="logout" class="nav-link">
-                            <i class="bi bi-box-arrow-right"></i> Logout
-                        </NavLink>
-                    </div>
+                    <NavGroup Title="Networking" Icon="bi-people-fill" Key="networking" Paths="@(new[] { "business-card", "contacts", "scan" })">
+                        <div class="nav-item px-3">
+                            <NavLink href="business-card" class="nav-link">
+                                <i class="bi bi-qr-code"></i> Business Card
+                            </NavLink>
+                        </div>
+                        <div class="nav-item px-3">
+                            <NavLink href="contacts" class="nav-link">
+                                <i class="bi bi-person-lines-fill"></i> Contacts
+                            </NavLink>
+                        </div>
+                        @* Phone only: the scanner uses the camera, so it's hidden in the desktop layout. *@
+                        <div class="nav-item px-3 d-lg-none">
+                            <NavLink href="scan" class="nav-link">
+                                <i class="bi bi-qr-code-scan"></i> Scan QR code
+                            </NavLink>
+                        </div>
+                    </NavGroup>
+
+                    <NavGroup Title="Profiles" Icon="bi-person-vcard-fill" Key="profiles" Paths="@(new[] { "profile", "businesses" })">
+                        <div class="nav-item px-3">
+                            <NavLink href="profile" class="nav-link">
+                                <i class="bi bi-person-circle"></i> My Profile
+                            </NavLink>
+                        </div>
+                        <div class="nav-item px-3">
+                            <NavLink href="businesses" class="nav-link">
+                                <i class="bi bi-buildings"></i> Business Profile
+                            </NavLink>
+                        </div>
+                    </NavGroup>
+
+                    <NavGroup Title="Account" Icon="bi-shield-lock-fill" Key="account" Paths="@(new[] { "settings", "register-device", "subscriptions" })">
+                        <div class="nav-item px-3">
+                            <NavLink href="settings" class="nav-link">
+                                <i class="bi bi-gear-fill"></i> Settings
+                            </NavLink>
+                        </div>
+                        <div class="nav-item px-3">
+                            <NavLink href="register-device" class="nav-link">
+                                <i class="bi bi-fingerprint"></i> Register device
+                            </NavLink>
+                        </div>
+                        <div class="nav-item px-3">
+                            <NavLink href="subscriptions" class="nav-link">
+                                <i class="bi bi-credit-card"></i> Plans
+                            </NavLink>
+                        </div>
+                    </NavGroup>
                 }
                 else
                 {
+                    <div class="nav-item px-3">
+                        <NavLink href="subscriptions" class="nav-link">
+                            <i class="bi bi-credit-card"></i> Plans
+                        </NavLink>
+                    </div>
                     <div class="nav-item px-3">
                         <NavLink href="login" class="nav-link">
                             <i class="bi bi-box-arrow-in-right"></i> Login
@@ -129,6 +143,28 @@
                     <div class="nav-item px-3">
                         <NavLink href="register" class="nav-link">
                             <i class="bi bi-person-plus"></i> Register
+                        </NavLink>
+                    </div>
+                }
+
+                <NavGroup Title="Help &amp; legal" Icon="bi-info-circle-fill" Key="legal" OpenByDefault="false" Paths="@(new[] { "privacy", "terms" })">
+                    <div class="nav-item px-3">
+                        <NavLink href="privacy" class="nav-link">
+                            <i class="bi bi-file-earmark-lock"></i> Privacy Policy
+                        </NavLink>
+                    </div>
+                    <div class="nav-item px-3">
+                        <NavLink href="terms" class="nav-link">
+                            <i class="bi bi-file-earmark-text"></i> Terms of Service
+                        </NavLink>
+                    </div>
+                </NavGroup>
+
+                @if (StateService.IsAuthenticated)
+                {
+                    <div class="nav-item px-3 nav-item-separated">
+                        <NavLink href="logout" class="nav-link">
+                            <i class="bi bi-box-arrow-right"></i> Logout
                         </NavLink>
                     </div>
                 }
