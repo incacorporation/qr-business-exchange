@@ -54,6 +54,19 @@ public class User
     public bool ShowServicePricing { get; set; } = true;
     public bool ShowProfileImage { get; set; } = true;
 
+    // Consent to account and security text messages (the optional sign-up checkbox). Kept as a record of
+    // when and how the user agreed: the number they agreed for, the time and the IP address. False unless
+    // they ticked the box; changing the phone number withdraws it (consent was for the old number).
+    public bool SmsOptIn { get; set; }
+
+    public DateTime? SmsOptInAt { get; set; }
+
+    [StringLength(20)]
+    public string? SmsOptInPhone { get; set; }
+
+    [StringLength(45)]
+    public string? SmsOptInIp { get; set; }
+
     public bool IsEmailVerified { get; set; } = false;
 
     public bool IsActive { get; set; } = true;

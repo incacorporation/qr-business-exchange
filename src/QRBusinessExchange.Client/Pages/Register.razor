@@ -66,6 +66,17 @@
                 <ValidationMessage For="() => form.PhoneNumber" />
             </div>
 
+            @* Text-message consent: optional, unchecked by default, and never a condition of signing up. *@
+            <div class="auth-field form-check sms-consent">
+                <InputCheckbox id="smsOptIn" class="form-check-input" @bind-Value="form.SmsOptIn" disabled="@working" />
+                <label for="smsOptIn" class="form-check-label">
+                    Yes, text me qrbound account and security alerts (such as sign-in alerts and verification codes)
+                    at the number above. Optional; not required to create an account. Message frequency varies.
+                    Msg &amp; data rates may apply. Reply STOP to opt out, HELP for help.
+                    See our <a href="/privacy" target="_blank">Privacy Policy</a> and <a href="/terms" target="_blank">Terms</a>.
+                </label>
+            </div>
+
             <div class="auth-field">
                 <label for="password" class="visually-hidden">Password</label>
                 <InputText id="password" type="password" class="form-control auth-input" placeholder="Password (at least 8 characters)" @bind-Value="form.Password" autocomplete="new-password" disabled="@working" />
@@ -206,6 +217,12 @@
 
     private async Task CreateAccountAsync()
     {
+        if (form.SmsOptIn && string.IsNullOrWhiteSpace(form.PhoneNumber))
+        {
+            errorMessage = "Enter your mobile number to get text messages, or untick the text message box.";
+            return;
+        }
+
         working = true;
         errorMessage = null;
         try
@@ -217,7 +234,8 @@
                 FirstName = form.FirstName.Trim(),
                 LastName = form.LastName.Trim(),
                 CompanyName = string.IsNullOrWhiteSpace(form.CompanyName) ? null : form.CompanyName.Trim(),
-                PhoneNumber = string.IsNullOrWhiteSpace(form.PhoneNumber) ? null : form.PhoneNumber.Trim()
+                PhoneNumber = string.IsNullOrWhiteSpace(form.PhoneNumber) ? null : form.PhoneNumber.Trim(),
+                SmsOptIn = form.SmsOptIn
             });
 
             if (!response.IsSuccessStatusCode)
@@ -325,6 +343,9 @@
         [Phone(ErrorMessage = "Enter a valid phone number")]
         [StringLength(20)]
         public string? PhoneNumber { get; set; }
+
+        /// <summary>Consent to account and security text messages; off unless the user ticks the box.</summary>
+        public bool SmsOptIn { get; set; }
 
         [Required(ErrorMessage = "Password is required")]
         [StringLength(100, MinimumLength = 8, ErrorMessage = "Use at least 8 characters")]

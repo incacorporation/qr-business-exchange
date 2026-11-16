@@ -337,3 +337,18 @@
         margin-inline: 0;
     }
 }
+
+/* Optional text-message consent on the sign-up form */
+.sms-consent {
+    text-align: left;
+}
+
+.sms-consent .form-check-label {
+    color: var(--auth-muted);
+    font-size: 0.8rem;
+    line-height: 1.4;
+}
+
+.sms-consent a {
+    color: var(--auth-link);
+}

@@ -74,7 +74,15 @@ public class UserController : ControllerBase
             user.CompanyName = request.CompanyName;
         
         if (request.PhoneNumber != null)
+        {
             user.PhoneNumber = request.PhoneNumber;
+
+            // Text-message consent was given for one number; a new number hasn't agreed to texts.
+            if (user.SmsOptIn && !string.Equals(user.PhoneNumber.Trim(), user.SmsOptInPhone, StringComparison.Ordinal))
+            {
+                user.SmsOptIn = false;
+            }
+        }
         
         if (request.Bio != null)
             user.Bio = request.Bio;

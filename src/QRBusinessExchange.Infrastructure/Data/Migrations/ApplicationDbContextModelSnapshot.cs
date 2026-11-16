@@ -1099,6 +1099,20 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                     b.Property<string>("Skills")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<bool>("SmsOptIn")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("SmsOptInAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("SmsOptInIp")
+                        .HasMaxLength(45)
+                        .HasColumnType("nvarchar(45)");
+
+                    b.Property<string>("SmsOptInPhone")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
                     b.Property<DateTime>("UpdatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")

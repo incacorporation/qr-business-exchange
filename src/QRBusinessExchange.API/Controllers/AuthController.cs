@@ -77,10 +77,18 @@ public class AuthController : ControllerBase
             return BadRequest(new { error = "Email already registered" });
         }
 
+        // Text-message consent needs a number to apply to.
+        var phone = string.IsNullOrWhiteSpace(request.PhoneNumber) ? null : request.PhoneNumber.Trim();
+        if (request.SmsOptIn && phone == null)
+        {
+            return BadRequest(new { error = "Enter your mobile number to get text messages, or untick the text message box." });
+        }
+
         // Hash password
         var passwordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
 
         // Create user
+        var now = DateTime.UtcNow;
         var user = new User
         {
             Email = request.Email,
@@ -88,7 +96,12 @@ public class AuthController : ControllerBase
             FirstName = request.FirstName,
             LastName = request.LastName,
             CompanyName = request.CompanyName,
-            PhoneNumber = request.PhoneNumber,
+            PhoneNumber = phone,
+            // Record of consent: only when the box was ticked (it is unticked by default).
+            SmsOptIn = request.SmsOptIn,
+            SmsOptInAt = request.SmsOptIn ? now : null,
+            SmsOptInPhone = request.SmsOptIn ? phone : null,
+            SmsOptInIp = request.SmsOptIn ? HttpContext.Connection.RemoteIpAddress?.ToString() : null,
             IsEmailVerified = false,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow

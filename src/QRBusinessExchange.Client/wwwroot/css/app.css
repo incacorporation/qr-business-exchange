@@ -1363,3 +1363,17 @@ input:focus-visible + .slider {
     vertical-align: -0.05rem;
     box-shadow: 0 0 0 2px #fff, 0 0 0 3px rgba(0, 0, 0, 0.15);
 }
+
+/* Privacy Policy and Terms of Service */
+.legal-page {
+    max-width: 52rem;
+    padding-top: 1.5rem;
+    padding-bottom: 2rem;
+    line-height: 1.6;
+}
+
+.legal-page h2 {
+    font-size: 1.25rem;
+    margin-top: 1.75rem;
+    scroll-margin-top: 4.5rem;
+}
