@@ -83,7 +83,16 @@ public class QrboundClient
 
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
-            return new QrboundPollResult { Status = QrboundStatus.Expired, ExpiresAt = session.ExpiresAt };
+            // qrbound answers "not_found" once a session has been cleaned up. A 404 without that body
+            // means the endpoint itself is missing (a qrbound server without app QR sign-in).
+            if (await ReadErrorCodeAsync(response, cancellationToken) == "not_found")
+            {
+                return new QrboundPollResult { Status = QrboundStatus.Expired, ExpiresAt = session.ExpiresAt };
+            }
+
+            throw new QrboundException("unsupported_server",
+                $"{_options.Authority} does not support QR sign-in for apps (no qr-login authorize endpoint).",
+                (int)response.StatusCode);
         }
 
         await EnsureSuccessAsync(response, cancellationToken);
@@ -235,6 +244,18 @@ public class QrboundClient
     }
 
     // ------------------------------------------------------------------ helpers
+
+    private static async Task<string?> ReadErrorCodeAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return (await response.Content.ReadFromJsonAsync<OAuthError>(cancellationToken))?.Error;
+        }
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            return null; // empty or not JSON
+        }
+    }
 
     private static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {

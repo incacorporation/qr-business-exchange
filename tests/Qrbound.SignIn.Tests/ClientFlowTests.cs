@@ -94,6 +94,16 @@ public class ClientFlowTests
     }
 
     [Fact]
+    public async Task Server_without_the_authorize_endpoint_is_an_error_not_an_expiry()
+    {
+        var api = new FakeQrbound(_tokens) { EndpointMissing = true };
+        var client = new QrboundClient(new FakeFactory(api), Microsoft.Extensions.Options.Options.Create(Options()), new MemoryStateStore());
+        var session = await client.StartQrSignInAsync();
+        var ex = await Assert.ThrowsAsync<QrboundException>(() => client.PollAsync(session));
+        Assert.Equal("unsupported_server", ex.Error);
+    }
+
+    [Fact]
     public async Task Api_errors_surface_as_QrboundException()
     {
         var api = new FakeQrbound(_tokens) { CreateError = ("invalid_redirect_uri", "not registered") };
@@ -192,6 +202,7 @@ public class ClientFlowTests
 
         public bool Approved { get; set; }
         public bool Gone { get; set; }
+        public bool EndpointMissing { get; set; }
         public string? OverrideState { get; set; }
         public string? NonceOverride { get; set; }
         public (string Error, string Description)? CreateError { get; set; }
@@ -222,7 +233,8 @@ public class ClientFlowTests
 
             if (path == $"/api/qr-login/sessions/{SessionId}/authorize")
             {
-                if (Gone) return new HttpResponseMessage(HttpStatusCode.NotFound);
+                if (EndpointMissing) return new HttpResponseMessage(HttpStatusCode.NotFound); // older qrbound server
+                if (Gone) return Json(HttpStatusCode.NotFound, new { error = "not_found", error_description = "Sign-in request not found" });
                 LastAuthorize = JsonDocument.Parse(body);
                 var root = LastAuthorize.RootElement;
                 Assert.Equal("poll-secret", root.GetProperty("pollSecret").GetString());
