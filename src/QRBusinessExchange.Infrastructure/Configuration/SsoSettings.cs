@@ -28,4 +28,25 @@ public class SsoSettings
 
     /// <summary>Lifetime of a QR login request.</summary>
     public int QrSessionLifetimeSeconds { get; set; } = 180;
+
+    /// <summary>
+    /// Extra origins the portal is served from (besides <see cref="PortalBaseUrl"/>), e.g. the Web host
+    /// in development. Only these origins may collect a portal session for a QR request that was made
+    /// for an application.
+    /// </summary>
+    public List<string> PortalOrigins { get; set; } = new();
+
+    /// <summary>True when <paramref name="origin"/> is the portal (scheme, host and port match).</summary>
+    public bool IsPortalOrigin(string? origin)
+    {
+        if (string.IsNullOrEmpty(origin) || !Uri.TryCreate(origin, UriKind.Absolute, out var candidate))
+        {
+            return false;
+        }
+
+        return PortalOrigins.Append(PortalBaseUrl).Any(allowed =>
+            Uri.TryCreate(allowed, UriKind.Absolute, out var a) &&
+            string.Equals(a.GetLeftPart(UriPartial.Authority), candidate.GetLeftPart(UriPartial.Authority),
+                StringComparison.OrdinalIgnoreCase));
+    }
 }

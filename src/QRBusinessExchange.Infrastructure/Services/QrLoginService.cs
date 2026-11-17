@@ -38,7 +38,8 @@ public class QrLoginService
         _settings = settings.Value;
     }
 
-    public async Task<QrLoginCreateResponse> CreateAsync(string? clientId, string? requesterIp, string? userAgent)
+    public async Task<QrLoginCreateResponse> CreateAsync(string? clientId, string? requesterIp, string? userAgent,
+        string? redirectUri = null)
     {
         Guid? applicationId = null;
         if (!string.IsNullOrWhiteSpace(clientId))
@@ -49,7 +50,19 @@ public class QrLoginService
             {
                 throw new SsoException("invalid_client", "Unknown or disabled application");
             }
+
+            // Fail fast: the code will be bound to this redirect URI when it is collected.
+            if (!string.IsNullOrEmpty(redirectUri) &&
+                !app.GetRedirectUris().Contains(redirectUri, StringComparer.Ordinal))
+            {
+                throw new SsoException("invalid_redirect_uri", "The redirect URI is not registered for this application");
+            }
+
             applicationId = app.SsoApplicationId;
+        }
+        else if (!string.IsNullOrEmpty(redirectUri))
+        {
+            throw new SsoException("invalid_request", "redirectUri requires clientId");
         }
 
         var pollSecret = SsoCrypto.NewSecret();
@@ -196,6 +209,24 @@ public class QrLoginService
         }
 
         return (session.Status, session.ExpiresAt, null);
+    }
+
+    /// <summary>
+    /// For the requesting (desktop) side: checks the poll secret and returns the client_id the
+    /// session was created for (null = the core portal). Does not change the session.
+    /// </summary>
+    public async Task<string?> GetClientIdForPollerAsync(Guid sessionId, string pollSecret)
+    {
+        var session = await _db.QrLoginSessions
+            .Include(s => s.Application)
+            .FirstOrDefaultAsync(s => s.QrLoginSessionId == sessionId);
+
+        if (session == null || !SsoCrypto.Matches(pollSecret, session.PollSecretHash))
+        {
+            throw SsoException.NotFound("Sign-in request");
+        }
+
+        return session.Application?.ClientId;
     }
 
     public async Task<string?> GetClientIdAsync(Guid sessionId) =>

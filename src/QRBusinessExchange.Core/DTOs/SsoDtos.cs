@@ -210,6 +210,49 @@ public class QrLoginCreateRequest
 {
     /// <summary>Optional client_id of the application being signed in to.</summary>
     public string? ClientId { get; set; }
+
+    /// <summary>
+    /// Optional redirect URI the application will use to collect its code. When given (with
+    /// <see cref="ClientId"/>), it must be registered for the application.
+    /// </summary>
+    public string? RedirectUri { get; set; }
+}
+
+/// <summary>
+/// An application collecting the result of its QR sign-in as an authorization code
+/// (POST /api/qr-login/sessions/{id}/authorize). Never returns a portal session.
+/// </summary>
+public class QrLoginAuthorizeRequest
+{
+    [Required]
+    public string PollSecret { get; set; } = string.Empty;
+
+    [Required]
+    public string ClientId { get; set; } = string.Empty;
+
+    [Required]
+    public string RedirectUri { get; set; } = string.Empty;
+
+    public string? CodeChallenge { get; set; }
+
+    /// <summary>Only "S256" is supported.</summary>
+    public string? CodeChallengeMethod { get; set; }
+
+    public string? Nonce { get; set; }
+
+    public string? State { get; set; }
+}
+
+public class QrLoginAuthorizeResponse
+{
+    public string Status { get; set; } = string.Empty;
+    public DateTime ExpiresAt { get; set; }
+
+    /// <summary>One-time authorization code; set exactly once, when the phone approved.</summary>
+    public string? Code { get; set; }
+
+    /// <summary>The state sent by the application, echoed with the code.</summary>
+    public string? State { get; set; }
 }
 
 public class QrLoginCreateResponse

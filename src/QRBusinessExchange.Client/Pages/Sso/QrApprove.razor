@@ -20,9 +20,25 @@
                     }
                     else if (!signedIn)
                     {
+                        @if (Register)
+                        {
+                            @* Opened from a "Create your account with qrbound" QR code on another site. *@
+                            <div class="text-center mb-4">
+                                <i class="bi bi-person-plus display-4 text-primary"></i>
+                                <h4 class="mt-3">New to qrbound?</h4>
+                                <p class="text-muted">Create your free account on this phone. You'll come straight back here to finish signing in on the other screen.</p>
+                                <div class="d-grid">
+                                    <a class="btn btn-primary btn-lg" href="@($"/register?returnUrl={Uri.EscapeDataString($"/qr/approve/{SessionId}")}")">
+                                        <i class="bi bi-person-plus me-2"></i>Create a qrbound account
+                                    </a>
+                                </div>
+                            </div>
+                            <hr />
+                            <p class="text-center text-muted small">Already have an account?</p>
+                        }
                         <div class="text-center">
-                            <i class="bi bi-phone display-4 text-primary"></i>
-                            <h4 class="mt-3">Sign in on this phone first</h4>
+                            <i class="bi bi-phone display-4 text-primary @(Register ? "d-none" : null)"></i>
+                            <h4 class="mt-3 @(Register ? "d-none" : null)">Sign in on this phone first</h4>
                             <p class="text-muted">To approve a sign-in on another screen, this phone must be signed in with a passkey.</p>
                             <p class="text-muted small">
                                 No passkey on this phone yet? On a computer where you're signed in, open
@@ -146,6 +162,11 @@
 
 @code {
     [Parameter] public Guid SessionId { get; set; }
+
+    /// <summary>Set by QR codes from Qrbound.SignIn's QrboundRegister: offer account creation first.</summary>
+    [SupplyParameterFromQuery(Name = "register")] public string? RegisterParam { get; set; }
+
+    private bool Register => RegisterParam is "1" || string.Equals(RegisterParam, "true", StringComparison.OrdinalIgnoreCase);
 
     private bool loading = true;
     private bool signedIn;

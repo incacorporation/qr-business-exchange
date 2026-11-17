@@ -69,11 +69,25 @@ public class SsoService
     public async Task<SsoAuthorizeResponse> CreateAuthorizationCodeAsync(
         Guid userId, string authMethod, DateTime authTime, SsoAuthorizeRequest request)
     {
-        if (!AllowedAuthMethods.Contains(authMethod))
+        var code = await IssueAuthorizationCodeAsync(userId, authMethod, authTime, request);
+
+        var separator = request.RedirectUri.Contains('?') ? '&' : '?';
+        var redirect = $"{request.RedirectUri}{separator}code={Uri.EscapeDataString(code)}";
+        if (!string.IsNullOrEmpty(request.State))
         {
-            throw new SsoException("passkey_required", "Sign in with a passkey or QR code to continue", 403);
+            redirect += $"&state={Uri.EscapeDataString(request.State)}";
         }
 
+        return new SsoAuthorizeResponse { RedirectUrl = redirect };
+    }
+
+    /// <summary>
+    /// Checks everything about an authorization request that does not depend on the user:
+    /// the application is active, the redirect URI is registered, and PKCE is valid
+    /// (and present for public applications).
+    /// </summary>
+    public async Task<SsoApplication> ValidateAuthorizeRequestAsync(SsoAuthorizeRequest request)
+    {
         var app = await GetActiveApplicationAsync(request.ClientId);
 
         if (!app.GetRedirectUris().Contains(request.RedirectUri, StringComparer.Ordinal))
@@ -81,22 +95,44 @@ public class SsoService
             throw new SsoException("invalid_redirect_uri", "The redirect URI is not registered for this application");
         }
 
-        if (!string.IsNullOrEmpty(request.CodeChallenge))
+        ValidatePkce(request.CodeChallenge, request.CodeChallengeMethod, app.IsConfidential);
+        return app;
+    }
+
+    /// <summary>PKCE rules: S256 only, 43-128 characters, required for public applications.</summary>
+    public static void ValidatePkce(string? codeChallenge, string? codeChallengeMethod, bool isConfidential)
+    {
+        if (!string.IsNullOrEmpty(codeChallenge))
         {
-            if (!string.Equals(request.CodeChallengeMethod ?? "S256", "S256", StringComparison.Ordinal))
+            if (!string.Equals(codeChallengeMethod ?? "S256", "S256", StringComparison.Ordinal))
             {
                 throw new SsoException("invalid_request", "Only the S256 code_challenge_method is supported");
             }
 
-            if (request.CodeChallenge.Length is < 43 or > 128)
+            if (codeChallenge.Length is < 43 or > 128)
             {
                 throw new SsoException("invalid_request", "code_challenge has an invalid length");
             }
         }
-        else if (!app.IsConfidential)
+        else if (!isConfidential)
         {
             throw new SsoException("invalid_request", "Public applications must use PKCE (code_challenge)");
         }
+    }
+
+    /// <summary>
+    /// Issues a one-time authorization code for a signed-in user and returns the raw code
+    /// (only its hash is stored).
+    /// </summary>
+    public async Task<string> IssueAuthorizationCodeAsync(
+        Guid userId, string authMethod, DateTime authTime, SsoAuthorizeRequest request)
+    {
+        if (!AllowedAuthMethods.Contains(authMethod))
+        {
+            throw new SsoException("passkey_required", "Sign in with a passkey or QR code to continue", 403);
+        }
+
+        var app = await ValidateAuthorizeRequestAsync(request);
 
         var user = await _db.Users.FirstOrDefaultAsync(u => u.UserId == userId)
             ?? throw new SsoException("access_denied", "User not found", 403);
@@ -134,14 +170,7 @@ public class SsoService
 
         await _db.SaveChangesAsync();
 
-        var separator = request.RedirectUri.Contains('?') ? '&' : '?';
-        var redirect = $"{request.RedirectUri}{separator}code={Uri.EscapeDataString(code)}";
-        if (!string.IsNullOrEmpty(request.State))
-        {
-            redirect += $"&state={Uri.EscapeDataString(request.State)}";
-        }
-
-        return new SsoAuthorizeResponse { RedirectUrl = redirect };
+        return code;
     }
 
     /// <summary>
@@ -301,6 +330,8 @@ public class SsoService
         userinfo_endpoint = $"{apiBaseUrl}/api/sso/userinfo",
         jwks_uri = $"{apiBaseUrl}/api/sso/jwks",
         end_session_endpoint = $"{_settings.PortalBaseUrl.TrimEnd('/')}/sso/logout",
+        qr_login_endpoint = $"{apiBaseUrl}/api/qr-login/sessions",
+        qr_authorize_endpoint = $"{apiBaseUrl}/api/qr-login/sessions/{{session_id}}/authorize",
         response_types_supported = new[] { "code" },
         grant_types_supported = new[] { "authorization_code" },
         code_challenge_methods_supported = new[] { "S256" },

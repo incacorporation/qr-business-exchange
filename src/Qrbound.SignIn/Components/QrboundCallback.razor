@@ -1,0 +1,67 @@
+@namespace Qrbound.SignIn
+@inject QrboundClient Client
+@inject QrboundAuthState AuthState
+@inject NavigationManager Navigation
+
+@* Put this on the page at your redirect URI. It finishes a redirect sign-in (the
+   "use a passkey on this device" fallback) and returns to where the user started. *@
+
+@if (error != null)
+{
+    <div class="qrbound-signin">
+        <div class="qrbound-alert" role="alert">@error</div>
+        <a class="qrbound-button" href="@(FailureUrl ?? Navigation.BaseUri)">Back</a>
+    </div>
+}
+else
+{
+    <div class="qrbound-signin"><div class="qrbound-center"><span class="qrbound-spinner" role="status" aria-label="Signing in"></span></div></div>
+}
+
+@code {
+    /// <summary>Raised after sign-in, before navigating away.</summary>
+    [Parameter] public EventCallback<QrboundSignInResult> OnSignedIn { get; set; }
+
+    /// <summary>Where to go when there is no (safe) return URL. Defaults to the app's base URL.</summary>
+    [Parameter] public string? DefaultReturnUrl { get; set; }
+
+    [Parameter] public string? FailureUrl { get; set; }
+
+    private string? error;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        try
+        {
+            var result = await Client.HandleCallbackAsync(new Uri(Navigation.Uri));
+            AuthState.SignIn(result);
+            await OnSignedIn.InvokeAsync(result);
+            Navigation.NavigateTo(SafeReturnUrl(result.ReturnUrl), replace: true);
+        }
+        catch (QrboundException ex)
+        {
+            error = ex.Error == "access_denied" ? "Sign-in was cancelled." : ex.Message;
+            StateHasChanged();
+        }
+        catch (HttpRequestException)
+        {
+            error = "Could not reach qrbound. Please try again.";
+            StateHasChanged();
+        }
+    }
+
+    // Only same-app URLs: never bounce the user to another site after sign-in.
+    private string SafeReturnUrl(string? url)
+    {
+        var fallback = DefaultReturnUrl ?? Navigation.BaseUri;
+        if (string.IsNullOrEmpty(url)) return fallback;
+        var absolute = Navigation.ToAbsoluteUri(url).ToString();
+        var callback = Navigation.Uri.Split('?')[0];
+        return absolute.StartsWith(Navigation.BaseUri, StringComparison.OrdinalIgnoreCase) &&
+               !absolute.StartsWith(callback, StringComparison.OrdinalIgnoreCase)
+            ? absolute
+            : fallback;
+    }
+}
