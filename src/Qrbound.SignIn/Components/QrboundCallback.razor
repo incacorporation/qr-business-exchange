@@ -27,6 +27,14 @@ else
 
     [Parameter] public string? FailureUrl { get; set; }
 
+    /// <summary>
+    /// Load the return URL as a full page instead of navigating inside the Blazor app. Set this when the
+    /// component is hosted outside a Blazor router (MVC or Razor Pages views) and the return URL is a
+    /// server endpoint, for example one that sets your sign-in cookie. Without it, Blazor only changes
+    /// the address bar there and the endpoint never runs.
+    /// </summary>
+    [Parameter] public bool ForceLoad { get; set; }
+
     private string? error;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -38,7 +46,7 @@ else
             var result = await Client.HandleCallbackAsync(new Uri(Navigation.Uri));
             AuthState.SignIn(result);
             await OnSignedIn.InvokeAsync(result);
-            Navigation.NavigateTo(SafeReturnUrl(result.ReturnUrl), replace: true);
+            Navigation.NavigateTo(SafeReturnUrl(result.ReturnUrl), forceLoad: ForceLoad, replace: true);
         }
         catch (QrboundException ex)
         {

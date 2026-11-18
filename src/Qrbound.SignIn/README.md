@@ -161,8 +161,21 @@ builder.Services.AddAuthentication().AddJwtBearer(o =>
 | `PollInterval` | 2 s | used when qrbound does not suggest one |
 
 Component parameters: `Mode`, `Title`, `CssClass`, `ShowRedirectFallback`, `ReturnUrl`,
-`AutoRenewCount`, `OnSignedIn`, `OnError`. Restyle with the `qrbound-*` CSS classes, or set
-`--qrbound-accent`.
+`AutoRenewCount`, `OnSignedIn`, `OnError`. `<QrboundCallback>` also takes `DefaultReturnUrl`,
+`FailureUrl` and `ForceLoad`. Restyle with the `qrbound-*` CSS classes, or set `--qrbound-accent`.
+
+### Hosting in MVC or Razor Pages
+
+The components also run as interactive server components inside MVC views
+(`<component type="typeof(QrboundSignIn)" render-mode="Server" />`, with `AddServerSideBlazor()`,
+`MapBlazorHub()`, `blazor.server.js` and `<base href="~/" />` on that page). There is no Blazor router, so:
+
+* Set `ForceLoad="true"` on `<QrboundCallback>` when its return URL is a server endpoint (such as one that
+  sets your cookie). Otherwise only the address bar changes and the endpoint never runs.
+* In `QrboundSignIn`'s `OnSignedIn`, navigate with `NavigationManager.NavigateTo(url, forceLoad: true)`.
+* Backend mode does not work here: the component runs on the server, so the cookie set by `/qrbound/exchange`
+  would never reach the browser. Use Direct mode, validate `result.Tokens.IdToken` with
+  `QrboundTokenValidator` on the server, and set your cookie from a normal request.
 
 ## Security notes
 
