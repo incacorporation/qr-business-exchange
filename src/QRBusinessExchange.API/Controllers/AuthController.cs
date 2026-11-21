@@ -25,11 +25,15 @@ public class AuthController : ControllerBase
     private const string ResetRequestedMessage =
         "If an account exists for that email, we've sent it a link to reset the password.";
 
+    private const string VerificationRequestedMessage =
+        "If that account still needs verifying, we've sent a new verification link. Check your email.";
+
     private readonly IUserRepository _userRepository;
     private readonly JwtService _jwtService;
     private readonly IEmailService _emailService;
     private readonly ILogger<AuthController> _logger;
     private readonly PasswordResetTokens _resetTokens;
+    private readonly EmailVerificationTokens _verificationTokens;
     private readonly IMemoryCache _cache;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly SsoSettings _ssoSettings;
@@ -42,6 +46,7 @@ public class AuthController : ControllerBase
         IEmailService emailService,
         ILogger<AuthController> logger,
         PasswordResetTokens resetTokens,
+        EmailVerificationTokens verificationTokens,
         IMemoryCache cache,
         IServiceScopeFactory scopeFactory,
         IOptions<SsoSettings> ssoSettings,
@@ -54,6 +59,7 @@ public class AuthController : ControllerBase
         _emailService = emailService;
         _logger = logger;
         _resetTokens = resetTokens;
+        _verificationTokens = verificationTokens;
         _cache = cache;
         _scopeFactory = scopeFactory;
         _ssoSettings = ssoSettings.Value;
@@ -109,21 +115,10 @@ public class AuthController : ControllerBase
 
         var createdUser = await _userRepository.CreateAsync(user);
 
-        // Generate verification token
-        var verificationToken = Guid.NewGuid().ToString();
-        
-        // Send verification email (non-blocking)
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await _emailService.SendVerificationEmailAsync(createdUser.UserId, createdUser.Email, verificationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to send verification email to {Email}", createdUser.Email);
-            }
-        });
+        // Send the verification link in the background (own DI scope: the request's DbContext is gone by then).
+        var userIdToVerify = createdUser.UserId;
+        var logLinkForDevelopment = _environment.IsDevelopment();
+        _ = Task.Run(() => SendVerificationLinkAsync(userIdToVerify, logLinkForDevelopment));
 
         // Generate tokens
         var accessToken = _jwtService.GenerateAccessToken(createdUser.UserId, createdUser.Email, new Dictionary<string, string>
@@ -193,51 +188,109 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// Verify email address using verification token
+    /// Confirm the account's email address using the token from a verification link.
+    /// Sets <see cref="User.IsEmailVerified"/>, which SSO and QR sign-in report as <c>email_verified</c>.
     /// </summary>
-    /// <param name="token">Email verification token</param>
-    /// <returns>Success or error message</returns>
     [HttpPost("verify-email")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> VerifyEmail([FromQuery] string token)
+    public async Task<IActionResult> VerifyEmail([FromBody] Core.DTOs.VerifyEmailRequest request)
     {
-        if (string.IsNullOrEmpty(token))
+        var userId = _verificationTokens.ReadUserId(request.Token, out var fingerprint);
+        var user = userId is Guid id ? await _userRepository.GetByIdAsync(id) : null;
+
+        if (user == null || !user.IsActive || !EmailVerificationTokens.MatchesCurrentEmail(user, fingerprint))
         {
-            return BadRequest(new { error = "Invalid verification token" });
+            return BadRequest(new
+            {
+                error = "invalid_token",
+                error_description = "This verification link is invalid or has expired. Request a new one."
+            });
         }
 
-        // In a real implementation, you would look up the token in EmailVerification table
-        // For now, we'll just return success
-        return Ok(new { message = "Email verified successfully" });
+        if (!user.IsEmailVerified)
+        {
+            user.IsEmailVerified = true;
+            user.UpdatedAt = DateTime.UtcNow;
+            await _userRepository.UpdateAsync(user);
+            _logger.LogInformation("Email verified for user {UserId}", user.UserId);
+        }
+
+        return Ok(new { message = "Your email address is verified." });
     }
 
     /// <summary>
-    /// Resend email verification
+    /// Email a new verification link. Signed-in callers get one for their own account; otherwise the
+    /// email address in the body picks the account. Always answers the same way, whether or not the
+    /// account exists or is already verified, and sends at most one email per account every few minutes.
     /// </summary>
-    /// <param name="email">User email address</param>
-    /// <returns>Success or error message</returns>
     [HttpPost("resend-verification")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> ResendVerification([FromQuery] string email)
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ResendVerification([FromBody] Core.DTOs.ResendVerificationRequest? request)
     {
-        var user = await _userRepository.GetByEmailAsync(email);
-        if (user == null)
+        User? user = null;
+        var subject = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value;
+        if (User.Identity?.IsAuthenticated == true && Guid.TryParse(subject, out var signedInUserId))
         {
-            return NotFound(new { error = "User not found" });
+            user = await _userRepository.GetByIdAsync(signedInUserId);
+        }
+        else if (!string.IsNullOrWhiteSpace(request?.Email))
+        {
+            user = await _userRepository.GetByEmailAsync(request.Email.Trim());
+        }
+        else
+        {
+            return BadRequest(new { error = "Enter the email address you registered with." });
         }
 
-        if (user.IsEmailVerified)
+        if (user != null && user.IsActive && !user.IsEmailVerified)
         {
-            return BadRequest(new { error = "Email already verified" });
+            var throttleKey = $"verify-email:{user.UserId:N}";
+            if (!_cache.TryGetValue(throttleKey, out _))
+            {
+                _cache.Set(throttleKey, true, ResetEmailInterval);
+                var userIdToVerify = user.UserId;
+                var logLinkForDevelopment = _environment.IsDevelopment();
+                _ = Task.Run(() => SendVerificationLinkAsync(userIdToVerify, logLinkForDevelopment));
+            }
         }
 
-        var verificationToken = Guid.NewGuid().ToString();
-        
-        await _emailService.SendVerificationEmailAsync(user.UserId, user.Email, verificationToken);
+        return Accepted(new { message = VerificationRequestedMessage });
+    }
 
-        return Ok(new { message = "Verification email sent successfully" });
+    private async Task SendVerificationLinkAsync(Guid userId, bool logLinkForDevelopment)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var users = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+            var user = await users.GetByIdAsync(userId);
+            if (user == null || !user.IsActive || user.IsEmailVerified)
+            {
+                return;
+            }
+
+            var token = _verificationTokens.Create(user, DateTimeOffset.UtcNow);
+
+            if (logLinkForDevelopment)
+            {
+                // Development only: lets you test without a working mail server. Never logged in production.
+                _logger.LogInformation("Development email-verification link for {UserId}: {VerifyUrl}",
+                    user.UserId, $"{_ssoSettings.PortalBaseUrl.TrimEnd('/')}/verify-email#token={Uri.EscapeDataString(token)}");
+            }
+
+            var emailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
+            var sent = await emailService.SendVerificationEmailAsync(user.UserId, user.Email, token);
+            if (!sent)
+            {
+                _logger.LogWarning("Verification email for user {UserId} could not be sent", user.UserId);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send a verification email for user {UserId}", userId);
+        }
     }
 
     /// <summary>

@@ -104,6 +104,8 @@ builder.Services.AddScoped<WebAuthnService>();
 // In containers, persist the keys (PersistKeysToFileSystem on a volume) so links survive restarts.
 builder.Services.AddDataProtection().SetApplicationName("QRBusinessExchange");
 builder.Services.AddSingleton<QRBusinessExchange.API.Services.PasswordResetTokens>();
+// Email-verification links: same Data Protection keys, separate purpose, 24-hour lifetime.
+builder.Services.AddSingleton<QRBusinessExchange.API.Services.EmailVerificationTokens>();
 
 // Multi-business QR / SSO login core
 builder.Services.AddMemoryCache(); // WebAuthn challenges (use a distributed cache when scaling out)

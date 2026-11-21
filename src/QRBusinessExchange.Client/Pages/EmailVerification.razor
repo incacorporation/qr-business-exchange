@@ -1,175 +1,156 @@
 @page "/email-verification"
 @layout AuthLayout
+@implements IDisposable
+@using System.ComponentModel.DataAnnotations
+@using QRBusinessExchange.Core.DTOs
 @using QRBusinessExchange.Client.Services
 @inject ApiService ApiService
 @inject IndexedDBService IndexedDB
-@inject NavigationManager Navigation
 
-<PageTitle>Email Verification - qrbound</PageTitle>
+@* Shown after sign-up or login while the email address isn't verified yet. Verification happens
+   by opening the emailed link (/verify-email#token=...); this page only explains that and sends a
+   new link. Signed-in users get one for their own account; others enter their email. *@
 
-<div class="auth-medium">
-            <div class="card shadow">
-                <div class="card-body p-4">
-                    <h3 class="text-center mb-4">Verify Email</h3>
-                    <p class="text-center text-muted mb-4">
-                        We've sent a verification code to your email address. Please enter it below.
-                    </p>
-                    
-                    @if (!string.IsNullOrEmpty(errorMessage))
-                    {
-                        <div class="alert alert-danger" role="alert">
-                            @errorMessage
-                        </div>
-                    }
+<PageTitle>Verify your email - qrbound</PageTitle>
 
-                    @if (!string.IsNullOrEmpty(successMessage))
-                    {
-                        <div class="alert alert-success" role="alert">
-                            @successMessage
-                        </div>
-                    }
+<div class="auth-narrow">
+    <div class="text-center">
+        <i class="bi bi-envelope-check display-4 text-white" aria-hidden="true"></i>
+        <h1 class="auth-title mt-3">Verify your email</h1>
+        <p class="auth-subtitle">
+            We've emailed you a link. Open it on any device to confirm your address.
+            The link works for 24 hours.
+        </p>
+    </div>
 
-                    <div class="mb-3">
-                        <label for="code" class="form-label">Verification Code</label>
-                        <input type="text" id="code" @bind="verificationCode" class="form-control text-center" 
-                               placeholder="Enter 6-digit code" maxlength="6" />
-                    </div>
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger auth-alert" role="alert">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>@errorMessage
+        </div>
+    }
 
-                    <div class="d-grid">
-                        <button @onclick="VerifyCode" class="btn btn-primary" disabled="@isLoading">
-                            @if (isLoading)
-                            {
-                                <span class="spinner-border spinner-border-sm me-2" role="status"></span>
-                                <span>Verifying...</span>
-                            }
-                            else
-                            {
-                                <span>Verify Email</span>
-                            }
-                        </button>
-                    </div>
+    @if (!string.IsNullOrEmpty(successMessage))
+    {
+        <div class="alert alert-success auth-alert" role="alert">
+            <i class="bi bi-check-circle-fill me-2"></i>@successMessage
+        </div>
+    }
 
-                    <div class="text-center mt-3">
-                        <button @onclick="ResendCode" class="btn btn-link" disabled="@(isResending || resendCooldown > 0)">
-                            @if (isResending)
-                            {
-                                <span class="spinner-border spinner-border-sm me-2" role="status"></span>
-                                <span>Resending...</span>
-                            }
-                            else if (resendCooldown > 0)
-                            {
-                                <span>Resend code in @resendCooldown seconds</span>
-                            }
-                            else
-                            {
-                                <span>Resend Code</span>
-                            }
-                        </button>
-                    </div>
-                </div>
+    @if (signedIn)
+    {
+        <button type="button" class="auth-btn" @onclick="() => ResendAsync(null)" disabled="@(working || cooldown > 0)">
+            @if (working)
+            {
+                <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+            }
+            <span>@(cooldown > 0 ? $"Send a new link in {cooldown} s" : "Send a new link")</span>
+        </button>
+    }
+    else
+    {
+        <EditForm Model="form" OnValidSubmit="() => ResendAsync(form.Email)">
+            <DataAnnotationsValidator />
+
+            <div class="auth-field mb-4">
+                <label for="email" class="visually-hidden">Email</label>
+                <InputText id="email" type="email" class="form-control auth-input" placeholder="Email you registered with"
+                           @bind-Value="form.Email" autocomplete="email" disabled="@working" />
+                <ValidationMessage For="() => form.Email" />
             </div>
+
+            <button type="submit" class="auth-btn" disabled="@(working || cooldown > 0)">
+                @if (working)
+                {
+                    <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                }
+                <span>@(cooldown > 0 ? $"Send a new link in {cooldown} s" : "Send a new link")</span>
+            </button>
+        </EditForm>
+    }
+
+    <p class="auth-subtitle small text-center mt-3">Nothing there? Check your spam folder.</p>
+
+    <hr class="auth-divider" />
+
+    <nav class="auth-links" aria-label="Account help">
+        <a href="/dashboard">Go to dashboard</a>
+        <a href="/login">Back to log in</a>
+    </nav>
 </div>
 
 @code {
-    private string verificationCode = string.Empty;
-    private string errorMessage = string.Empty;
-    private string successMessage = string.Empty;
-    private bool isLoading = false;
-    private bool isResending = false;
-    private int resendCooldown = 0;
+    private readonly ResendForm form = new();
+    private bool signedIn;
+    private bool working;
+    private int cooldown;
+    private string? errorMessage;
+    private string? successMessage;
     private System.Threading.Timer? cooldownTimer;
 
-    private async Task VerifyCode()
+    protected override async Task OnInitializedAsync()
     {
-        if (string.IsNullOrWhiteSpace(verificationCode) || verificationCode.Length != 6)
-        {
-            errorMessage = "Please enter a valid 6-digit code.";
-            return;
-        }
+        signedIn = !string.IsNullOrEmpty(await IndexedDB.GetItemAsync<string>("authToken"));
+    }
 
-        isLoading = true;
-        errorMessage = string.Empty;
-        successMessage = string.Empty;
-        StateHasChanged();
-
+    private async Task ResendAsync(string? email)
+    {
+        working = true;
+        errorMessage = null;
+        successMessage = null;
         try
         {
-            var userId = await IndexedDB.GetItemAsync<string>("userId");
-            var response = await ApiService.PostAsync("api/auth/verify-email", new { UserId = userId, Code = verificationCode });
-            
+            var response = await ApiService.PostAsync("api/auth/resend-verification", new ResendVerificationRequest
+            {
+                Email = string.IsNullOrWhiteSpace(email) ? null : email.Trim()
+            });
+
             if (response.IsSuccessStatusCode)
             {
-                successMessage = "Email verified successfully! Redirecting to dashboard...";
-                StateHasChanged();
-                await Task.Delay(2000);
-                Navigation.NavigateTo("/dashboard");
+                successMessage = await ApiService.ReadErrorAsync(response, "If that account still needs verifying, we've sent a new link.");
+                StartCooldown();
             }
             else
             {
-                errorMessage = "Invalid verification code. Please try again.";
+                errorMessage = await ApiService.ReadErrorAsync(response, "Couldn't send a new link. Please try again later.");
+                // The saved session may have expired; fall back to asking for the email address.
+                if (signedIn && response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+                {
+                    signedIn = false;
+                }
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            errorMessage = $"An error occurred: {ex.Message}";
+            errorMessage = "Network error. Check your connection and try again.";
         }
         finally
         {
-            isLoading = false;
-            StateHasChanged();
+            working = false;
         }
     }
 
-    private async Task ResendCode()
+    private void StartCooldown()
     {
-        isResending = true;
-        errorMessage = string.Empty;
-        successMessage = string.Empty;
-        StateHasChanged();
-
-        try
-        {
-            var userId = await IndexedDB.GetItemAsync<string>("userId");
-            var response = await ApiService.PostAsync("api/auth/resend-verification", new { UserId = userId });
-            
-            if (response.IsSuccessStatusCode)
-            {
-                successMessage = "Verification code resent! Please check your email.";
-                StartResendCooldown();
-            }
-            else
-            {
-                errorMessage = "Failed to resend code. Please try again later.";
-            }
-        }
-        catch (Exception ex)
-        {
-            errorMessage = $"An error occurred: {ex.Message}";
-        }
-        finally
-        {
-            isResending = false;
-            StateHasChanged();
-        }
-    }
-
-    private void StartResendCooldown()
-    {
-        resendCooldown = 60;
+        cooldown = 60;
+        cooldownTimer?.Dispose();
         cooldownTimer = new System.Threading.Timer(_ =>
         {
-            resendCooldown--;
-            InvokeAsync(StateHasChanged);
-            
-            if (resendCooldown <= 0)
+            cooldown--;
+            if (cooldown <= 0)
             {
                 cooldownTimer?.Dispose();
             }
+            InvokeAsync(StateHasChanged);
         }, null, 1000, 1000);
     }
 
-    public void Dispose()
+    public void Dispose() => cooldownTimer?.Dispose();
+
+    private sealed class ResendForm
     {
-        cooldownTimer?.Dispose();
+        [Required(ErrorMessage = "Enter your email")]
+        [EmailAddress(ErrorMessage = "Enter a valid email address")]
+        public string Email { get; set; } = string.Empty;
     }
 }

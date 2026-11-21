@@ -32,3 +32,22 @@ public class ResetPasswordRequest
     [System.ComponentModel.DataAnnotations.StringLength(100, MinimumLength = 8)]
     public string NewPassword { get; set; } = string.Empty;
 }
+
+/// <summary>Confirm an email address using the token from a verification link.</summary>
+public class VerifyEmailRequest
+{
+    [System.ComponentModel.DataAnnotations.Required]
+    [System.ComponentModel.DataAnnotations.StringLength(2048)]
+    public string Token { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Send a new verification link. Signed-in callers get it for their own account and can leave
+/// <see cref="Email"/> empty; otherwise the email address says which account.
+/// </summary>
+public class ResendVerificationRequest
+{
+    [System.ComponentModel.DataAnnotations.EmailAddress]
+    [System.ComponentModel.DataAnnotations.StringLength(255)]
+    public string? Email { get; set; }
+}

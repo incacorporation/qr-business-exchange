@@ -59,7 +59,9 @@ public class EmailService : IEmailService
                 throw new InvalidOperationException($"User with ID {userId} not found");
             }
 
-            var verificationUrl = $"{_baseUrl}/verify-email?token={verificationToken}&userId={userId}";
+            // Token in the fragment: the portal page reads it in the browser, so it never appears in a
+            // request line, server log or Referer header (same as password-reset links).
+            var verificationUrl = $"{_baseUrl.TrimEnd('/')}/verify-email#token={Uri.EscapeDataString(verificationToken)}";
 
             var subject = "Verify Your Email - QR Business Exchange";
             var body = $@"
