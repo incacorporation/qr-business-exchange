@@ -204,6 +204,18 @@
         </div>
 
         <article class="content">
+            @if (ShowVerifyEmailReminder)
+            {
+                @* Apps that use "Sign in with qrbound" can only match an account by email once it's confirmed. *@
+                <div class="alert alert-warning d-flex align-items-start gap-2 mb-3" role="status">
+                    <i class="bi bi-envelope-exclamation mt-1" aria-hidden="true"></i>
+                    <span class="flex-grow-1">
+                        Please confirm your email address, <strong>@StateService.CurrentUser?.Email</strong>.
+                        Apps and websites you sign in to with qrbound need it confirmed to recognise you.
+                        <a href="/email-verification" class="alert-link">Send a confirmation link</a>
+                    </span>
+                </div>
+            }
             @Body
         </article>
     </main>
@@ -288,6 +300,13 @@
     }
 
     private void OnStateChanged() => InvokeAsync(StateHasChanged);
+
+    // Not on the pages that do the confirming.
+    private bool ShowVerifyEmailReminder =>
+        StateService.IsAuthenticated
+        && StateService.CurrentUser is { IsEmailVerified: false, Email.Length: > 0 }
+        && !Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("email-verification", StringComparison.OrdinalIgnoreCase)
+        && !Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("verify-email", StringComparison.OrdinalIgnoreCase);
 
     private void ToggleNav() => navOpen = !navOpen;
 

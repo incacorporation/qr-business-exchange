@@ -177,6 +177,19 @@ The components also run as interactive server components inside MVC views
   would never reach the browser. Use Direct mode, validate `result.Tokens.IdToken` with
   `QrboundTokenValidator` on the server, and set your cookie from a normal request.
 
+## Matching qrbound users to your accounts
+
+* **Key accounts on `Subject` (`sub`)**, the qrbound user ID. It never changes; the email can.
+* qrbound sends the account email (`Email`) and whether the user has confirmed it (`EmailVerified`). The
+  user's "Show on card" choices don't affect sign-in: the app they approve always gets their name and email.
+* To connect qrbound to accounts that already exist in your app, match by email **only when
+  `EmailVerified` is true**, then store the `sub` against that account (in ASP.NET Identity:
+  `UserManager.AddLoginAsync(user, new UserLoginInfo("qrbound", sub, "qrbound"))`) and use
+  `FindByLoginAsync("qrbound", sub)` from then on. Don't link an account that is already linked to a
+  different `sub`.
+* If `EmailVerified` is false, ask the user to confirm their email in qrbound and try again, or check
+  `/api/sso/userinfo` with their access token until it turns true.
+
 ## Security notes
 
 * Browser apps are public clients: they prove possession with PKCE, never with a secret.

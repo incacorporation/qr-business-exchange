@@ -58,6 +58,10 @@
                                     <ShowOnCardCheckbox Id="show-email" Field="your email" @bind-Value="visibility.ShowEmail" />
                                 </div>
                                 <InputText id="email" @bind-Value="profileDto.Email" class="form-control" disabled />
+                                <div class="form-text">
+                                    "Show on card" only affects your business card. Apps and websites you sign in to with qrbound
+                                    always receive this email address (it's how they recognise you), along with your name.
+                                </div>
                             </div>
 
                             <div class="mb-3">
