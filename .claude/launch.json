@@ -9,6 +9,14 @@
       "url": "https://localhost:7059"
     },
     {
+      "name": "api-alt",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/QRBusinessExchange.API", "--no-launch-profile", "--", "--environment", "Development", "--urls", "http://localhost:7061"],
+      "port": 7061,
+      "url": "http://localhost:7061",
+      "autoPort": false
+    },
+    {
       "name": "client",
       "runtimeExecutable": "dotnet",
       "runtimeArgs": ["run", "--project", "src/QRBusinessExchange.Client"],

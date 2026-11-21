@@ -1,5 +1,6 @@
 using System.Net;
-using System.Net.Mail;
+
+
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -229,6 +230,23 @@ public class EmailService : IEmailService
         </body>
         </html>";
 
+    /// <inheritdoc/>
+    public async Task<string?> SendTestEmailAsync(string to)
+    {
+        try
+        {
+            await SendCoreAsync(to, "qrbound test email",
+                BrandedEmail("Hello,", $"<p>This is a test from the qrbound API, sent {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC. If you can read it, email sending works.</p>"));
+            _logger.LogInformation("Test email sent to {Email}", to);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Test email to {Email} failed", to);
+            return ex.Message;
+        }
+    }
+
     /// <summary>
     /// Sends an email using SMTP
     /// </summary>
@@ -238,44 +256,80 @@ public class EmailService : IEmailService
     /// <returns>True if email was sent successfully, false otherwise</returns>
     private async Task<bool> SendEmailAsync(string to, string subject, string body)
     {
-        // Validate settings before attempting to send
-        ValidateSettings();
-
         try
         {
-            using var smtpClient = new SmtpClient(_emailSettings.SmtpHost, _emailSettings.SmtpPort)
-            {
-                Credentials = new NetworkCredential(_emailSettings.SmtpUser, _emailSettings.SmtpPassword),
-                EnableSsl = true,
-                Timeout = 30000 // 30 seconds
-            };
-
-            var mailMessage = new MailMessage
-            {
-                From = new MailAddress(_emailSettings.FromEmail, _emailSettings.FromName),
-                Subject = subject,
-                Body = body,
-                IsBodyHtml = true
-            };
-
-            mailMessage.To.Add(to);
-
-            await smtpClient.SendMailAsync(mailMessage);
+            await SendCoreAsync(to, subject, body);
             return true;
-        }
-        catch (SmtpException ex)
-        {
-            // Log the error but don't throw - return false to indicate failure
-            _logger.LogError(ex, "SMTP error sending email to {Email}. Status: {StatusCode}", to, ex.StatusCode);
-            return false;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error sending email to {Email}", to);
+            // Log the error but don't throw - return false to indicate failure
+            _logger.LogError(ex, "Error sending email to {Email}: {Reason}", to, ex.Message);
             return false;
         }
     }
 
+    /// <summary>
+    /// Connects, signs in and sends with MailKit. Each stage that fails throws an exception whose message
+    /// says which stage it was and what the mail server answered, so a wrong password ("sign-in failed")
+    /// can't be mistaken for the server refusing this computer ("refused the recipient").
+    /// </summary>
+    private async Task SendCoreAsync(string to, string subject, string body)
+    {
+        ValidateSettings();
+
+        var message = new MimeKit.MimeMessage();
+        message.From.Add(new MimeKit.MailboxAddress(_emailSettings.FromName, _emailSettings.FromEmail));
+        message.To.Add(MimeKit.MailboxAddress.Parse(to));
+        message.Subject = subject;
+        message.Body = new MimeKit.TextPart(MimeKit.Text.TextFormat.Html) { Text = body };
+
+        using var client = new MailKit.Net.Smtp.SmtpClient { Timeout = 30000 };
+
+        try
+        {
+            await client.ConnectAsync(_emailSettings.SmtpHost, _emailSettings.SmtpPort,
+                _emailSettings.SmtpPort == 465 ? MailKit.Security.SecureSocketOptions.SslOnConnect : MailKit.Security.SecureSocketOptions.StartTls);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                $"Couldn't connect to {_emailSettings.SmtpHost}:{_emailSettings.SmtpPort}: {ex.Message}", ex);
+        }
+
+        try
+        {
+            await client.AuthenticateAsync(_emailSettings.SmtpUser, _emailSettings.SmtpPassword);
+        }
+        catch (MailKit.Security.AuthenticationException ex)
+        {
+            throw new InvalidOperationException(
+                $"Sign-in failed for {_emailSettings.SmtpUser}: the mail server rejected the password ({ex.Message}).", ex);
+        }
+
+        try
+        {
+            await client.SendAsync(new MailKit.SendRequest(message));
+        }
+        catch (MailKit.Net.Smtp.SmtpCommandException ex)
+        {
+            var stage = ex.ErrorCode switch
+            {
+                MailKit.Net.Smtp.SmtpErrorCode.SenderNotAccepted => "refused the sender",
+                MailKit.Net.Smtp.SmtpErrorCode.RecipientNotAccepted => "refused the recipient",
+                _ => "refused the message"
+            };
+            throw new InvalidOperationException(
+                $"Signed in as {_emailSettings.SmtpUser}, but the mail server {stage}: {(int)ex.StatusCode} {ex.Message}", ex);
+        }
+        finally
+        {
+            if (client.IsConnected)
+            {
+                await client.DisconnectAsync(true);
+            }
+        }
+    }
     /// <summary>
     /// Validates email settings configuration
     /// </summary>

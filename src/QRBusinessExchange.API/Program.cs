@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Scalar.AspNetCore;
 using QRBusinessExchange.API.Middleware;
 using QRBusinessExchange.Core.Interfaces;
 using QRBusinessExchange.Infrastructure.Configuration;
@@ -136,7 +137,7 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
     });
 
-// Configure Swagger/OpenAPI
+// Configure OpenAPI documentation (used by Scalar)
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -155,7 +156,7 @@ builder.Services.AddSwaggerGen(options =>
     // Use fully qualified names to avoid schema conflicts
     options.CustomSchemaIds(type => type.FullName?.Replace("+", "."));
 
-    // Add JWT authentication to Swagger
+    // Add JWT authentication to OpenAPI
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Name = "Authorization",
@@ -219,15 +220,6 @@ using (var scope = app.Services.CreateScope())
 // Configure middleware pipeline
 app.UseMiddleware<ErrorHandlingMiddleware>();
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI(options =>
-    {
-        options.SwaggerEndpoint("/swagger/v1/swagger.json", "QR Business Exchange API v1");
-    });
-}
-
 app.UseHttpsRedirection();
 
 app.UseCors("AllowBlazorWeb");
@@ -238,7 +230,17 @@ app.UseAuthorization();
 app.UseMiddleware<RateLimitingMiddleware>();
 app.UseMiddleware<JwtMiddleware>();
 
+// Map all API controllers first (required for OpenAPI documentation to discover endpoints)
 app.MapControllers();
+
+// Enable OpenAPI middleware (endpoint serving the OpenAPI spec JSON for Scalar)
+// Must be after MapControllers so endpoints are discovered
+app.UseSwagger();
+
+// Add Scalar for interactive API documentation (accessible at /scalar/v1)
+// Scalar reads the OpenAPI spec that Swashbuckle serves at /swagger/v1/swagger.json (its own default,
+// /openapi/v1.json, doesn't exist here, which left the page with no endpoints).
+app.MapScalarApiReference(options => options.WithOpenApiRoutePattern("/swagger/{documentName}/swagger.json"));
 
 app.Run();
 

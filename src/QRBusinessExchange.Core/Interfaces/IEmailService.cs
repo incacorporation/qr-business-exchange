@@ -41,4 +41,10 @@ public interface IEmailService
     /// <param name="forgotPasswordUrl">Link to request another reset</param>
     /// <returns>True if email was sent successfully, false otherwise</returns>
     Task<bool> SendPasswordChangedEmailAsync(string email, string firstName, string forgotPasswordUrl);
+
+    /// <summary>
+    /// Sends a short test email straight away, for diagnosing the mail setup.
+    /// </summary>
+    /// <returns>Null if the mail server accepted it, otherwise why it failed (never includes the password)</returns>
+    Task<string?> SendTestEmailAsync(string to) => Task.FromResult<string?>("Test emails aren't supported by this email service.");
 }
