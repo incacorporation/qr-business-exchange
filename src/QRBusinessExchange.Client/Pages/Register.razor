@@ -1,0 +1,355 @@
+@page "/register"
+@layout AuthLayout
+@using System.ComponentModel.DataAnnotations
+@using QRBusinessExchange.Core.DTOs
+@using QRBusinessExchange.Client.Services
+@using QRBusinessExchange.Client.Components.Auth
+@inject ApiService ApiService
+@inject PortalAuthService PortalAuth
+@inject WebAuthnService WebAuthn
+@inject NavigationManager Navigation
+
+<PageTitle>Create account - qrbound</PageTitle>
+
+<div class="@(step == Step.Passkey && passkeyMode == PasskeyMode.Phone ? "auth-medium" : "auth-narrow")">
+
+    <div class="auth-steps" aria-label="Progress">
+        <span class="@(step == Step.Details ? "active" : "done")">1 Account</span>
+        <span class="@(step == Step.Passkey ? "active" : step == Step.Done ? "done" : "")">2 Passkey</span>
+        <span class="@(step == Step.Done ? "active" : "")">3 Done</span>
+    </div>
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger auth-alert d-flex align-items-start gap-2" role="alert">
+            <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+            <span class="flex-grow-1">@errorMessage</span>
+            <button type="button" class="btn-close btn-sm" aria-label="Dismiss" @onclick="@(() => errorMessage = null)"></button>
+        </div>
+    }
+
+    @if (step == Step.Details)
+    {
+        <h1 class="auth-title">Create your account</h1>
+        <p class="auth-subtitle">Next, you'll add a passkey so you can log in with your phone.</p>
+
+        <EditForm Model="form" OnValidSubmit="CreateAccountAsync">
+            <DataAnnotationsValidator />
+
+            <div class="row g-2">
+                <div class="col-6 auth-field">
+                    <label for="firstName" class="visually-hidden">First name</label>
+                    <InputText id="firstName" class="form-control auth-input" placeholder="First name" @bind-Value="form.FirstName" autocomplete="given-name" disabled="@working" />
+                    <ValidationMessage For="() => form.FirstName" />
+                </div>
+                <div class="col-6 auth-field">
+                    <label for="lastName" class="visually-hidden">Last name</label>
+                    <InputText id="lastName" class="form-control auth-input" placeholder="Last name" @bind-Value="form.LastName" autocomplete="family-name" disabled="@working" />
+                    <ValidationMessage For="() => form.LastName" />
+                </div>
+            </div>
+
+            <div class="auth-field">
+                <label for="company" class="visually-hidden">Company (optional)</label>
+                <InputText id="company" class="form-control auth-input" placeholder="Company (optional)" @bind-Value="form.CompanyName" autocomplete="organization" disabled="@working" />
+            </div>
+
+            <div class="auth-field">
+                <label for="email" class="visually-hidden">Email</label>
+                <InputText id="email" type="email" class="form-control auth-input" placeholder="Email" @bind-Value="form.Email" autocomplete="email" disabled="@working" />
+                <ValidationMessage For="() => form.Email" />
+            </div>
+
+            <div class="auth-field">
+                <label for="password" class="visually-hidden">Password</label>
+                <InputText id="password" type="password" class="form-control auth-input" placeholder="Password (at least 8 characters)" @bind-Value="form.Password" autocomplete="new-password" disabled="@working" />
+                <ValidationMessage For="() => form.Password" />
+            </div>
+
+            <div class="auth-field">
+                <label for="confirm" class="visually-hidden">Confirm password</label>
+                <InputText id="confirm" type="password" class="form-control auth-input" placeholder="Confirm password" @bind-Value="form.ConfirmPassword" autocomplete="new-password" disabled="@working" />
+                <ValidationMessage For="() => form.ConfirmPassword" />
+            </div>
+
+            <div class="auth-field">
+                <label for="phone" class="visually-hidden">Mobile phone number (optional)</label>
+                <InputText id="phone" type="tel" class="form-control auth-input" placeholder="Mobile phone number (optional)" @bind-Value="form.PhoneNumber" autocomplete="tel" disabled="@working" />
+                <ValidationMessage For="() => form.PhoneNumber" />
+            </div>
+
+            @* Text-message consent: optional, never pre-selected, and never a condition of signing up. *@
+            <div class="auth-field form-check sms-consent mb-4">
+                <InputCheckbox id="smsOptIn" class="form-check-input" @bind-Value="form.SmsOptIn" disabled="@working" />
+                <label for="smsOptIn" class="form-check-label">
+                    <SmsConsentText />
+                </label>
+            </div>
+
+            <button type="submit" class="auth-btn" disabled="@working">
+                @if (working)
+                {
+                    <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                }
+                <span>Create account</span>
+            </button>
+        </EditForm>
+
+        <hr class="auth-divider" />
+
+        <nav class="auth-links" aria-label="Account help">
+            <a href="@LoginHref">Already have an account? Log in</a>
+            <a href="/email-verification">Resend email confirmation</a>
+        </nav>
+    }
+    else if (step == Step.Passkey)
+    {
+        <h1 class="auth-title">Add a passkey</h1>
+        <p class="auth-subtitle">
+            Passkeys replace your password with your fingerprint, face or screen lock. Business apps that
+            use qrbound sign-in require one.
+        </p>
+
+        @if (passkeyMode == PasskeyMode.Choose)
+        {
+            <button type="button" class="auth-choice" @onclick="ShowPhoneQr">
+                <i class="bi bi-qr-code-scan" aria-hidden="true"></i>
+                <span>
+                    <strong>Use my phone's camera</strong>
+                    <small>Scan a QR code and create the passkey on your phone</small>
+                </span>
+            </button>
+
+            @if (passkeysSupported)
+            {
+                <button type="button" class="auth-choice" @onclick="CreatePasskeyHereAsync" disabled="@working">
+                    @if (working)
+                    {
+                        <span class="spinner-border" aria-hidden="true"></span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-fingerprint" aria-hidden="true"></i>
+                    }
+                    <span>
+                        <strong>Use this device</strong>
+                        <small>Windows Hello, Touch ID, Face ID or a security key</small>
+                    </span>
+                </button>
+            }
+        }
+        else
+        {
+            <div class="auth-panel">
+                <LinkPhonePanel AutoStart="true" OnLinked="OnPhoneLinked" />
+            </div>
+            <div class="auth-links mt-3">
+                <button type="button" class="auth-link-btn" @onclick="() => passkeyMode = PasskeyMode.Choose">Back</button>
+            </div>
+        }
+
+        <hr class="auth-divider" />
+
+        <div class="auth-links">
+            <button type="button" class="auth-link-btn" @onclick="Finish">Skip for now</button>
+        </div>
+    }
+    else
+    {
+        <div class="text-center">
+            <i class="bi bi-check-circle-fill display-3" style="color: #7CF29A;" aria-hidden="true"></i>
+            <h1 class="auth-title mt-3">You're all set</h1>
+            @if (passkeyWhere != null)
+            {
+                <p class="auth-subtitle mb-2">
+                    Your passkey is on <strong class="text-white">@passkeyWhere</strong>.
+                    @if (passkeyWhere != "this device")
+                    {
+                        <span>Next time, choose "Log in with your phone camera" on the login page and scan the QR code with that phone.</span>
+                    }
+                </p>
+            }
+            else
+            {
+                <p class="auth-subtitle mb-2">You can add a passkey or link your phone later in <strong class="text-white">Settings</strong>.</p>
+            }
+            <p class="auth-subtitle small">We sent a verification link to <strong class="text-white">@form.Email</strong>.</p>
+            <button type="button" class="auth-btn" @onclick="Continue">Continue</button>
+        </div>
+    }
+</div>
+
+@code {
+    private enum Step { Details, Passkey, Done }
+    private enum PasskeyMode { Choose, Phone }
+
+    [SupplyParameterFromQuery(Name = "returnUrl")] public string? ReturnUrl { get; set; }
+
+    private readonly RegisterForm form = new();
+    private Step step = Step.Details;
+    private PasskeyMode passkeyMode = PasskeyMode.Choose;
+    private bool working;
+    private bool passkeysSupported;
+    private string? errorMessage;
+    private string? passkeyWhere;
+
+    private string? SafeReturnUrl =>
+        !string.IsNullOrEmpty(ReturnUrl) && ReturnUrl.StartsWith('/') && !ReturnUrl.StartsWith("//") && !ReturnUrl.StartsWith("/\\")
+            ? ReturnUrl
+            : null;
+
+    private string LoginHref => SafeReturnUrl == null ? "/login" : $"/login?returnUrl={Uri.EscapeDataString(SafeReturnUrl)}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            passkeysSupported = await WebAuthn.IsSupportedAsync();
+        }
+        catch
+        {
+            passkeysSupported = false;
+        }
+    }
+
+    private async Task CreateAccountAsync()
+    {
+        if (form.SmsOptIn && string.IsNullOrWhiteSpace(form.PhoneNumber))
+        {
+            errorMessage = "Enter your mobile number to get text messages, or untick the text message box.";
+            return;
+        }
+
+        working = true;
+        errorMessage = null;
+        try
+        {
+            var response = await ApiService.PostAsync("api/auth/register", new RegisterRequest
+            {
+                Email = form.Email.Trim(),
+                Password = form.Password,
+                FirstName = form.FirstName.Trim(),
+                LastName = form.LastName.Trim(),
+                CompanyName = string.IsNullOrWhiteSpace(form.CompanyName) ? null : form.CompanyName.Trim(),
+                PhoneNumber = string.IsNullOrWhiteSpace(form.PhoneNumber) ? null : form.PhoneNumber.Trim(),
+                SmsOptIn = form.SmsOptIn
+            });
+
+            if (!response.IsSuccessStatusCode)
+            {
+                errorMessage = await ApiService.ReadErrorAsync(response, "Could not create the account.");
+                return;
+            }
+
+            var auth = await ApiService.ParseResponseAsync<AuthResponse>(response)
+                ?? throw new InvalidOperationException("Invalid response from the server.");
+
+            await PortalAuth.SaveSessionAsync(auth);
+            form.Password = form.ConfirmPassword = string.Empty;
+            step = Step.Passkey;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not reach the server: {ex.Message}";
+        }
+        finally
+        {
+            working = false;
+        }
+    }
+
+    private void ShowPhoneQr()
+    {
+        errorMessage = null;
+        passkeyMode = PasskeyMode.Phone;
+    }
+
+    private async Task CreatePasskeyHereAsync()
+    {
+        working = true;
+        errorMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            const string deviceName = "This computer";
+            var init = await ApiService.PostAsync("api/passkey/register/init", new PasskeyRegistrationInitRequest { DeviceName = deviceName });
+            if (!init.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ApiService.ReadErrorAsync(init, "Could not start creating the passkey."));
+            }
+
+            var options = await ApiService.ParseResponseAsync<PasskeyRegistrationOptionsDto>(init)
+                ?? throw new InvalidOperationException("Invalid passkey options.");
+
+            var credential = await PortalAuth.CreatePasskeyAsync(options);
+
+            var complete = await ApiService.PostAsync("api/passkey/register/complete", new PasskeyRegistrationCompleteRequest
+            {
+                Challenge = options.Challenge,
+                Credential = credential,
+                DeviceName = deviceName
+            });
+
+            if (!complete.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ApiService.ReadErrorAsync(complete, "The passkey could not be saved."));
+            }
+
+            passkeyWhere = "this device";
+            step = Step.Done;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = PortalAuthService.Describe(ex);
+        }
+        finally
+        {
+            working = false;
+        }
+    }
+
+    private void OnPhoneLinked()
+    {
+        passkeyWhere = "your phone";
+        step = Step.Done;
+    }
+
+    private void Finish() => step = Step.Done;
+
+    private void Continue() => Navigation.NavigateTo(SafeReturnUrl ?? "/dashboard");
+
+    private sealed class RegisterForm
+    {
+        [Required(ErrorMessage = "First name is required")]
+        [StringLength(100)]
+        public string FirstName { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Last name is required")]
+        [StringLength(100)]
+        public string LastName { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Email is required")]
+        [EmailAddress(ErrorMessage = "Enter a valid email address")]
+        [StringLength(255)]
+        public string Email { get; set; } = string.Empty;
+
+        [StringLength(255)]
+        public string? CompanyName { get; set; }
+
+        [Phone(ErrorMessage = "Enter a valid phone number")]
+        [StringLength(20)]
+        public string? PhoneNumber { get; set; }
+
+        /// <summary>Consent to account and security text messages; off unless the user ticks the box.</summary>
+        public bool SmsOptIn { get; set; }
+
+        [Required(ErrorMessage = "Password is required")]
+        [StringLength(100, MinimumLength = 8, ErrorMessage = "Use at least 8 characters")]
+        public string Password { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Confirm your password")]
+        [Compare(nameof(Password), ErrorMessage = "Passwords don't match")]
+        public string ConfirmPassword { get; set; } = string.Empty;
+    }
+}

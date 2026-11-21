@@ -1,0 +1,208 @@
+@using QRBusinessExchange.Core.DTOs
+@inject ApiService ApiService
+@inject IJSRuntime JS
+
+@* Upload a personal photo or business logo (JPG, JPEG, PNG or GIF). The picture is saved as soon as
+   it's chosen; Remove deletes it. The preview is loaded with your sign-in, so it shows even when the
+   picture is hidden from your card. *@
+
+<div class="profile-picture d-flex align-items-center gap-3">
+    <div class="profile-picture-preview" aria-hidden="@(previewUrl == null ? "true" : "false")">
+        @if (previewUrl != null)
+        {
+            <img src="@previewUrl" alt="Your profile picture" />
+        }
+        else
+        {
+            <i class="bi bi-person-bounding-box"></i>
+        }
+    </div>
+
+    <div class="flex-grow-1">
+        <div class="d-flex flex-wrap gap-2">
+            <label class="btn btn-outline-primary btn-sm mb-0 @(busy ? "disabled" : "")" for="@InputId">
+                @if (busy && !removing)
+                {
+                    <span class="spinner-border spinner-border-sm me-1"></span>
+                    <span>Uploading…</span>
+                }
+                else
+                {
+                    <i class="bi bi-upload me-1"></i>
+                    <span>@(previewUrl == null ? "Upload a picture" : "Change picture")</span>
+                }
+            </label>
+            <InputFile id="@InputId" class="visually-hidden" disabled="@busy"
+                       accept=".jpg,.jpeg,.png,.gif,image/jpeg,image/png,image/gif" OnChange="OnFileChosenAsync" />
+
+            @if (previewUrl != null)
+            {
+                <button type="button" class="btn btn-outline-danger btn-sm" disabled="@busy" @onclick="RemoveAsync">
+                    @if (removing)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-trash me-1"></i>
+                    }
+                    Remove
+                </button>
+            }
+        </div>
+        <div class="form-text">A personal photo or your business logo. JPG, JPEG, PNG or GIF, up to 5 MB.</div>
+        @if (!string.IsNullOrEmpty(error))
+        {
+            <div class="text-danger small mt-1" role="alert">@error</div>
+        }
+        else if (!string.IsNullOrEmpty(status))
+        {
+            <div class="text-success small mt-1" role="status">@status</div>
+        }
+    </div>
+</div>
+
+@code {
+    /// <summary>id of the file input, so a field label can point at it.</summary>
+    [Parameter] public string InputId { get; set; } = "profileImage";
+
+    /// <summary>Raised after an upload or removal with the profile's new picture address (null when removed).</summary>
+    [Parameter] public EventCallback<string?> OnChanged { get; set; }
+
+    private static readonly Dictionary<string, string> AllowedTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [".jpg"] = "image/jpeg",
+        [".jpeg"] = "image/jpeg",
+        [".png"] = "image/png",
+        [".gif"] = "image/gif"
+    };
+
+    /// <summary>Largest file read in the browser; big photos are scaled down before upload.</summary>
+    private const long MaxChosenBytes = 25 * 1024 * 1024;
+    private const int MaxUploadBytes = 5 * 1024 * 1024;
+
+    private string? previewUrl;
+    private bool busy, removing;
+    private string? error, status;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var response = await ApiService.GetResponseAsync("api/user/profile-image");
+            if (response.IsSuccessStatusCode)
+            {
+                var type = response.Content.Headers.ContentType?.MediaType ?? "image/jpeg";
+                previewUrl = DataUrl(await response.Content.ReadAsByteArrayAsync(), type);
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            // No preview while offline; uploading still reports the problem.
+        }
+    }
+
+    private async Task OnFileChosenAsync(InputFileChangeEventArgs e)
+    {
+        error = status = null;
+        var file = e.File;
+
+        if (!AllowedTypes.TryGetValue(Path.GetExtension(file.Name), out var contentType))
+        {
+            error = "Only JPG, JPEG, PNG and GIF pictures can be uploaded.";
+            return;
+        }
+        if (file.Size > MaxChosenBytes)
+        {
+            error = "That picture is too large. Choose one under 25 MB.";
+            return;
+        }
+
+        busy = true;
+        StateHasChanged();
+        try
+        {
+            using var buffer = new MemoryStream();
+            await file.OpenReadStream(MaxChosenBytes).CopyToAsync(buffer);
+
+            // Scale big photos down in the browser (keeps uploads small and fast).
+            var prepared = await JS.InvokeAsync<PreparedImage>("imageTools.prepare", buffer.ToArray(), contentType);
+            if (prepared.Data.Length > MaxUploadBytes)
+            {
+                error = "The picture is larger than 5 MB. Choose a smaller one.";
+                return;
+            }
+
+            var name = Path.ChangeExtension(Path.GetFileName(file.Name), prepared.ContentType switch
+            {
+                "image/png" => ".png",
+                "image/gif" => ".gif",
+                _ => ".jpg"
+            });
+            var response = await ApiService.PostFileAsync("api/user/profile-image", prepared.Data, name, prepared.ContentType);
+            if (!response.IsSuccessStatusCode)
+            {
+                error = await ApiService.ReadErrorAsync(response, "The picture couldn't be uploaded. Please try again.");
+                return;
+            }
+
+            var saved = await ApiService.ParseResponseAsync<UserProfileDto>(response);
+            previewUrl = DataUrl(prepared.Data, prepared.ContentType);
+            status = "Picture saved.";
+            await OnChanged.InvokeAsync(saved?.ProfileImageUrl);
+        }
+        catch (IOException)
+        {
+            error = "That picture couldn't be read. Try another one.";
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            error = PortalAuthService.ConnectionProblem;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task RemoveAsync()
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", "Remove your profile picture?"))
+        {
+            return;
+        }
+
+        error = status = null;
+        busy = removing = true;
+        try
+        {
+            var response = await ApiService.DeleteAsync("api/user/profile-image");
+            if (!response.IsSuccessStatusCode)
+            {
+                error = await ApiService.ReadErrorAsync(response, "The picture couldn't be removed. Please try again.");
+                return;
+            }
+
+            previewUrl = null;
+            status = "Picture removed.";
+            await OnChanged.InvokeAsync(null);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            error = PortalAuthService.ConnectionProblem;
+        }
+        finally
+        {
+            busy = removing = false;
+        }
+    }
+
+    private static string DataUrl(byte[] data, string contentType) =>
+        $"data:{contentType};base64,{Convert.ToBase64String(data)}";
+
+    private sealed class PreparedImage
+    {
+        public byte[] Data { get; set; } = [];
+        public string ContentType { get; set; } = "image/jpeg";
+    }
+}

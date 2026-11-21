@@ -1,0 +1,10 @@
+.scan-page {
+    max-width: 30rem;
+    margin: 0 auto;
+}
+
+.scan-desktop {
+    max-width: 28rem;
+    margin: 3rem auto;
+}
+

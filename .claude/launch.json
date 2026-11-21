@@ -1,0 +1,41 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/QRBusinessExchange.API", "--launch-profile", "https"],
+      "port": 7059,
+      "url": "https://localhost:7059"
+    },
+    {
+      "name": "api-alt",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/QRBusinessExchange.API", "--no-launch-profile", "--", "--environment", "Development", "--urls", "http://localhost:7061"],
+      "port": 7061,
+      "url": "http://localhost:7061",
+      "autoPort": false
+    },
+    {
+      "name": "client",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/QRBusinessExchange.Client"],
+      "port": 60128,
+      "url": "https://localhost:60128"
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/QRBusinessExchange.Web", "--launch-profile", "https"],
+      "port": 7089,
+      "url": "https://localhost:7089"
+    },
+    {
+      "name": "mlm",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/mlm.qrbound.com", "--launch-profile", "http"],
+      "port": 5017,
+      "url": "http://localhost:5017"
+    }
+  ]
+}

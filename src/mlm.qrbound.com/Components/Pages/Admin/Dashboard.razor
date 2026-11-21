@@ -1,0 +1,74 @@
+@page "/admin"
+@layout AdminLayout
+@rendermode InteractiveServer
+@inject NetworkService Network
+@inject CompensationSettings Plan
+
+<SeoHead Title="Dashboard" Description="Back office dashboard." NoIndex="true" />
+<h1>Dashboard</h1>
+
+@if (_s is null)
+{
+    <p>Loading…</p>
+}
+else
+{
+    <div class="tiles">
+        <div class="tile"><span>Revenue this month</span><strong>@_s.RevenueThisMonth.ToString("C0")</strong>
+            <small>@Change(_s.RevenueThisMonth, _s.RevenueLastMonth) vs last month (partial)</small></div>
+        <div class="tile"><span>Retail share</span><strong>@_s.RetailShareThisMonth.ToString("0%")</strong>
+            <small>Sales to outside customers. Healthy plans stay well above 50%.</small></div>
+        <div class="tile"><span>Active members</span><strong>@_s.ActiveMembers / @_s.Members</strong>
+            <small>Met the @Plan.ActiveThreshold.ToString("0") volume requirement</small></div>
+        <div class="tile"><span>Customers</span><strong>@_s.Customers</strong></div>
+        <div class="tile"><span>Open leads</span><strong>@_s.OpenLeads</strong><small><a href="/admin/leads">Work the list</a></small></div>
+        <div class="tile @(_s.Preview.PayoutRatio > Plan.PayoutCap ? "warn" : "")">
+            <span>Projected payout</span><strong>@_s.Preview.TotalPayout.ToString("C0")</strong>
+            <small>@_s.Preview.PayoutRatio.ToString("0.0%") of revenue (cap @Plan.PayoutCap.ToString("0%"))@(_s.Preview.OverrideScale < 1 ? $", overrides scaled to {_s.Preview.OverrideScale:0%}" : "")</small>
+        </div>
+    </div>
+
+    <div class="grid2">
+        <section class="panel">
+            <h2>Ranks this month</h2>
+            <table class="table">
+                <thead><tr><th>Rank</th><th>Members</th></tr></thead>
+                <tbody>
+                    @foreach (var g in _s.Preview.Members.Values.Where(m => _memberIds.Contains(m.MemberId)).GroupBy(m => m.Rank).OrderByDescending(g => g.Key))
+                    {
+                        <tr><td>@g.Key</td><td>@g.Count()</td></tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+        <section class="panel">
+            <h2>Top earners (projected)</h2>
+            <table class="table">
+                <thead><tr><th>Member</th><th>Rank</th><th>Retail</th><th>Overrides</th></tr></thead>
+                <tbody>
+                    @foreach (var m in _s.Preview.Members.Values.Where(m => m.Total > 0).OrderByDescending(m => m.Total).Take(8))
+                    {
+                        <tr><td>@_names.GetValueOrDefault(m.MemberId)</td><td>@m.Rank</td><td>@m.Retail.ToString("C0")</td><td>@m.Overrides.ToString("C0")</td></tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    </div>
+}
+
+@code {
+    private DashboardStats? _s;
+    private Dictionary<int, string> _names = [];
+    private HashSet<int> _memberIds = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _s = await Network.GetDashboardAsync();
+        var members = await Network.GetMembersAsync();
+        _names = members.ToDictionary(m => m.Id, m => m.Name);
+        _memberIds = members.Where(m => m.SponsorId != null).Select(m => m.Id).ToHashSet();
+    }
+
+    private static string Change(decimal now, decimal before) =>
+        before == 0 ? "n/a" : ((now - before) / before).ToString("+0%;-0%;0%");
+}

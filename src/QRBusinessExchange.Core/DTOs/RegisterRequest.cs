@@ -48,4 +48,9 @@ public class RegisterRequest
     [Phone(ErrorMessage = "Invalid phone number format")]
     [StringLength(20)]
     public string? PhoneNumber { get; set; }
+
+    /// <summary>
+    /// The user ticked the optional box agreeing to account and security text messages at PhoneNumber.
+    /// </summary>
+    public bool SmsOptIn { get; set; }
 }

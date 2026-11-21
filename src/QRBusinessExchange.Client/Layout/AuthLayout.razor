@@ -1,0 +1,14 @@
+@inherits LayoutComponentBase
+
+@* Full-screen royal-blue layout for sign-in, registration and the other authentication pages:
+   the qrbound logo on top, the page's form underneath, no navigation. Styles: "Authentication
+   pages" section of wwwroot/css/app.css. *@
+
+<div class="auth-shell">
+    <main class="auth-main">
+        <a href="/" class="auth-logo" aria-label="qrbound home">
+            <img src="images/qrbound-logo.png" alt="qrbound - Let's get QR Bound" />
+        </a>
+        @Body
+    </main>
+</div>

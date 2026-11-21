@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Qrbound.SignIn.Server</RootNamespace>
+
+    <IsPackable>true</IsPackable>
+    <PackageId>Qrbound.SignIn.Server</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>QRBound</Authors>
+    <Description>Server-side helpers for qrbound sign-in: validates qrbound tokens against the published signing keys, exchanges authorization codes (optionally with a client secret kept on the server) and signs users in with a cookie.</Description>
+    <PackageTags>qrbound;sso;passkey;jwt;aspnetcore;pkce</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.16.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Qrbound.SignIn\Qrbound.SignIn.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\Qrbound.SignIn\README.md" Pack="true" PackagePath="\" />
+    <InternalsVisibleTo Include="Qrbound.SignIn.Tests" />
+  </ItemGroup>
+
+</Project>

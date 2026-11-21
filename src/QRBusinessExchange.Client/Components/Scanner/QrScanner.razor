@@ -1,0 +1,239 @@
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+@* Live camera QR scanner with a "take a photo instead" fallback. It stops at the first code it sees and
+   hands the text to OnDetected, whose QrScanOutcome decides what is shown next. Phones only: the page
+   that hosts it checks qrScanner.isMobile first. *@
+
+<div class="qr-scanner @(Compact ? "qr-scanner--compact" : "")">
+    <div class="scan-viewfinder @(view == View.Scanning ? "is-live" : "")">
+        <video @ref="video" class="scan-video" playsinline muted aria-label="Camera view"></video>
+        <div class="scan-frame" aria-hidden="true"></div>
+        @if (view is View.Starting or View.Working)
+        {
+            <div class="scan-overlay"><span class="spinner-border text-light" role="status"><span class="visually-hidden">@(view == View.Working ? "Reading the code…" : "Starting camera…")</span></span></div>
+        }
+        else if (view is View.Opening or View.Succeeded)
+        {
+            <div class="scan-overlay"><i class="bi bi-check-circle-fill text-success display-5"></i></div>
+        }
+    </div>
+
+    <div aria-live="polite">
+        @switch (view)
+        {
+            case View.Scanning:
+                <p class="scan-status"><i class="bi bi-qr-code-scan me-1"></i> Looking for a QR code…</p>
+                break;
+            case View.Working:
+                <p class="scan-status">Code found…</p>
+                break;
+            case View.Opening:
+                <p class="scan-status text-success"><i class="bi bi-check2 me-1"></i> Code found, opening…</p>
+                break;
+            case View.Succeeded:
+                <div class="alert alert-success mt-3 mb-3">
+                    <div class="fw-semibold"><i class="bi bi-check2-circle me-1"></i>@title</div>
+                    @if (!string.IsNullOrEmpty(detail))
+                    {
+                        <div class="small">@detail</div>
+                    }
+                </div>
+                <button type="button" class="btn btn-primary w-100" @onclick="StartAsync">
+                    <i class="bi bi-qr-code-scan me-2"></i>Scan another
+                </button>
+                break;
+            case View.Warning:
+            case View.Failed:
+                <div class="alert @(view == View.Warning ? "alert-warning" : "alert-danger") mt-3 mb-3">
+                    <div class="fw-semibold">@title</div>
+                    <div class="small">@detail</div>
+                    @if (!string.IsNullOrEmpty(scannedText))
+                    {
+                        <div class="small text-break mt-2"><span class="text-muted">The code contains:</span> @scannedText</div>
+                    }
+                </div>
+                <button type="button" class="btn btn-primary w-100" @onclick="StartAsync">
+                    <i class="bi bi-arrow-repeat me-2"></i>Scan again
+                </button>
+                break;
+        }
+    </div>
+
+    @if (view is not (View.Opening or View.Working))
+    {
+        @* Fallback: the phone's own camera app focuses close up better than the live view in a browser. *@
+        <div class="scan-photo">
+            <span class="text-muted small">Camera won't focus?</span>
+            <label class="btn btn-outline-primary w-100 mt-1 @(readingPhoto ? "disabled" : "")" for="@photoInputId">
+                @if (readingPhoto)
+                {
+                    <span class="spinner-border spinner-border-sm me-2"></span>
+                }
+                else
+                {
+                    <i class="bi bi-camera me-2"></i>
+                }
+                Take a photo instead
+            </label>
+            <InputFile id="@photoInputId" class="visually-hidden" accept="image/*" capture="environment"
+                       OnChange="OnPhotoChosenAsync" disabled="@readingPhoto" />
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>Called with the text of the first code seen; the outcome decides what the scanner shows next.</summary>
+    [Parameter, EditorRequired] public Func<string, Task<QrScanOutcome>> OnDetected { get; set; } = null!;
+
+    /// <summary>A shorter (4:3) camera view, for pages that show more content under the scanner.</summary>
+    [Parameter] public bool Compact { get; set; }
+
+    private enum View { Starting, Scanning, Working, Opening, Succeeded, Warning, Failed }
+
+    private readonly string photoInputId = $"scan-photo-{Guid.NewGuid():N}";
+    private View view = View.Starting;
+    private ElementReference video;
+    private DotNetObjectReference<QrScanner>? selfRef;
+    private string? title, detail, scannedText;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await StartAsync(); // the <video> element exists only after the first render
+        }
+    }
+
+    private async Task StartAsync()
+    {
+        title = detail = scannedText = null;
+        view = View.Starting;
+        StateHasChanged();
+
+        try
+        {
+            selfRef ??= DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("qrScanner.start", video, selfRef);
+
+            // A code already in front of the camera can be detected before start() returns;
+            // don't overwrite that result.
+            if (view == View.Starting)
+            {
+                view = View.Scanning;
+            }
+        }
+        catch (JSException ex)
+        {
+            ShowCameraError(ex.Message);
+        }
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task OnQrDetected(string text)
+    {
+        view = View.Working;
+        StateHasChanged();
+
+        var outcome = await OnDetected(text);
+        (title, detail) = (outcome.Title, outcome.Detail);
+        scannedText = outcome.Kind == QrScanOutcomeKind.Warning && outcome.ShowScannedText
+            ? (text.Length > 120 ? text[..120] + "…" : text)
+            : null;
+        view = outcome.Kind switch
+        {
+            QrScanOutcomeKind.Opening => View.Opening,
+            QrScanOutcomeKind.Success => View.Succeeded,
+            _ => View.Warning
+        };
+        StateHasChanged();
+    }
+
+    /// <summary>Largest photo accepted; phone photos are usually 2-8 MB.</summary>
+    private const long MaxPhotoBytes = 25 * 1024 * 1024;
+
+    private bool readingPhoto;
+
+    private async Task OnPhotoChosenAsync(InputFileChangeEventArgs e)
+    {
+        readingPhoto = true;
+        title = detail = scannedText = null;
+        StateHasChanged();
+
+        try
+        {
+            await JS.InvokeVoidAsync("qrScanner.stop"); // free the camera while the photo is read
+
+            using var buffer = new MemoryStream();
+            await e.File.OpenReadStream(MaxPhotoBytes).CopyToAsync(buffer);
+            var text = await JS.InvokeAsync<string?>("qrScanner.decodeImage", buffer.ToArray());
+
+            if (text is null)
+            {
+                view = View.Failed;
+                title = "No QR code found in the photo";
+                detail = "Take the photo straight on, with the whole code in the picture, then try again.";
+            }
+            else
+            {
+                await OnQrDetected(text);
+            }
+        }
+        catch (IOException)
+        {
+            view = View.Failed;
+            (title, detail) = ("That photo is too large", "Take a new photo with the camera and try again.");
+        }
+        catch (JSException)
+        {
+            view = View.Failed;
+            (title, detail) = ("The photo couldn't be read", "Take a new photo and try again.");
+        }
+        finally
+        {
+            readingPhoto = false;
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public Task OnScannerError(string reason)
+    {
+        ShowCameraError(reason);
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private void ShowCameraError(string reason)
+    {
+        view = View.Failed;
+        (title, detail) = FirstLine(reason) switch
+        {
+            "NotAllowedError" or "SecurityError" => ("Camera access is blocked",
+                "Allow camera access for this site in your browser settings, then tap Scan again."),
+            "NotFoundError" or "OverconstrainedError" => ("No camera found",
+                "This device doesn't seem to have a camera qrbound can use."),
+            "NotReadableError" or "AbortError" => ("The camera is busy",
+                "Another app may be using the camera. Close it, then tap Scan again."),
+            "Unsupported" => ("This browser can't use the camera here",
+                "Open qrbound in Chrome or Safari and try again."),
+            "DecoderUnavailable" => ("The scanner couldn't load",
+                "Check your internet connection, then tap Scan again."),
+            _ => ("The camera couldn't start", "Tap Scan again to retry.")
+        };
+    }
+
+    // JSException messages can carry a JS stack after the first line.
+    private static string FirstLine(string message) => message.Split('\n', 2)[0].Trim();
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("qrScanner.stop");
+        }
+        catch (JSDisconnectedException) { }
+        selfRef?.Dispose();
+    }
+}

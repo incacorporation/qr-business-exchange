@@ -26,7 +26,7 @@ public class QRCodeService : IQRCodeService
     }
 
     /// <inheritdoc/>
-    public async Task<QRCode> GenerateQRCodeAsync(Guid userId)
+    public async Task<Core.Entities.QRCode> GenerateQRCodeAsync(Guid userId)
     {
         try
         {
@@ -58,7 +58,7 @@ public class QRCodeService : IQRCodeService
             var qrCodeBase64 = Convert.ToBase64String(qrCodeBytes);
 
             // Create QR code entity
-            var newQRCode = new QRCode
+            var newQRCode = new Core.Entities.QRCode
             {
                 UserId = userId,
                 QRCodeData = $"data:image/png;base64,{qrCodeBase64}",
@@ -79,7 +79,7 @@ public class QRCodeService : IQRCodeService
     }
 
     /// <inheritdoc/>
-    public async Task<QRCode?> GetQRCodeByUserIdAsync(Guid userId)
+    public async Task<Core.Entities.QRCode?> GetQRCodeByUserIdAsync(Guid userId)
     {
         try
         {

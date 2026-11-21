@@ -1,0 +1,64 @@
+@page "/"
+@inject QrboundAuthState Auth
+@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+@implements IDisposable
+
+<PageTitle>Qrbound sign-in sample</PageTitle>
+
+@* Read the raw setting: QrboundOptions validates on first use and would throw while ClientId is empty. *@
+@if (string.IsNullOrWhiteSpace(Configuration["Qrbound:ClientId"]))
+{
+    <div class="warn">
+        Set <code>Qrbound:ClientId</code> in <code>wwwroot/appsettings.Development.json</code> to the client_id of a
+        <b>public</b> qrbound SSO application whose redirect URIs include
+        <code>@Configuration["Qrbound:RedirectUri"]</code>.
+    </div>
+}
+else if (Auth.IsSignedIn)
+{
+    <h2>Welcome, @Auth.User!.Name</h2>
+    <p>Signed in with qrbound (<code>amr = @Auth.User.AuthMethod</code>).
+       Business role: <b>@(Auth.User.BusinessRole ?? "not a member")</b>.</p>
+    <table>
+        <tr><th>Claim</th><th>Value</th></tr>
+        @foreach (var claim in Auth.User.Claims)
+        {
+            <tr><td>@claim.Type</td><td>@claim.Value</td></tr>
+        }
+    </table>
+    <p><button class="qrbound-button" @onclick="Auth.SignOut">Sign out</button></p>
+}
+else
+{
+    <div class="tabs">
+        <button class="@(register ? null : "active")" @onclick="() => register = false">Log in</button>
+        <button class="@(register ? "active" : null)" @onclick="() => register = true">Create account</button>
+    </div>
+
+    @if (register)
+    {
+        <QrboundRegister @key="@("register")" Title="Create your account with qrbound" OnError="OnError" />
+    }
+    else
+    {
+        <QrboundSignIn @key="@("signin")" Title="Log in with qrbound" OnError="OnError" />
+    }
+
+    @if (lastError != null)
+    {
+        <p class="qrbound-hint">Last error: <code>@lastError</code></p>
+    }
+}
+
+@code {
+    private bool register;
+    private string? lastError;
+
+    protected override void OnInitialized() => Auth.Changed += Refresh;
+
+    private void Refresh() => InvokeAsync(StateHasChanged);
+
+    private void OnError(QrboundException ex) => lastError = $"{ex.Error}: {ex.Message}";
+
+    public void Dispose() => Auth.Changed -= Refresh;
+}

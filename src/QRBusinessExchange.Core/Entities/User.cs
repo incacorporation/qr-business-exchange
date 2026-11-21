@@ -44,9 +44,38 @@ public class User
 
     public decimal? ServicePricing { get; set; }
 
+    // What people who open this user's business card (public profile) or have them in their contacts may see.
+    // The name is always shown. All default to shown, which is how profiles behaved before these existed.
+    public bool ShowEmail { get; set; } = true;
+    public bool ShowCompanyName { get; set; } = true;
+    public bool ShowPhoneNumber { get; set; } = true;
+    public bool ShowBio { get; set; } = true;
+    public bool ShowSkills { get; set; } = true;
+    public bool ShowServicePricing { get; set; } = true;
+    public bool ShowProfileImage { get; set; } = true;
+
+    // Consent to account and security text messages (the optional sign-up checkbox). Kept as a record of
+    // when and how the user agreed: the number they agreed for, the time and the IP address. False unless
+    // they ticked the box; changing the phone number withdraws it (consent was for the old number).
+    public bool SmsOptIn { get; set; }
+
+    public DateTime? SmsOptInAt { get; set; }
+
+    [StringLength(20)]
+    public string? SmsOptInPhone { get; set; }
+
+    [StringLength(45)]
+    public string? SmsOptInIp { get; set; }
+
     public bool IsEmailVerified { get; set; } = false;
 
     public bool IsActive { get; set; } = true;
+
+    /// <summary>
+    /// User role: "User", "Admin", "SuperAdmin"
+    /// </summary>
+    [StringLength(50)]
+    public string Role { get; set; } = "User";
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

@@ -1,0 +1,52 @@
+namespace QRBusinessExchange.Client.Models;
+
+public class UsageDataPoint
+{
+    public string Label { get; set; } = string.Empty;
+    public int Value { get; set; }
+}
+
+public class UserLocationDto
+{
+    public Guid UserId { get; set; }
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+    public string? CompanyName { get; set; }
+    public double Latitude { get; set; }
+    public double Longitude { get; set; }
+    public string? ProfileImageUrl { get; set; }
+
+    /// <summary>Distance from you, from the nearby search (null for your own marker).</summary>
+    public double? DistanceMiles { get; set; }
+
+    /// <summary>In your contacts (green marker).</summary>
+    public bool IsContact { get; set; }
+
+    /// <summary>When the person last shared their position (null for your own marker).</summary>
+    public DateTime? LastSeen { get; set; }
+}
+
+public class LoginResponse
+{
+    public string Token { get; set; } = string.Empty;
+    public Guid UserId { get; set; }
+    public Core.DTOs.UserProfileDto User { get; set; } = new();
+    public Core.DTOs.SubscriptionDto Subscription { get; set; } = new();
+}
+
+public class AuthResponse
+{
+	public string AccessToken { get; set; } = string.Empty;
+	public string RefreshToken { get; set; } = string.Empty;
+	public DateTime ExpiresAt { get; set; }
+	public Core.DTOs.UserProfileDto User { get; set; } = new();
+	public Core.DTOs.SubscriptionDto Subscription { get; set; } = new();
+}
+
+public class Advertisement
+{
+    public string Title { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string? ImageUrl { get; set; }
+    public string? Link { get; set; }
+}

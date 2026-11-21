@@ -1,0 +1,287 @@
+@using QRBusinessExchange.Client.Models
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div id="@MapId" style="height: @Height; width: 100%; border-radius: 15px;"></div>
+
+@code {
+    [Parameter]
+    public List<UserLocationDto>? Users { get; set; }
+
+    [Parameter]
+    public Guid? CurrentUserId { get; set; }
+
+    [Parameter]
+    public string Height { get; set; } = "500px";
+
+    [Parameter]
+    public double DefaultLat { get; set; } = 29.7604;
+
+    [Parameter]
+    public double DefaultLng { get; set; } = -95.3698;
+
+    [Parameter]
+    public int DefaultZoom { get; set; } = 12;
+
+    private string MapId = $"map-{Guid.NewGuid():N}";
+    private bool _isInitialized = false;
+    private bool _disposed = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_disposed)
+        {
+            await InitializeMapAsync();
+        }
+    }
+
+    private async Task InitializeMapAsync()
+    {
+        if (_isInitialized || _disposed)
+            return;
+
+        try
+        {
+            // Wait for DOM and Leaflet to be ready
+            await Task.Delay(500);
+
+            if (_disposed) return;
+
+            // Check if Leaflet is loaded
+            var leafletLoaded = await JS.InvokeAsync<bool>("eval", "typeof L !== 'undefined'");
+            if (!leafletLoaded)
+            {
+                Console.WriteLine("Leaflet library not loaded yet, waiting...");
+                await Task.Delay(1000);
+                leafletLoaded = await JS.InvokeAsync<bool>("eval", "typeof L !== 'undefined'");
+                if (!leafletLoaded)
+                {
+                    Console.WriteLine("ERROR: Leaflet library failed to load");
+                    return;
+                }
+            }
+
+            // Clear any cached map instance before initialization
+            try
+            {
+                Console.WriteLine("Clearing cached map before initialization...");
+                await JS.InvokeVoidAsync("leafletInterop.destroyMap");
+                await Task.Delay(100); // Brief delay to ensure cleanup completes
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Error clearing cached map: {ex.Message}");
+            }
+
+            Console.WriteLine($"Initializing map with MapId: {MapId}");
+            Console.WriteLine($"Users count: {Users?.Count ?? 0}");
+
+            // Determine center coordinates
+            double lat = DefaultLat;
+            double lng = DefaultLng;
+            int zoom = DefaultZoom;
+
+            if (Users != null && Users.Any())
+            {
+                var firstUser = Users.First();
+                lat = firstUser.Latitude;
+                lng = firstUser.Longitude;
+                Console.WriteLine($"Using first user location: {lat}, {lng}");
+            }
+            else
+            {
+                Console.WriteLine($"No users, using default location: {lat}, {lng}");
+            }
+
+            // Initialize map
+            await JS.InvokeVoidAsync("leafletInterop.initializeMap", MapId, lat, lng, zoom);
+            _isInitialized = true;
+            Console.WriteLine("Map initialized successfully");
+
+            if (_disposed) return;
+
+            // Add markers for users
+            if (Users != null && Users.Any())
+            {
+                Console.WriteLine($"Adding {Users.Count} markers...");
+                foreach (var user in Users)
+                {
+                    if (_disposed) break;
+
+                    var popupContent = PopupHtml(user);
+
+                    await JS.InvokeVoidAsync("leafletInterop.addMarker", 
+                        user.Latitude, 
+                        user.Longitude, 
+                        popupContent,
+                        MarkerColor(user));
+                    
+                    Console.WriteLine($"Added marker for {user.FirstName} {user.LastName}");
+                }
+                Console.WriteLine("All markers added successfully");
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+            Console.WriteLine("ERROR: Circuit disconnected while initializing map");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"ERROR initializing map: {ex.GetType().Name} - {ex.Message}");
+            Console.WriteLine($"Stack trace: {ex.StackTrace}");
+        }
+    }
+
+    /// <summary>Marker colour: you are gold, your contacts green, everyone else blue.</summary>
+    public const string YouColor = "#D4A017", ContactColor = "#198754", OtherColor = "#0D6EFD";
+
+    private string MarkerColor(UserLocationDto user) =>
+        user.UserId == CurrentUserId ? YouColor : user.IsContact ? ContactColor : OtherColor;
+
+    /// <summary>
+    /// Marker pop-up. Names and companies are typed by users, so everything is HTML-encoded: the pop-up is
+    /// inserted as HTML and would otherwise run whatever markup someone puts in their profile.
+    /// </summary>
+    private string PopupHtml(UserLocationDto user)
+    {
+        static string E(string? text) => System.Net.WebUtility.HtmlEncode(text ?? "");
+
+        if (user.UserId == CurrentUserId)
+        {
+            return "<div class='text-center p-1'><h6 class='mb-0'>You are here</h6></div>";
+        }
+
+        var company = string.IsNullOrEmpty(user.CompanyName)
+            ? ""
+            : $"<p class='mb-1 text-muted'><i class='fas fa-building'></i> {E(user.CompanyName)}</p>";
+        var distance = user.DistanceMiles is { } miles
+            ? $"<p class='mb-1 small text-muted'>{E(DistanceText(miles))}</p>"
+            : "";
+        var contact = user.IsContact
+            ? "<p class='mb-1 small text-success'><i class='fas fa-check-circle'></i> In your contacts</p>"
+            : "";
+        var seen = user.LastSeen is { } lastSeen
+            ? $"<p class='mb-1 small text-muted'>Location shared {E(Ago(lastSeen))}</p>"
+            : "";
+
+        return $"<div class='text-center p-2'>"
+             + $"<h6 class='mb-2'><i class='fas fa-user'></i> {E(user.FirstName)} {E(user.LastName)}</h6>"
+             + company + contact + distance + seen
+             + $"<a href='/user/{user.UserId}' class='btn btn-sm btn-primary mt-2'><i class='fas fa-eye'></i> View Profile</a>"
+             + "</div>";
+    }
+
+    // Feet up to 1,000 ft (searches start at 25 ft), miles beyond.
+    private static string DistanceText(double miles)
+    {
+        var feet = miles * 5280;
+        return feet < 10 ? "Right here"
+            : feet < 1000 ? $"{Math.Round(feet / 5) * 5:N0} ft away"
+            : $"{miles:0.##} mi away";
+    }
+
+    private static string Ago(DateTime utc)
+    {
+        var age = DateTime.UtcNow - DateTime.SpecifyKind(utc, DateTimeKind.Utc);
+        return age.TotalMinutes < 2 ? "just now"
+            : age.TotalHours < 1 ? $"{(int)age.TotalMinutes} minutes ago"
+            : age.TotalDays < 1 ? $"{(int)age.TotalHours} hour{((int)age.TotalHours == 1 ? "" : "s")} ago"
+            : $"{(int)age.TotalDays} day{((int)age.TotalDays == 1 ? "" : "s")} ago";
+    }
+
+    /// <summary>Waits (up to the timeout) for the map to finish loading, so markers aren't dropped.</summary>
+    public async Task<bool> WaitUntilReadyAsync(TimeSpan timeout)
+    {
+        var until = DateTime.UtcNow + timeout;
+        while (!_isInitialized && !_disposed && DateTime.UtcNow < until)
+        {
+            await Task.Delay(100);
+        }
+        return _isInitialized && !_disposed;
+    }
+
+    public async Task RefreshMarkers(List<UserLocationDto> newUsers)
+    {
+        if (!_isInitialized || _disposed)
+            return;
+
+        try
+        {
+            // Clear existing markers
+            await JS.InvokeVoidAsync("leafletInterop.clearMarkers");
+
+            Users = newUsers;
+
+            // Add new markers
+            if (Users != null && Users.Any())
+            {
+                foreach (var user in Users)
+                {
+                    if (_disposed) break;
+
+                    var popupContent = PopupHtml(user);
+
+                    await JS.InvokeVoidAsync("leafletInterop.addMarker", 
+                        user.Latitude, 
+                        user.Longitude, 
+                        popupContent,
+                        MarkerColor(user));
+                }
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+            Console.WriteLine("Circuit disconnected while refreshing markers");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error refreshing markers: {ex.Message}");
+        }
+    }
+
+    /// <summary>Draws the search distance as a circle around the given point.</summary>
+    public async Task SetRangeAsync(double lat, double lng, double meters)
+    {
+        if (!_isInitialized || _disposed) return;
+        try
+        {
+            await JS.InvokeVoidAsync("leafletInterop.setRangeCircle", lat, lng, meters);
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    public async Task SetViewAsync(double lat, double lng, int zoom)
+    {
+        if (!_isInitialized || _disposed)
+            return;
+
+        try
+        {
+            await JS.InvokeVoidAsync("leafletInterop.setView", lat, lng, zoom);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error setting map view: {ex.Message}");
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed) return;
+
+        _disposed = true;
+
+        try
+        {
+            if (_isInitialized)
+            {
+                await JS.InvokeVoidAsync("leafletInterop.destroyMap");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error disposing map: {ex.Message}");
+        }
+    }
+}
+

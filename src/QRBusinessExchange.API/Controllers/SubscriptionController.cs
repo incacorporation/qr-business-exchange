@@ -14,13 +14,16 @@ namespace QRBusinessExchange.API.Controllers;
 public class SubscriptionController : ControllerBase
 {
     private readonly ISubscriptionRepository _subscriptionRepository;
+    private readonly IUserRepository _userRepository;
     private readonly ILogger<SubscriptionController> _logger;
 
     public SubscriptionController(
         ISubscriptionRepository subscriptionRepository,
+        IUserRepository userRepository,
         ILogger<SubscriptionController> logger)
     {
         _subscriptionRepository = subscriptionRepository;
+        _userRepository = userRepository;
         _logger = logger;
     }
 
@@ -89,13 +92,15 @@ public class SubscriptionController : ControllerBase
     }
 
     /// <summary>
-    /// Upgrade subscription plan
+    /// Upgrade subscription plan. Admins only: there is no online checkout yet, so paid plans are set up by
+    /// qrbound staff after payment is arranged; anyone else is told to contact us.
     /// </summary>
     /// <param name="planType">New plan type (Basic/Premium/Enterprise)</param>
     /// <returns>Updated subscription details</returns>
     [HttpPost("upgrade")]
     [ProducesResponseType(typeof(SubscriptionDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> UpgradeSubscription([FromQuery] string planType)
     {
         var validPlans = new[] { "Basic", "Premium", "Enterprise" };
@@ -105,6 +110,17 @@ public class SubscriptionController : ControllerBase
         }
 
         var userId = GetCurrentUserId();
+
+        // The role is read from the database, not the token, so it reflects the account as it is now.
+        var user = await _userRepository.GetByIdAsync(userId);
+        if (user is null || user.Role is not ("Admin" or "SuperAdmin"))
+        {
+            _logger.LogWarning("Refused self-service upgrade to {PlanType} for user {UserId}", planType, userId);
+            return StatusCode(StatusCodes.Status403Forbidden, new
+            {
+                error = "Paid plans can't be bought online yet. Contact us to upgrade."
+            });
+        }
         var currentSubscription = await _subscriptionRepository.GetActiveSubscriptionAsync(userId);
         
         if (currentSubscription == null)
@@ -133,6 +149,33 @@ public class SubscriptionController : ControllerBase
         var createdSubscription = await _subscriptionRepository.CreateAsync(newSubscription);
         
         return Ok(MapToSubscriptionDto(createdSubscription));
+    }
+
+    /// <summary>
+    /// Moves the signed-in user to the Free plan: any active paid subscription ends now. Free is what an
+    /// account without an active subscription has, so nothing new is created.
+    /// </summary>
+    [HttpPost("downgrade")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> DowngradeToFree()
+    {
+        var userId = GetCurrentUserId();
+        var active = (await _subscriptionRepository.GetByUserIdAsync(userId)).Where(s => s.IsActive).ToList();
+
+        foreach (var subscription in active)
+        {
+            subscription.IsActive = false;
+            subscription.AutoRenew = false;
+            subscription.EndDate = DateTime.UtcNow;
+            await _subscriptionRepository.UpdateAsync(subscription);
+        }
+
+        if (active.Count > 0)
+        {
+            _logger.LogInformation("User {UserId} switched to the Free plan", userId);
+        }
+
+        return NoContent();
     }
 
     /// <summary>

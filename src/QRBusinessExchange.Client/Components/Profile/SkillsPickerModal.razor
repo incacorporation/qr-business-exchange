@@ -1,0 +1,209 @@
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+@* Pick industries and business skills with checkboxes. Close hands the selection back as a
+   comma-separated list. Skills that aren't in the catalog (typed earlier, or added here) are kept. *@
+
+@if (IsOpen)
+{
+    <div class="modal d-block skills-picker" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="skills-picker-title"
+         @onkeydown="OnKeyDown" @ref="dialog">
+        <div class="modal-dialog modal-dialog-scrollable modal-lg modal-fullscreen-sm-down">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title h5" id="skills-picker-title">
+                        <i class="bi bi-stars me-2"></i>Industries and skills
+                    </h2>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="CloseAsync"></button>
+                </div>
+
+                <div class="modal-body">
+                    <input type="search" class="form-control mb-3" placeholder="Search industries and skills"
+                           aria-label="Search industries and skills" @bind="search" @bind:event="oninput" />
+
+                    <div class="skills-selected mb-3" aria-live="polite">
+                        <div class="small fw-semibold mb-1">
+                            Selected (@selected.Count)
+                            @if (selected.Count > 0)
+                            {
+                                <button type="button" class="btn btn-link btn-sm p-0 ms-2 align-baseline" @onclick="ClearAll">Clear all</button>
+                            }
+                        </div>
+                        @if (selected.Count == 0)
+                        {
+                            <div class="small text-muted">Nothing selected yet.</div>
+                        }
+                        else
+                        {
+                            <div class="d-flex flex-wrap gap-1">
+                                @foreach (var skill in selected)
+                                {
+                                    <span class="badge rounded-pill text-bg-primary skills-chip">
+                                        @skill
+                                        <button type="button" class="btn-close btn-close-white ms-1" aria-label="@($"Remove {skill}")"
+                                                @onclick="() => Toggle(skill)"></button>
+                                    </span>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    @foreach (var group in SkillCatalog.Groups)
+                    {
+                        var matches = group.Skills.Where(Matches).ToList();
+                        if (matches.Count == 0)
+                        {
+                            continue;
+                        }
+
+                        <fieldset class="mb-3">
+                            <legend class="h6 mb-2"><i class="bi @group.Icon me-2"></i>@group.Name</legend>
+                            <div class="skills-grid">
+                                @foreach (var skill in matches)
+                                {
+                                    var id = $"skill-{Slug(group.Name)}-{Slug(skill)}";
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="@id" checked="@IsSelected(skill)"
+                                               @onchange="() => Toggle(skill)" />
+                                        <label class="form-check-label" for="@id">@skill</label>
+                                    </div>
+                                }
+                            </div>
+                        </fieldset>
+                    }
+
+                    @if (!SkillCatalog.Groups.Any(g => g.Skills.Any(Matches)))
+                    {
+                        <p class="text-muted small">No industries or skills match “@search”. You can add it as your own below.</p>
+                    }
+
+                    <div class="border-top pt-3">
+                        <label for="skills-custom" class="form-label small fw-semibold">Not in the list? Add your own</label>
+                        <div class="input-group">
+                            <input id="skills-custom" class="form-control" placeholder="e.g., Drone Photography" maxlength="60"
+                                   @bind="custom" @bind:event="oninput" @onkeydown="OnCustomKeyDown" />
+                            <button type="button" class="btn btn-outline-primary" @onclick="AddCustom"
+                                    disabled="@string.IsNullOrWhiteSpace(custom)">Add</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" @onclick="CloseAsync">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show" @onclick="CloseAsync"></div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+
+    /// <summary>The current Skills value (comma-separated); its entries start out selected.</summary>
+    [Parameter] public string? Value { get; set; }
+
+    /// <summary>Raised on Close with the selected skills, comma-separated.</summary>
+    [Parameter] public EventCallback<string> OnClose { get; set; }
+
+    private ElementReference dialog;
+    private List<string> selected = new();
+    private string search = "";
+    private string custom = "";
+    private bool wasOpen;
+    private bool focusOnRender;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsOpen && !wasOpen)
+        {
+            selected = SkillCatalog.Parse(Value);
+            search = custom = "";
+            focusOnRender = true;
+            await SetBodyScrollLockAsync(true);
+        }
+        else if (!IsOpen && wasOpen)
+        {
+            await SetBodyScrollLockAsync(false);
+        }
+        wasOpen = IsOpen;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (focusOnRender && IsOpen)
+        {
+            focusOnRender = false;
+            await dialog.FocusAsync(); // so Escape works without moving focus into a field (no phone keyboard)
+        }
+    }
+
+    private bool Matches(string skill) =>
+        string.IsNullOrWhiteSpace(search) || skill.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private bool IsSelected(string skill) => selected.Contains(skill, StringComparer.OrdinalIgnoreCase);
+
+    private void Toggle(string skill)
+    {
+        var existing = selected.FindIndex(s => s.Equals(skill, StringComparison.OrdinalIgnoreCase));
+        if (existing >= 0)
+        {
+            selected.RemoveAt(existing);
+        }
+        else
+        {
+            selected.Add(skill);
+        }
+    }
+
+    private void ClearAll() => selected.Clear();
+
+    private void AddCustom()
+    {
+        // Commas separate skills, so they can't be part of one.
+        foreach (var skill in SkillCatalog.Parse(custom))
+        {
+            if (!IsSelected(skill))
+            {
+                selected.Add(skill);
+            }
+        }
+        custom = "";
+    }
+
+    private void OnCustomKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            AddCustom();
+        }
+    }
+
+    private Task OnKeyDown(KeyboardEventArgs e) => e.Key == "Escape" ? CloseAsync() : Task.CompletedTask;
+
+    private Task CloseAsync() => OnClose.InvokeAsync(SkillCatalog.Join(selected));
+
+    private static string Slug(string text) =>
+        new string(text.ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray());
+
+    private async Task SetBodyScrollLockAsync(bool locked)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync(locked ? "document.body.classList.add" : "document.body.classList.remove", "modal-open");
+        }
+        catch (JSException) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (wasOpen)
+        {
+            try
+            {
+                await SetBodyScrollLockAsync(false);
+            }
+            catch (JSDisconnectedException) { }
+        }
+    }
+}

@@ -1,0 +1,91 @@
+@using QRBusinessExchange.Client.Layout
+@inject NavigationManager Navigation
+@inject PortalAuthService PortalAuth
+@inject IJSRuntime JS
+
+@if (showSplash)
+{
+    <SplashScreen />
+}
+else
+{
+    <Router AppAssembly="typeof(Program).Assembly">
+        <Found Context="routeData">
+            <RouteView RouteData="routeData" DefaultLayout="typeof(MainLayout)" />
+            <FocusOnNavigate RouteData="routeData" Selector="h1" />
+        </Found>
+        <NotFound>
+            <PageTitle>Not found</PageTitle>
+            <LayoutView Layout="typeof(MainLayout)">
+                <p role="alert">Sorry, there's nothing at this address.</p>
+            </LayoutView>
+        </NotFound>
+    </Router>
+}
+
+@code {
+    /// <summary>How long the logo shows, counted from when the page started loading.</summary>
+    private static readonly TimeSpan SplashDuration = TimeSpan.FromSeconds(5);
+
+    private bool showSplash;
+
+    /// <summary>sessionStorage key marking that the app already started in this browser tab.
+    /// index.html reads the same key to choose its loading screen.</summary>
+    private const string StartedKey = "qrbound.started";
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Show the splash only the first time the app starts in this tab: reloads, and returning to the site
+        // later in the same tab, go straight to the page. Read synchronously (WebAssembly allows it) so the
+        // first render already knows, and the home page never flashes before the splash.
+        var js = (IJSInProcessRuntime)JS;
+        var alreadyStarted = js.Invoke<string?>("sessionStorage.getItem", StartedKey) is not null;
+        js.InvokeVoid("sessionStorage.setItem", StartedKey, "1");
+
+        // Only when the app is opened at its start page (a normal visit or the installed app's start_url).
+        // Links into a flow - password reset, SSO, QR approval, phone linking - open straight away,
+        // since several of them have short time limits.
+        if (alreadyStarted || !IsStartPage(Navigation.ToBaseRelativePath(Navigation.Uri)))
+        {
+            return;
+        }
+
+        showSplash = true;
+        try
+        {
+            // Check the session while the logo is showing, then wait out the rest of the 5 seconds.
+            var sessionTask = PortalAuth.GetSessionStateAsync();
+            var elapsedMs = await JS.InvokeAsync<double>("performance.now");
+            var remaining = SplashDuration - TimeSpan.FromMilliseconds(elapsedMs);
+            if (remaining > TimeSpan.Zero)
+            {
+                await Task.Delay(remaining);
+            }
+
+            switch (await sessionTask)
+            {
+                case PortalSessionState.Active:
+                    Navigation.NavigateTo("/dashboard", replace: true);
+                    break;
+                case PortalSessionState.Expired:
+                    // Clear the dead session so pages don't still treat the user as signed in.
+                    await PortalAuth.SignOutAsync();
+                    Navigation.NavigateTo($"/login?returnUrl={Uri.EscapeDataString("/dashboard")}", replace: true);
+                    break;
+                // None: stay on the home page.
+            }
+        }
+        catch (Exception ex)
+        {
+            // Never leave someone stuck on the splash; fall through to the home page.
+            Console.WriteLine($"[Splash] Startup check failed: {ex.Message}");
+        }
+        finally
+        {
+            showSplash = false;
+        }
+    }
+
+    private static bool IsStartPage(string relativePath) =>
+        relativePath.Length == 0 || relativePath[0] is '?' or '#';
+}

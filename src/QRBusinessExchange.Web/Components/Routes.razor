@@ -1,6 +1,17 @@
 ﻿<Router AppAssembly="typeof(Program).Assembly">
     <Found Context="routeData">
-        <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
+        <RouteView RouteData="routeData" DefaultLayout="typeof(MainLayout)" />
         <FocusOnNavigate RouteData="routeData" Selector="h1" />
     </Found>
 </Router>
+
+@code {
+    // InteractiveServer rendermode applied to this component
+    // This ensures all pages share the same Blazor circuit and DI scope
+    // State (like StateService) will persist across navigation
+}
+
+@* Apply InteractiveServer render mode to the entire router *@
+@rendermode InteractiveServer
+
+@using QRBusinessExchange.Client.Layout

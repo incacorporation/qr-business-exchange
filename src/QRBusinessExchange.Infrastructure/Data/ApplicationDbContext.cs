@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using QRBusinessExchange.Core.Entities;
 
@@ -5,8 +6,9 @@ namespace QRBusinessExchange.Infrastructure.Data;
 
 /// <summary>
 /// Entity Framework Core database context for the QR Business Exchange application
+/// Inherits from IdentityDbContext to provide ASP.NET Core Identity support
 /// </summary>
-public class ApplicationDbContext : DbContext
+public class ApplicationDbContext : IdentityDbContext
 {
     /// <summary>
     /// Initializes a new instance of the <see cref="ApplicationDbContext"/> class
@@ -67,6 +69,27 @@ public class ApplicationDbContext : DbContext
     /// </summary>
     public DbSet<UsageAnalytics> UsageAnalytics { get; set; } = null!;
 
+    /// <summary>Businesses (tenants) using the SSO core</summary>
+    public DbSet<Business> Businesses { get; set; } = null!;
+
+    /// <summary>Business memberships</summary>
+    public DbSet<BusinessMember> BusinessMembers { get; set; } = null!;
+
+    /// <summary>Applications registered for SSO</summary>
+    public DbSet<SsoApplication> SsoApplications { get; set; } = null!;
+
+    /// <summary>Single-use SSO authorization codes</summary>
+    public DbSet<SsoAuthorizationCode> SsoAuthorizationCodes { get; set; } = null!;
+
+    /// <summary>QR code login sessions</summary>
+    public DbSet<QrLoginSession> QrLoginSessions { get; set; } = null!;
+
+    /// <summary>People saved by scanning their business card</summary>
+    public DbSet<Contact> Contacts { get; set; } = null!;
+
+    /// <summary>Uploaded profile pictures and business logos</summary>
+    public DbSet<ProfileImage> ProfileImages { get; set; } = null!;
+
     /// <summary>
     /// Configures the database schema using Fluent API
     /// </summary>
@@ -75,9 +98,27 @@ public class ApplicationDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
+        // Configure Identity table names (optional - customize as needed)
+        modelBuilder.Entity<Microsoft.AspNetCore.Identity.IdentityUser>()
+            .ToTable("AspNetUsers");
+        modelBuilder.Entity<Microsoft.AspNetCore.Identity.IdentityRole>()
+            .ToTable("AspNetRoles");
+        modelBuilder.Entity<Microsoft.AspNetCore.Identity.IdentityUserRole<string>>()
+            .ToTable("AspNetUserRoles");
+        modelBuilder.Entity<Microsoft.AspNetCore.Identity.IdentityUserClaim<string>>()
+            .ToTable("AspNetUserClaims");
+        modelBuilder.Entity<Microsoft.AspNetCore.Identity.IdentityUserLogin<string>>()
+            .ToTable("AspNetUserLogins");
+        modelBuilder.Entity<Microsoft.AspNetCore.Identity.IdentityUserToken<string>>()
+            .ToTable("AspNetUserTokens");
+        modelBuilder.Entity<Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>>()
+            .ToTable("AspNetRoleClaims");
+
         ConfigureUser(modelBuilder);
         ConfigureQRCode(modelBuilder);
         ConfigureConnection(modelBuilder);
+        ConfigureContact(modelBuilder);
+        ConfigureProfileImage(modelBuilder);
         ConfigureSubscription(modelBuilder);
         ConfigurePayment(modelBuilder);
         ConfigureAdvertisement(modelBuilder);
@@ -85,6 +126,142 @@ public class ApplicationDbContext : DbContext
         ConfigurePasskeyCredential(modelBuilder);
         ConfigureEmailVerification(modelBuilder);
         ConfigureUsageAnalytics(modelBuilder);
+        ConfigureSso(modelBuilder);
+    }
+
+    /// <summary>
+    /// Configures the multi-business SSO / QR login entities
+    /// </summary>
+    private static void ConfigureSso(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Business>(entity =>
+        {
+            entity.ToTable("Businesses");
+            entity.HasKey(e => e.BusinessId);
+
+            entity.HasOne(e => e.Owner)
+                .WithMany()
+                .HasForeignKey(e => e.OwnerUserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("FK_Businesses_OwnerUser");
+
+            entity.HasIndex(e => e.Slug)
+                .IsUnique()
+                .HasDatabaseName("IX_Businesses_Slug");
+
+            entity.Property(e => e.BusinessId).HasDefaultValueSql("NEWID()");
+            entity.Property(e => e.IsActive).HasDefaultValue(true);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
+        });
+
+        modelBuilder.Entity<BusinessMember>(entity =>
+        {
+            entity.ToTable("BusinessMembers");
+            entity.HasKey(e => e.BusinessMemberId);
+
+            entity.HasOne(e => e.Business)
+                .WithMany(b => b.Members)
+                .HasForeignKey(e => e.BusinessId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_BusinessMembers_Businesses");
+
+            entity.HasOne(e => e.User)
+                .WithMany()
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("FK_BusinessMembers_Users");
+
+            entity.HasIndex(e => new { e.BusinessId, e.UserId })
+                .IsUnique()
+                .HasDatabaseName("IX_BusinessMembers_Business_User");
+
+            entity.HasIndex(e => e.UserId)
+                .HasDatabaseName("IX_BusinessMembers_UserId");
+
+            entity.Property(e => e.BusinessMemberId).HasDefaultValueSql("NEWID()");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+        });
+
+        modelBuilder.Entity<SsoApplication>(entity =>
+        {
+            entity.ToTable("SsoApplications");
+            entity.HasKey(e => e.SsoApplicationId);
+            entity.Ignore(e => e.IsConfidential);
+
+            entity.HasOne(e => e.Business)
+                .WithMany(b => b.Applications)
+                .HasForeignKey(e => e.BusinessId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_SsoApplications_Businesses");
+
+            entity.HasIndex(e => e.ClientId)
+                .IsUnique()
+                .HasDatabaseName("IX_SsoApplications_ClientId");
+
+            entity.HasIndex(e => e.BusinessId)
+                .HasDatabaseName("IX_SsoApplications_BusinessId");
+
+            entity.Property(e => e.SsoApplicationId).HasDefaultValueSql("NEWID()");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
+        });
+
+        modelBuilder.Entity<SsoAuthorizationCode>(entity =>
+        {
+            entity.ToTable("SsoAuthorizationCodes");
+            entity.HasKey(e => e.SsoAuthorizationCodeId);
+
+            entity.HasOne(e => e.Application)
+                .WithMany()
+                .HasForeignKey(e => e.SsoApplicationId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_SsoAuthorizationCodes_SsoApplications");
+
+            entity.HasOne(e => e.User)
+                .WithMany()
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("FK_SsoAuthorizationCodes_Users");
+
+            entity.HasIndex(e => e.CodeHash)
+                .IsUnique()
+                .HasDatabaseName("IX_SsoAuthorizationCodes_CodeHash");
+
+            entity.HasIndex(e => e.ExpiresAt)
+                .HasDatabaseName("IX_SsoAuthorizationCodes_ExpiresAt");
+
+            entity.Property(e => e.SsoAuthorizationCodeId).HasDefaultValueSql("NEWID()");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+            // Single-use enforcement: a second exchange of the same code fails on save
+            entity.Property(e => e.ConsumedAt).IsConcurrencyToken();
+        });
+
+        modelBuilder.Entity<QrLoginSession>(entity =>
+        {
+            entity.ToTable("QrLoginSessions");
+            entity.HasKey(e => e.QrLoginSessionId);
+
+            entity.HasOne(e => e.Application)
+                .WithMany()
+                .HasForeignKey(e => e.SsoApplicationId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_QrLoginSessions_SsoApplications");
+
+            entity.HasOne(e => e.ApprovedUser)
+                .WithMany()
+                .HasForeignKey(e => e.ApprovedUserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("FK_QrLoginSessions_Users");
+
+            entity.HasIndex(e => e.ExpiresAt)
+                .HasDatabaseName("IX_QrLoginSessions_ExpiresAt");
+
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+            // Optimistic concurrency so two approvals / two polls can't both win
+            entity.Property(e => e.Status).IsConcurrencyToken();
+        });
     }
 
     /// <summary>
@@ -159,6 +336,58 @@ public class ApplicationDbContext : DbContext
 
             entity.Property(e => e.ScansCount)
                 .HasDefaultValue(0);
+        });
+    }
+
+    /// <summary>
+    /// Configures the ProfileImage entity (one uploaded picture per user)
+    /// </summary>
+    private static void ConfigureProfileImage(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<ProfileImage>(entity =>
+        {
+            entity.ToTable("ProfileImages");
+            entity.HasKey(e => e.UserId);
+            entity.Property(e => e.Data).HasColumnType("varbinary(max)");
+
+            entity.HasOne(e => e.User)
+                .WithOne()
+                .HasForeignKey<ProfileImage>(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_ProfileImages_Users");
+        });
+    }
+
+    /// <summary>
+    /// Configures the Contact entity (business cards a user has saved)
+    /// </summary>
+    private static void ConfigureContact(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Contact>(entity =>
+        {
+            entity.ToTable("Contacts");
+            entity.HasKey(e => e.ContactId);
+
+            entity.HasOne(e => e.OwnerUser)
+                .WithMany()
+                .HasForeignKey(e => e.OwnerUserId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_Contacts_OwnerUser");
+
+            // Restrict: SQL Server allows only one cascade path to Users.
+            entity.HasOne(e => e.ContactUser)
+                .WithMany()
+                .HasForeignKey(e => e.ContactUserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("FK_Contacts_ContactUser");
+
+            // One entry per person per list; also serves "my contacts" lookups.
+            entity.HasIndex(e => new { e.OwnerUserId, e.ContactUserId })
+                .IsUnique()
+                .HasDatabaseName("IX_Contacts_Owner_Contact");
+
+            entity.HasIndex(e => e.ContactUserId)
+                .HasDatabaseName("IX_Contacts_ContactUserId");
         });
     }
 
@@ -429,9 +658,8 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => e.LastUpdated)
                 .HasDatabaseName("IX_UserLocations_LastUpdated");
 
-            // Spatial index for geography column
-            entity.HasIndex(e => e.GeographyPoint)
-                .HasDatabaseName("IX_UserLocations_GeographyPoint");
+            // Note: Spatial index for GeographyPoint column must be created via raw SQL in migrations
+            // Cannot use HasIndex() for geography/geometry types
 
             // Default values
             entity.Property(e => e.LocationId)
@@ -448,7 +676,7 @@ public class ApplicationDbContext : DbContext
                 .HasPrecision(10, 8);
 
             entity.Property(e => e.Longitude)
-                .HasPrecision(10, 8);
+                .HasPrecision(11, 8); // -180 to 180 needs three whole digits
         });
     }
 

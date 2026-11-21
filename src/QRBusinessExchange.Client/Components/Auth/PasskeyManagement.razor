@@ -1,0 +1,379 @@
+@using QRBusinessExchange.Client.Services
+@using QRBusinessExchange.Core.DTOs
+@inject WebAuthnService WebAuthnService
+@inject ApiService ApiService
+@inject StateService StateService
+@inject IJSRuntime JSRuntime
+@inject PortalAuthService PortalAuth
+
+<div class="passkey-management">
+    @if (!string.IsNullOrEmpty(Title))
+    {
+        <h5 class="mb-3">
+            <i class="bi bi-fingerprint me-2"></i>@Title
+        </h5>
+    }
+
+    @if (!isSupported || !isPlatformAuthAvailable)
+    {
+        <div class="alert alert-warning">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            Passkeys are not available on this device or browser.
+        </div>
+    }
+    else
+    {
+        @if (ShowIntro)
+        {
+            <p class="text-muted small mb-3">
+                Passkeys provide a secure, passwordless way to sign in using biometrics, PIN, or security key.
+            </p>
+        }
+
+        @if (isLoading)
+        {
+            <div class="text-center py-4">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+        }
+        else
+        {
+            <!-- Registered Passkeys List -->
+            @if (passkeys.Any())
+            {
+                <div class="list-group mb-3">
+                    @foreach (var passkey in passkeys)
+                    {
+                        <div class="list-group-item">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="mb-1">
+                                        <i class="bi bi-key me-2"></i>@passkey.DeviceName
+                                    </h6>
+                                    <small class="text-muted">
+                                        Created: @passkey.CreatedAt.ToLocalTime().ToString("MMM dd, yyyy")
+                                        @if (passkey.LastUsed.HasValue)
+                                        {
+                                            <span class="ms-2">
+                                                | Last used: @passkey.LastUsed.Value.ToLocalTime().ToString("MMM dd, yyyy")
+                                            </span>
+                                        }
+                                    </small>
+                                </div>
+                                <button class="btn btn-sm btn-outline-danger" 
+                                        @onclick="() => DeletePasskey(passkey.CredentialId)"
+                                        disabled="@isDeleting">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle me-2"></i>
+                    You don't have any passkeys registered yet.
+                </div>
+            }
+
+            <!-- Add Passkey Button -->
+            <button class="btn btn-primary" 
+                    @onclick="RegisterPasskey"
+                    disabled="@isRegistering">
+                @if (isRegistering)
+                {
+                    <span class="spinner-border spinner-border-sm me-2"></span>
+                    <span>Registering...</span>
+                }
+                else
+                {
+                    <i class="bi bi-plus-circle me-2"></i>
+                    <span>@AddLabel</span>
+                }
+            </button>
+
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div class="alert alert-danger mt-3" role="alert">
+                    <i class="bi bi-exclamation-triangle me-2"></i>@errorMessage
+                </div>
+            }
+
+            @if (!string.IsNullOrEmpty(successMessage))
+            {
+                <div class="alert alert-success mt-3" role="alert">
+                    <i class="bi bi-check-circle me-2"></i>@successMessage
+                </div>
+            }
+        }
+    }
+</div>
+
+@code {
+    /// <summary>Heading above the list; empty hides it.</summary>
+    [Parameter] public string? Title { get; set; } = "Passkey Management";
+
+    /// <summary>Text of the button that creates a passkey on this device.</summary>
+    [Parameter] public string AddLabel { get; set; } = "Add Passkey";
+
+    /// <summary>Show the short "what are passkeys" line (off where the page explains it already).</summary>
+    [Parameter] public bool ShowIntro { get; set; } = true;
+
+    /// <summary>Raised after a passkey was created on this device.</summary>
+    [Parameter] public EventCallback OnRegistered { get; set; }
+
+    private bool isSupported = false;
+    private bool isPlatformAuthAvailable = false;
+    private bool isLoading = true;
+    private bool isRegistering = false;
+    private bool isDeleting = false;
+    private string errorMessage = string.Empty;
+    private string successMessage = string.Empty;
+    private List<PasskeyInfoDto> passkeys = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CheckPasskeySupport();
+        await LoadPasskeys();
+    }
+
+    private async Task CheckPasskeySupport()
+    {
+        try
+        {
+            isSupported = await WebAuthnService.IsSupportedAsync();
+            if (isSupported)
+            {
+                isPlatformAuthAvailable = await WebAuthnService.IsPlatformAuthenticatorAvailableAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error checking passkey support: {ex.Message}");
+        }
+    }
+
+    /// <summary>Reloads the list (e.g. after a phone was linked from another component).</summary>
+    public async Task ReloadAsync()
+    {
+        await LoadPasskeys();
+        StateHasChanged();
+    }
+
+    private async Task LoadPasskeys()
+    {
+        isLoading = true;
+        errorMessage = string.Empty;
+
+        try
+        {
+            var response = await ApiService.GetAsync<PasskeyListDto>("api/passkey/list");
+            if (response != null)
+            {
+                passkeys = response.Passkeys;
+                // Keep the login page's default in step with the account: phone camera only while a device is registered.
+                await PortalAuth.RememberRegisteredDeviceAsync(passkeys.Count > 0);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading passkeys: {ex.Message}");
+            errorMessage = "Failed to load passkeys";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task RegisterPasskey()
+    {
+        if (StateService.CurrentUser == null)
+        {
+            errorMessage = "User not logged in";
+            return;
+        }
+
+        isRegistering = true;
+        errorMessage = string.Empty;
+        successMessage = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            // Step 1: Get registration options from server
+            var deviceName = await GetDeviceName();
+            var initRequest = new PasskeyRegistrationInitRequest
+            {
+                Email = StateService.CurrentUser.Email,
+                DeviceName = deviceName
+            };
+
+            var response = await ApiService.PostAsync("api/passkey/register/init", initRequest);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new PasskeyStepFailedException(await ApiService.ReadErrorAsync(response,
+                    "Couldn't start creating a passkey. Please try again."));
+            }
+
+            var options = await ApiService.ParseResponseAsync<PasskeyRegistrationOptionsDto>(response);
+
+            if (options == null)
+            {
+                throw new Exception("Invalid registration options");
+            }
+
+            // Step 2: Create credential with passkey
+            var credential = await WebAuthnService.RegisterPasskeyAsync(options);
+
+            if (credential == null)
+            {
+                throw new Exception("Passkey registration was cancelled or failed");
+            }
+
+            // Step 3: Complete registration on server
+            var completeRequest = new PasskeyRegistrationCompleteRequest
+            {
+                Email = StateService.CurrentUser.Email,
+                Challenge = options.Challenge,
+                Credential = new CredentialResponseDto
+                {
+                    Id = credential.Id,
+                    RawId = credential.RawId,
+                    Type = credential.Type,
+                    Response = new AttestationResponseDto
+                    {
+                        ClientDataJSON = credential.Response.ClientDataJSON,
+                        AttestationObject = credential.Response.AttestationObject
+                    },
+                    Transports = credential.Transports?.ToList()
+                },
+                DeviceName = deviceName
+            };
+
+            var completeResponse = await ApiService.PostAsync("api/passkey/register/complete", completeRequest);
+
+            if (!completeResponse.IsSuccessStatusCode)
+            {
+                throw new PasskeyStepFailedException(await ApiService.ReadErrorAsync(completeResponse,
+                    "The passkey couldn't be saved. Please try again."));
+            }
+
+            successMessage = $"{deviceName} is registered. You can now log in on it with your passkey.";
+            await LoadPasskeys();
+            await OnRegistered.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Passkey registration error: {ex.Message}");
+            errorMessage = DescribeRegistrationError(ex);
+        }
+        finally
+        {
+            isRegistering = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task DeletePasskey(string credentialId)
+    {
+        if (!await JSRuntime.InvokeAsync<bool>("confirm", "Are you sure you want to delete this passkey?"))
+        {
+            return;
+        }
+
+        isDeleting = true;
+        errorMessage = string.Empty;
+        successMessage = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var response = await ApiService.DeleteAsync($"api/passkey/{Uri.EscapeDataString(credentialId)}");
+
+            if (response.IsSuccessStatusCode)
+            {
+                successMessage = "Passkey deleted successfully";
+                await LoadPasskeys();
+            }
+            else
+            {
+                throw new Exception("Failed to delete passkey");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error deleting passkey: {ex.Message}");
+            errorMessage = "Failed to delete passkey";
+        }
+        finally
+        {
+            isDeleting = false;
+            StateHasChanged();
+        }
+    }
+
+    // e.g. "Safari on iPhone". (The old check looked for "Mac" first, and iPhones report
+    // "like Mac OS X", so every iPhone was saved as "Mac".)
+    private async Task<string> GetDeviceName()
+    {
+        try
+        {
+            var userAgent = await JSRuntime.InvokeAsync<string>("webAuthnInterop.getUserAgent");
+            return DeviceDescriber.Describe(userAgent);
+        }
+        catch
+        {
+            return "Unknown device";
+        }
+    }
+
+    /// <summary>A server-side step failed; the message is already meant for the user.</summary>
+    private sealed class PasskeyStepFailedException(string message) : Exception(message);
+
+    private static string DescribeRegistrationError(Exception ex)
+    {
+        if (ex is PasskeyStepFailedException)
+        {
+            return ex.Message;
+        }
+
+        // WebAuthn errors arrive as "<DOMException name>: <browser text>" inside a JSException.
+        var message = ex.Message;
+        if (message.Contains("InvalidStateError", StringComparison.OrdinalIgnoreCase))
+        {
+            return "This device already has a passkey for your account, so it's registered already.";
+        }
+        if (message.Contains("NotAllowedError", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("cancel", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("abort", StringComparison.OrdinalIgnoreCase))
+        {
+            return "The passkey prompt was cancelled or timed out. Nothing was registered.";
+        }
+        if (message.Contains("SecurityError", StringComparison.OrdinalIgnoreCase))
+        {
+            return "This site isn't allowed to create passkeys for its address. Please contact support.";
+        }
+        if (ex is HttpRequestException or TaskCanceledException)
+        {
+            return PortalAuthService.ConnectionProblem;
+        }
+
+        return "Couldn't register this device. Please try again.";
+    }
+}
+
+<style>
+    .passkey-management .list-group-item {
+        border-left: 4px solid var(--bs-primary);
+    }
+
+    .passkey-management .list-group-item:hover {
+        background-color: var(--bs-light);
+    }
+</style>

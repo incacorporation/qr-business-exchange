@@ -1,0 +1,106 @@
+@page "/verify-email"
+@layout AuthLayout
+@using QRBusinessExchange.Core.DTOs
+@using QRBusinessExchange.Client.Services
+@inject ApiService ApiService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+@* Opened from the emailed link: /verify-email#token=...  The token is in the URL fragment,
+   so it is never sent to any server in a request line, log or Referer header. *@
+
+<PageTitle>Verify your email - qrbound</PageTitle>
+
+<div class="auth-narrow">
+    <div class="text-center">
+        @if (state == State.Working)
+        {
+            <div class="spinner-border text-light" role="status" aria-hidden="true"></div>
+            <h1 class="auth-title mt-3">Verifying your email…</h1>
+        }
+        else if (state == State.Done)
+        {
+            <i class="bi bi-check-circle-fill display-4" style="color: #7CF29A;" aria-hidden="true"></i>
+            <h1 class="auth-title mt-3">Email verified</h1>
+            <p class="auth-subtitle">Thanks! Apps that use "Sign in with qrbound" can now match you by this email address.</p>
+            <a href="/dashboard" class="auth-btn">Continue</a>
+        }
+        else if (state == State.MissingToken)
+        {
+            <i class="bi bi-link-45deg display-4 text-white" aria-hidden="true"></i>
+            <h1 class="auth-title mt-3">This link isn't complete</h1>
+            <p class="auth-subtitle">Open the link from the email again, or request a new one.</p>
+            <a href="/email-verification" class="auth-btn">Send a new link</a>
+        }
+        else
+        {
+            <i class="bi bi-exclamation-triangle-fill display-4 text-warning" aria-hidden="true"></i>
+            <h1 class="auth-title mt-3">Couldn't verify your email</h1>
+            <p class="auth-subtitle">@errorMessage</p>
+            <a href="/email-verification" class="auth-btn">Send a new link</a>
+        }
+    </div>
+
+    <hr class="auth-divider" />
+
+    <nav class="auth-links" aria-label="Account help">
+        <a href="/login">Back to log in</a>
+    </nav>
+</div>
+
+@code {
+    private enum State { Working, Done, MissingToken, Failed }
+
+    private State state = State.Working;
+    private string? token;
+    private string errorMessage = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        var uri = new Uri(Navigation.Uri);
+        foreach (var part in uri.Fragment.TrimStart('#').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var pair = part.Split('=', 2);
+            if (pair.Length == 2 && pair[0] == "token")
+            {
+                token = Uri.UnescapeDataString(pair[1]);
+            }
+        }
+
+        if (string.IsNullOrEmpty(token))
+        {
+            state = State.MissingToken;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || state != State.Working)
+        {
+            return;
+        }
+
+        try
+        {
+            var response = await ApiService.PostAsync("api/auth/verify-email", new VerifyEmailRequest { Token = token! });
+            if (response.IsSuccessStatusCode)
+            {
+                state = State.Done;
+                // The link has done its job; take the token out of the address bar and history.
+                await JS.InvokeVoidAsync("history.replaceState", null, "", "/verify-email");
+            }
+            else
+            {
+                state = State.Failed;
+                errorMessage = await ApiService.ReadErrorAsync(response, "This verification link is invalid or has expired. Request a new one.");
+            }
+        }
+        catch (Exception)
+        {
+            state = State.Failed;
+            errorMessage = "Network error. Check your connection and open the link again.";
+        }
+
+        StateHasChanged();
+    }
+}

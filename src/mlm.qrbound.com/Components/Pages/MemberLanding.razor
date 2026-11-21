@@ -1,0 +1,136 @@
+@page "/r/{Slug}"
+@using System.ComponentModel.DataAnnotations
+@inject NetworkService Network
+@inject LeadService Leads
+
+@if (_member is null)
+{
+    <SeoHead Title="Member not found" Description="This member page isn't available." NoIndex="true" />
+    <section class="wrap narrow"><h1>Member not found</h1><p>Visit the <a href="/">home page</a> instead.</p></section>
+}
+else
+{
+    <SeoHead Title="@PageTitle" Description="@PageDescription" Path="@($"/r/{_member.Slug}")" OgType="profile" JsonLd="_jsonLd" />
+    <section class="wrap narrow">
+        <h1>@_member.Name@(_member.City is null ? "" : $" — QR business cards in {_member.City}")</h1>
+        <p class="lead">@(_member.Bio ?? "Independent QRBound member.")</p>
+
+        @if (_saved)
+        {
+            <div class="notice success" role="status">
+                <h2 class="h3">Thanks, @Form.Name!</h2>
+                <p>@FirstName(_member.Name) will be in touch soon. You can unsubscribe at any time.</p>
+            </div>
+        }
+        else
+        {
+            <h2>Get in touch</h2>
+            <EditForm Model="Form" FormName="lead" OnValidSubmit="SaveAsync" Enhance class="form">
+                <DataAnnotationsValidator />
+                <label>Name <InputText @bind-Value="Form.Name" autocomplete="name" /></label>
+                <ValidationMessage For="() => Form.Name" />
+                <label>Email <InputText type="email" @bind-Value="Form.Email" autocomplete="email" /></label>
+                <ValidationMessage For="() => Form.Email" />
+                <label>Phone (optional) <InputText type="tel" @bind-Value="Form.Phone" autocomplete="tel" /></label>
+                <ValidationMessage For="() => Form.Phone" />
+                <label>
+                    I'm interested in
+                    <InputSelect @bind-Value="Form.Interest">
+                        <option value="@LeadInterest.Customer">Buying products</option>
+                        <option value="@LeadInterest.Business">Becoming a member</option>
+                        <option value="@LeadInterest.Both">Both</option>
+                    </InputSelect>
+                </label>
+                <label>Message (optional) <InputTextArea @bind-Value="Form.Message" rows="3" /></label>
+                <ValidationMessage For="() => Form.Message" />
+                <label class="check">
+                    <InputCheckbox @bind-Value="Form.Consent" />
+                    I agree that @FirstName(_member.Name) may contact me about my enquiry by email or phone.
+                </label>
+                <ValidationMessage For="() => Form.Consent" />
+                @* Honeypot: hidden from people, filled in by bots. *@
+                <div class="hp" aria-hidden="true"><label>Website <InputText @bind-Value="Form.Website" tabindex="-1" autocomplete="off" /></label></div>
+                <button class="btn" type="submit">Send</button>
+            </EditForm>
+        }
+    </section>
+}
+
+@code {
+    [Parameter] public string Slug { get; set; } = "";
+    [SupplyParameterFromQuery] public string? Interest { get; set; }
+    [SupplyParameterFromQuery(Name = "product")] public string? ProductSlug { get; set; }
+    [SupplyParameterFromForm(FormName = "lead")] private LeadForm Form { get; set; } = default!;
+
+    private Member? _member;
+    private bool _saved;
+    private object? _jsonLd;
+
+    private string PageTitle => _member!.City is null
+        ? $"{_member.Name} — QR & NFC Business Cards"
+        : $"QR & NFC Business Cards in {_member.City} — {_member.Name}";
+
+    private string PageDescription =>
+        $"Get smart QR and NFC business cards and a live digital profile from {_member!.Name}" +
+        (_member.City is null ? "." : $", your local QRBound member in {_member.City}.");
+
+    protected override void OnInitialized() => Form ??= new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _member = await Network.GetMemberBySlugAsync(Slug);
+        if (_member is null) return;
+
+        // Pre-select interest from the link that brought the visitor here (only on first load, not on post-back).
+        if (Form.Name is null && Enum.TryParse<LeadInterest>(Interest, true, out var i)) Form.Interest = i;
+
+        _jsonLd = new Dictionary<string, object>
+        {
+            ["@context"] = "https://schema.org",
+            ["@type"] = "Person",
+            ["name"] = _member.Name,
+            ["url"] = $"https://mlm.qrbound.com/r/{_member.Slug}",
+            ["jobTitle"] = "Independent QRBound Member",
+            ["worksFor"] = new Dictionary<string, object> { ["@type"] = "Organization", ["name"] = "QRBound" },
+        };
+        if (_member.City is not null) ((Dictionary<string, object>)_jsonLd)["address"] = _member.City;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_member is null) return;
+        if (string.IsNullOrEmpty(Form.Website))
+        {
+            await Leads.CaptureAsync(new Lead
+            {
+                Name = Form.Name!.Trim(),
+                Email = Form.Email!,
+                Phone = string.IsNullOrWhiteSpace(Form.Phone) ? null : Form.Phone.Trim(),
+                Interest = Form.Interest,
+                Message = string.IsNullOrWhiteSpace(ProductSlug) ? Form.Message : $"[{ProductSlug}] {Form.Message}",
+                Source = "landing-page",
+                OwnerMemberId = _member.Id,
+                ConsentToContact = Form.Consent,
+            });
+        }
+        _saved = true; // Bots that fill the honeypot see the same thank-you and learn nothing.
+    }
+
+    private static string FirstName(string name) => name.Split(' ')[0];
+
+    public class LeadForm
+    {
+        [Required, StringLength(100)] public string? Name { get; set; }
+        [Required, EmailAddress, StringLength(200)] public string? Email { get; set; }
+        // Optional: RegularExpression treats an empty value as valid, unlike [Phone] with Blazor's empty-string binding.
+        [RegularExpression(@"^[0-9+()\-.\s]{7,25}$", ErrorMessage = "Enter a valid phone number or leave it blank.")]
+        public string? Phone { get; set; }
+        public LeadInterest Interest { get; set; } = LeadInterest.Customer;
+        [StringLength(1000)] public string? Message { get; set; }
+
+        [Range(typeof(bool), "true", "true", ErrorMessage = "Please agree so we can reply to you.")]
+        public bool Consent { get; set; }
+
+        public string? Website { get; set; }
+    }
+}

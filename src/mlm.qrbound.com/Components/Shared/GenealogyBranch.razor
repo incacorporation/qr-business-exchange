@@ -1,0 +1,32 @@
+<li class="@(Node.Stats?.Active == true ? "" : "inactive")">
+    @if (Node.Children.Count > 0)
+    {
+        <details open="@(Depth < 2)">
+            <summary>@Label</summary>
+            <ul>
+                @foreach (var child in Node.Children)
+                {
+                    <GenealogyBranch Node="child" Depth="Depth + 1" />
+                }
+            </ul>
+        </details>
+    }
+    else
+    {
+        <span class="leaf">@Label</span>
+    }
+</li>
+
+@code {
+    [Parameter, EditorRequired] public GenealogyNode Node { get; set; } = default!;
+    [Parameter] public int Depth { get; set; }
+
+    private RenderFragment Label => @<span>
+        <strong>@Node.Member.Name</strong>
+        @if (Node.Stats is { } s)
+        {
+            <span class="badge rank-@s.Rank.ToString().ToLowerInvariant()">@s.Rank</span>
+            <small>CV @s.CustomerVolume.ToString("N0") · GV @s.GroupVolume.ToString("N0") · @Node.Children.Count frontline</small>
+        }
+    </span>;
+}

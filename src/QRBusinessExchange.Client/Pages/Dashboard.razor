@@ -1,0 +1,701 @@
+﻿@page "/dashboard"
+@using QRBusinessExchange.Client.Map
+@using QRBusinessExchange.Client.Models
+@using QRBusinessExchange.Core.DTOs
+@using QRBusinessExchange.Client.Services
+@inject ApiService ApiService
+@inject StateService StateService
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+@inject GeolocationService GeolocationService
+@inject PingMeService PingMe
+@implements IDisposable
+
+<PageTitle>Dashboard - qrbound</PageTitle>
+
+<!-- Loading Overlay -->
+@if (isLoading)
+{
+    <div class="spinner-overlay active">
+        <div class="spinner-border text-light" style="width: 5rem; height: 5rem;" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+}
+
+<!-- Main Content -->
+<div class="container-fluid mt-4">
+    <!-- Advertisement Banner -->
+    <div class="ad-banner" @onclick="TrackAdClick">
+        <h4><i class="fas fa-rocket"></i> Special Offer: Premium Services 50% Off!</h4>
+        <p>Limited time offer - Click to learn more about our premium business solutions</p>
+    </div>
+
+    <!-- Subscription Type Indicator -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="alert alert-success d-flex justify-content-between align-items-center flex-wrap" role="alert">
+                <div class="mb-2 mb-md-0">
+                    <i class="fas fa-crown"></i> <strong>@subscriptionType Subscriber</strong> - You have full access to all features
+                </div>
+                <div class="credit-badge">
+                    <i class="fas fa-coins"></i> @creditsUsed / @creditsTotal Credits
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dashboard Statistics -->
+    <div class="row">
+        <div class="col-md-3 col-sm-6 mb-3">
+            <div class="dashboard-card stat-card">
+                <div class="icon">
+                    <i class="fas fa-handshake"></i>
+                </div>
+                <h3>@connectionCount</h3>
+                <p>Connections Made</p>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6 mb-3">
+            <div class="dashboard-card stat-card">
+                <div class="icon">
+                    <i class="fas fa-qrcode"></i>
+                </div>
+                <h3>@qrScans</h3>
+                <p>QR Code Scans</p>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6 mb-3">
+            <div class="dashboard-card stat-card">
+                <div class="icon">
+                    <i class="fas fa-eye"></i>
+                </div>
+                <h3>@profileViews</h3>
+                <p>Profile Views</p>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6 mb-3">
+            <div class="dashboard-card stat-card">
+                <div class="icon">
+                    <i class="fas fa-users"></i>
+                </div>
+                <h3>@pendingRequests</h3>
+                <p>Pending Requests</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Usage Graph -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="dashboard-card">
+                <h4><i class="fas fa-chart-line"></i> Usage Analytics - Last 30 Days</h4>
+                <div class="chart-container">
+                    <canvas id="usageChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Map Section -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="dashboard-card">
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap">
+                    <h4 class="mb-2 mb-md-0">
+                        <i class="fas fa-map-marked-alt"></i> Nearby Business Professionals
+                        @if (locationObtained)
+                        {
+                            <span class="badge bg-success ms-2" title="Using your current location">
+                                <i class="fas fa-location-arrow"></i> Current Location
+                            </span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-secondary ms-2" title="Using default location">
+                                <i class="fas fa-map-pin"></i> Default Location (Houston)
+                            </span>
+                        }
+                    </h4>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-primary btn-sm" @onclick="UseCurrentLocation" disabled="@isLoadingLocation">
+                            @if (isLoadingLocation)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                            }
+                            else
+                            {
+                                <i class="fas fa-location-crosshairs me-1"></i>
+                            }
+                            Use My Location
+                        </button>
+                        <select class="form-select d-inline-block w-auto" @bind="selectedFeet" @bind:after="UpdateMapDistance" aria-label="Search distance">
+                            @foreach (var feet in RangeOptionsFeet)
+                            {
+                                <option value="@feet">@RangeLabel(feet)</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <LeafletMap @ref="mapComponent" Users="@nearbyUsers" CurrentUserId="@StateService.CurrentUser?.UserId" 
+                           DefaultLat="@currentLatitude" DefaultLng="@currentLongitude" />
+                <div class="map-legend small mt-3" aria-label="Map key">
+                    <span><span class="map-legend-dot" style="background: @LeafletMap.YouColor"></span>You</span>
+                    <span><span class="map-legend-dot" style="background: @LeafletMap.ContactColor"></span>Your contacts</span>
+                    <span><span class="map-legend-dot" style="background: @LeafletMap.OtherColor"></span>Others with Ping Me on</span>
+                </div>
+                <div class="mt-2 small" aria-live="polite">
+                    @if (!string.IsNullOrEmpty(nearbyMessage))
+                    {
+                        <span class="text-muted"><i class="fas fa-info-circle me-1"></i>@nearbyMessage</span>
+                    }
+                    else if (locationObtained)
+                    {
+                        <span class="text-muted">
+                            @nearbyCount @(nearbyCount == 1 ? "person" : "people") with Ping Me on within @RangeLabel(selectedFeet).
+                            Tap a marker to see who it is.
+                            @if (lastMapRefresh is { } updated)
+                            {
+                                <span class="d-block">Updated @updated.ToString("T") · refreshes every @MapRefreshInterval.TotalSeconds seconds</span>
+                            }
+                            @if (accuracyNote != null)
+                            {
+                                <span class="d-block text-warning-emphasis">@accuracyNote</span>
+                            }
+                        </span>
+                    }
+                    @if (!pingMeEnabled)
+                    {
+                        <div class="text-muted mt-1">Turn on <strong>Ping Me</strong> below so people nearby can find you too.</div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Tools Section -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="dashboard-card">
+                <h4><i class="fas fa-tools"></i> Settings & Tools</h4>
+                <div class="row mt-4">
+                    <div class="col-md-6 mb-3">
+                        <button class="tool-button" @onclick="ShowQRCode">
+                            <i class="fas fa-qrcode"></i>
+                            <div class="tool-content">
+                                <h5>QR Code Business Card</h5>
+                                <p>Display your QR code for easy profile sharing</p>
+                            </div>
+                            <i class="fas fa-chevron-right"></i>
+                        </button>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <div class="tool-button">
+                            <i class="fas fa-broadcast-tower"></i>
+                            <div class="tool-content">
+                                <h5>Ping Me Status</h5>
+                                <p>@(pingMeEnabled ? "On: people nearby can find you on their map" : "Off: you don't appear on nearby maps")</p>
+                                @if (!string.IsNullOrEmpty(pingMeMessage))
+                                {
+                                    <p class="text-danger small mb-0">@pingMeMessage</p>
+                                }
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" @bind="pingMeEnabled" @bind:after="TogglePingMe" disabled="@pingMeBusy" aria-label="Ping Me">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <button class="tool-button" @onclick="NavigateToProfile">
+                            <i class="fas fa-user-edit"></i>
+                            <div class="tool-content">
+                                <h5>Edit Profile</h5>
+                                <p>Update your business profile and skills</p>
+                            </div>
+                            <i class="fas fa-chevron-right"></i>
+                        </button>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <button class="tool-button" @onclick="NavigateToSubscription">
+                            <i class="fas fa-credit-card"></i>
+                            <div class="tool-content">
+                                <h5>Manage Subscription</h5>
+                                <p>View billing and upgrade your plan</p>
+                            </div>
+                            <i class="fas fa-chevron-right"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- QR Code Modal -->
+<div class="modal fade" id="qrModal" tabindex="-1" aria-labelledby="qrModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="qrModalLabel">
+                    <i class="fas fa-qrcode"></i> Your QR Code Business Card
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body qr-container">
+                <div class="qr-code-display" id="qrCodeDisplay"></div>
+                <p class="text-muted">Scan this QR code to view your profile</p>
+                <div class="btn-group w-100 mt-3" role="group">
+                    <button type="button" class="btn btn-primary" @onclick="DownloadQRCode">
+                        <i class="fas fa-download"></i> Download
+                    </button>
+                    <button type="button" class="btn btn-info" @onclick="PrintQRCode">
+                        <i class="fas fa-print"></i> Print
+                    </button>
+                    <button type="button" class="btn btn-success" @onclick="ShareQRCode">
+                        <i class="fas fa-share-alt"></i> Share
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+private bool isLoading = true;
+private string subscriptionType = "Premium";
+private int creditsUsed = 75;
+private int creditsTotal = 100;
+private int connectionCount = 45;
+private int qrScans = 128;
+private int profileViews = 234;
+private int pendingRequests = 12;
+private bool pingMeEnabled;
+private bool pingMeBusy;
+private string? pingMeMessage;
+private string? nearbyMessage;
+private int nearbyCount;
+// Search distance in feet: 25 ft up to 1 mile (the server's limit).
+private static readonly int[] RangeOptionsFeet = { 25, 50, 100, 250, 500, 1000, 2640, 5280 };
+private int selectedFeet = 500; // default: close by, yet wider than a typical computer's location error
+
+private static string RangeLabel(int feet) => feet switch
+{
+    5280 => "1 mile",
+    2640 => "½ mile",
+    _ => $"{feet:N0} ft"
+};
+private string? qrCodeUrl;
+
+private int totalConnections = 0;
+private List<UsageDataPoint> usageData = new();
+private List<UserLocationDto> nearbyUsers = new();
+    
+// Geolocation
+private double currentLatitude = 29.7604; // Default: Houston, TX
+private double currentLongitude = -95.3698;
+private bool locationObtained = false;
+private bool isLoadingLocation = false;
+private LeafletMap? mapComponent;
+
+protected override async Task OnInitializedAsync()
+{
+    // Check authentication
+    if (StateService.CurrentUser == null)
+    {
+        Navigation.NavigateTo("/login");
+        return;
+    }
+
+    // Ping Me comes from the server, so the switch is the same on every device.
+    pingMeEnabled = await PingMe.LoadAsync();
+
+    // Load other dashboard data
+    await LoadDashboardData();
+}
+
+protected override async Task OnAfterRenderAsync(bool firstRender)
+{
+    if (firstRender)
+    {
+        try
+        {
+            // Get user's current location AFTER render (JS runtime available)
+            await GetCurrentLocationAsync();
+            
+            // People nearby need your real position; without it the map stays on the default spot, empty.
+            await LoadNearbyAsync(moveMap: true);
+            
+            // Initialize chart
+            await InitializeChart();
+
+            isLoading = false;
+            StateHasChanged();
+
+            // Keep your position and the people around you current while the Dashboard is open.
+            refreshTimer = new System.Threading.Timer(_ => InvokeAsync(RefreshMapAsync), null,
+                MapRefreshInterval, MapRefreshInterval);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error initializing dashboard: {ex.Message}");
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+}
+
+private async Task GetCurrentLocationAsync()
+    {
+        try
+        {
+            Console.WriteLine("Requesting current location...");
+            
+            var location = await GeolocationService.GetCurrentPositionAsync();
+            
+            if (location != null)
+            {
+                currentLatitude = location.Latitude;
+                currentLongitude = location.Longitude;
+                currentAccuracyMeters = location.Accuracy;
+                locationObtained = true;
+                
+                Console.WriteLine($"✓ Current location obtained (accuracy: {location.Accuracy}m)");
+
+                // While Ping Me is on, keep the position others see up to date.
+                await PingMe.ShareIfEnabledAsync(currentLatitude, currentLongitude);
+            }
+            else
+            {
+                Console.WriteLine("⚠ Could not obtain location, using default (Houston)");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠ Geolocation error: {ex.Message}, using default location");
+        }
+    }
+
+    private async Task UseCurrentLocation()
+    {
+        isLoadingLocation = true;
+        StateHasChanged();
+
+        try
+        {
+            Console.WriteLine("Manually requesting current location...");
+            
+            await GetCurrentLocationAsync();
+            if (locationObtained)
+            {
+                await LoadNearbyAsync(moveMap: true);
+            }
+            else
+            {
+                nearbyMessage = "Your location isn't available. Allow location access for qrbound in your browser, then try again.";
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠ Error getting current location: {ex.Message}");
+        }
+        finally
+        {
+            isLoadingLocation = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadDashboardData()
+    {
+        try
+        {
+            // Load statistics from API
+            var userId = StateService.CurrentUser?.UserId;
+            if (userId.HasValue)
+            {
+                // TODO: Load actual data from API
+                // var stats = await ApiService.GetAsync<DashboardStats>($"api/dashboard/{userId}");
+                
+                // For now, using mock data
+                subscriptionType = StateService.CurrentUser?.Role == "SuperAdmin" ? "Enterprise" : "Premium";
+            }
+
+            // Load analytics - get list of analytics for the last 30 days
+            var analyticsList = await ApiService.GetAsync<List<AnalyticsDto>>($"api/analytics/{StateService.CurrentUser?.UserId}");
+            if (analyticsList != null && analyticsList.Any())
+            {
+                totalConnections = analyticsList.Sum(a => a.ConnectionsMade);
+                usageData = new List<UsageDataPoint>
+                {
+                    new UsageDataPoint { Label = "QR Scans", Value = analyticsList.Sum(a => a.QRScans) },
+                    new UsageDataPoint { Label = "Profile Views", Value = analyticsList.Sum(a => a.ProfileViews) },
+                    new UsageDataPoint { Label = "Connections", Value = totalConnections }
+                };
+            }
+
+            // Nearby people are loaded once your location is known (LoadNearbyAsync).
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading dashboard data: {ex.Message}");
+        }
+    }
+
+    private async Task InitializeChart()
+    {
+        try
+        {
+            var labels = new[] { "Week 1", "Week 2", "Week 3", "Week 4" };
+            var data = new[] { 12, 19, 15, 25 };
+            
+            await JSRuntime.InvokeVoidAsync("chartInterop.createChart", "usageChart", labels, data);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error initializing chart: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Loads people with Ping Me on around your current position and puts them on the map, with a
+    /// marker for you. Without your location there's nothing to search around, so the map stays empty.
+    /// </summary>
+    private static readonly TimeSpan MapRefreshInterval = TimeSpan.FromSeconds(10);
+    private System.Threading.Timer? refreshTimer;
+    private bool refreshing;
+    private bool disposed;
+    private DateTime? lastMapRefresh;
+
+    // How precise the browser says your position is, in metres (0 = unknown). Computers locate themselves
+    // by Wi-Fi or network, often to within only a few hundred feet; phones with GPS to about 15-30 ft.
+    private double currentAccuracyMeters;
+    private string? accuracyNote; // shown under the results when they may be incomplete
+
+    /// <summary>
+    /// A note when your position is less precise than the search distance: people that close may be
+    /// placed outside the circle (or you may be), so a wider distance is needed to find them.
+    /// </summary>
+    private string? AccuracyNote()
+    {
+        var accuracyFeet = currentAccuracyMeters / 0.3048;
+        if (currentAccuracyMeters <= 0 || accuracyFeet <= selectedFeet)
+        {
+            return null;
+        }
+
+        var rounded = accuracyFeet < 1000 ? $"{Math.Round(accuracyFeet / 10) * 10:N0} ft" : $"{accuracyFeet / 5280:0.#} mi";
+        return $"This device only knows your location to within about {rounded}, so people within {RangeLabel(selectedFeet)} may not show. Choose a wider distance, or use a phone (GPS is more precise).";
+    }
+
+    /// <summary>
+    /// Every MapRefreshInterval (10 seconds): your current position (shared while Ping Me is on), then the people around you.
+    /// The map isn't moved, so panning and zooming stay as you left them. Skipped while the page is in the
+    /// background or a marker's pop-up is open (redrawing the markers would close it).
+    /// </summary>
+    private async Task RefreshMapAsync()
+    {
+        if (refreshing || disposed)
+        {
+            return;
+        }
+
+        refreshing = true;
+        try
+        {
+            if (!await JSRuntime.InvokeAsync<bool>("leafletInterop.canRefresh"))
+            {
+                return;
+            }
+
+            await GetCurrentLocationAsync();
+            await LoadNearbyAsync(moveMap: false);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or TaskCanceledException or ObjectDisposedException)
+        {
+            // Try again on the next tick.
+        }
+        finally
+        {
+            refreshing = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        disposed = true;
+        refreshTimer?.Dispose();
+    }
+
+    private async Task LoadNearbyAsync(bool moveMap)
+    {
+        nearbyMessage = null;
+        var users = new List<UserLocationDto>();
+
+        if (!locationObtained)
+        {
+            nearbyMessage = "Allow location access to see business professionals near you.";
+        }
+        else
+        {
+            users.Add(new UserLocationDto
+            {
+                UserId = StateService.CurrentUser?.UserId ?? Guid.Empty,
+                FirstName = StateService.CurrentUser?.FirstName ?? "You",
+                LastName = StateService.CurrentUser?.LastName ?? "",
+                Latitude = currentLatitude,
+                Longitude = currentLongitude
+            });
+
+            var (people, error) = await PingMe.GetNearbyAsync(currentLatitude, currentLongitude, selectedFeet / 5280.0);
+            users.AddRange(people.Select(p => new UserLocationDto
+            {
+                UserId = p.UserId,
+                FirstName = p.FirstName,
+                LastName = p.LastName,
+                CompanyName = p.CompanyName,
+                ProfileImageUrl = p.ProfileImageUrl,
+                Latitude = p.Latitude,
+                Longitude = p.Longitude,
+                DistanceMiles = p.DistanceMiles,
+                IsContact = p.IsContact,
+                LastSeen = p.LastSeen
+            }));
+            nearbyCount = people.Count;
+            lastMapRefresh = DateTime.Now;
+            nearbyMessage = error ?? (people.Count == 0
+                ? $"Nobody with Ping Me on within {RangeLabel(selectedFeet)}." + (AccuracyNote() is { } note ? " " + note : "")
+                : null);
+            accuracyNote = people.Count > 0 ? AccuracyNote() : null;
+        }
+
+        nearbyUsers = users;
+        if (mapComponent != null && await mapComponent.WaitUntilReadyAsync(TimeSpan.FromSeconds(5)))
+        {
+            await mapComponent.RefreshMarkers(nearbyUsers);
+            if (moveMap)
+            {
+                await mapComponent.SetViewAsync(currentLatitude, currentLongitude, ZoomFor(selectedFeet));
+            }
+            if (locationObtained)
+            {
+                await mapComponent.SetRangeAsync(currentLatitude, currentLongitude, selectedFeet * 0.3048);
+            }
+        }
+        StateHasChanged();
+    }
+
+    // Map zoom that fits the search circle (OpenStreetMap tiles go up to zoom 19).
+    private static int ZoomFor(int feet) => feet switch
+    {
+        <= 100 => 19,
+        <= 250 => 18,
+        <= 500 => 17,
+        <= 1000 => 16,
+        <= 2640 => 15,
+        _ => 14
+    };
+
+    private void TrackAdClick()
+    {
+        Console.WriteLine("Advertisement clicked");
+        // TODO: Track ad impression/click
+    }
+
+    private Task UpdateMapDistance() => LoadNearbyAsync(moveMap: true);
+
+    private async Task TogglePingMe()
+    {
+        pingMeBusy = true;
+        pingMeMessage = null;
+        StateHasChanged();
+
+        var result = await PingMe.SetAsync(pingMeEnabled);
+        pingMeEnabled = result.Enabled; // back to the saved value if it failed
+        pingMeMessage = result.Error;
+        if (result.Error == null && result.Enabled)
+        {
+            // Turning it on just shared this position; show the map around it (no second upload).
+            if (await GeolocationService.GetCurrentPositionAsync() is { } position)
+            {
+                (currentLatitude, currentLongitude, locationObtained) = (position.Latitude, position.Longitude, true);
+                currentAccuracyMeters = position.Accuracy;
+            }
+            await LoadNearbyAsync(moveMap: true);
+        }
+
+        pingMeBusy = false;
+        StateHasChanged();
+    }
+
+    private async Task ShowQRCode()
+    {
+        try
+        {
+            // Same link as the Business Card page: the public profile (QrCodeLinks accepts /user/{id}).
+            var profileUrl = $"{Navigation.BaseUri}user/{StateService.CurrentUser?.UserId}";
+            qrCodeUrl = profileUrl;
+            
+            // Generate QR code
+            await JSRuntime.InvokeVoidAsync("qrCodeInterop.generateQRCode", "qrCodeDisplay", profileUrl);
+            
+            // Show modal using Bootstrap
+            await JSRuntime.InvokeVoidAsync("eval", "$('#qrModal').modal('show');");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error showing QR code: {ex.Message}");
+        }
+    }
+
+    private async Task DownloadQRCode()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("qrCodeInterop.downloadQRCode", "qrCodeDisplay", "qr-business-card.png");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error downloading QR code: {ex.Message}");
+        }
+    }
+
+    private async Task PrintQRCode()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("qrCodeInterop.printQRCode", "qrCodeDisplay");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error printing QR code: {ex.Message}");
+        }
+    }
+
+    private async Task ShareQRCode()
+    {
+        try
+        {
+            if (!string.IsNullOrEmpty(qrCodeUrl))
+            {
+                await JSRuntime.InvokeVoidAsync("qrCodeInterop.shareQRCode", qrCodeUrl);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error sharing QR code: {ex.Message}");
+        }
+    }
+
+    private void NavigateToProfile()
+    {
+        Navigation.NavigateTo("/profile");
+    }
+
+    private void NavigateToSubscription()
+    {
+        Navigation.NavigateTo("/subscription");
+    }
+}

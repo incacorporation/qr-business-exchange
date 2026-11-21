@@ -1,13 +1,17 @@
-@page "/login"
+﻿@page "/login"
 @using QRBusinessExchange.Core.DTOs
 @using QRBusinessExchange.Web.Services
 @using QRBusinessExchange.Web.Models
+@using Microsoft.JSInterop
+@using Microsoft.Extensions.Configuration
 @inject ApiService ApiService
 @inject IndexedDBService IndexedDB
+@inject RenderModeService RenderMode
 @inject StateService StateService
 @inject NavigationManager Navigation
 @inject AuthenticationStateProvider AuthStateProvider
-@rendermode InteractiveServer
+@inject IConfiguration Configuration
+@implements IAsyncDisposable
 
 <PageTitle>Login - QR Business Exchange</PageTitle>
 
@@ -25,7 +29,7 @@
                         </div>
                     }
 
-                    <EditForm Model="loginRequest" OnValidSubmit="HandleLogin" FormName="loginForm">
+                    <EditForm Model="loginRequest" OnValidSubmit="HandleLogin">
                         <DataAnnotationsValidator />
                         
                         <div class="mb-3">
@@ -68,61 +72,234 @@
     private LoginRequest loginRequest = new();
     private string errorMessage = string.Empty;
     private bool isLoading = false;
+    private bool _disposed = false;
+    private bool _isInteractive = false;
+    private bool _indexedDBEnabled = false;
+
+    protected override void OnInitialized()
+    {
+        // Check if IndexedDB is enabled in configuration
+        _indexedDBEnabled = Configuration.GetValue<bool>("FeatureFlags:EnableIndexedDB", false);
+        Console.WriteLine($"IndexedDB enabled: {_indexedDBEnabled}");
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_disposed && _indexedDBEnabled)
+        {
+            try
+            {
+                _isInteractive = await RenderMode.IsInteractiveAsync();
+                Console.WriteLine($"Render mode interactive: {_isInteractive}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error checking render mode: {ex.Message}");
+                _isInteractive = false;
+            }
+        }
+    }
 
     private async Task HandleLogin()
     {
+        Console.WriteLine("=== HandleLogin STARTED ===");
+        Console.WriteLine($"Disposed: {_disposed}");
+
+        if (_disposed) return;
+
         isLoading = true;
         errorMessage = string.Empty;
         StateHasChanged();
 
         try
         {
+            Console.WriteLine($"Calling API: api/auth/login with email: {loginRequest.Email}");
             var response = await ApiService.PostAsync("api/auth/login", loginRequest);
-            
+
+            Console.WriteLine($"API Response Status: {response.StatusCode}");
+            Console.WriteLine($"API Response Success: {response.IsSuccessStatusCode}");
+
+            if (_disposed)
+            {
+                Console.WriteLine("Component disposed after API call - returning");
+                return;
+            }
+
             if (response.IsSuccessStatusCode)
             {
-                var result = await ApiService.ParseResponseAsync<LoginResponse>(response);
-                
-                if (result != null && !string.IsNullOrEmpty(result.Token))
+                Console.WriteLine("Parsing response...");
+                var result = await ApiService.ParseResponseAsync<AuthResponse>(response);
+
+                Console.WriteLine($"Parse result: {(result != null ? "SUCCESS" : "NULL")}");
+
+                if (_disposed)
                 {
-                    await IndexedDB.SetItemAsync("authToken", result.Token);
-                    await IndexedDB.SetItemAsync("userId", result.UserId.ToString());
+                    Console.WriteLine("Component disposed after parsing - returning");
+                    return;
+                }
+
+                if (result != null && !string.IsNullOrEmpty(result.AccessToken))
+                {
+                    Console.WriteLine("=== LOGIN SUCCESS ===");
+                    Console.WriteLine($"User: {result.User.Email}");
+                    Console.WriteLine($"Email Verified: {result.User.IsEmailVerified}");
+                    Console.WriteLine($"Token: {result.AccessToken.Substring(0, Math.Min(20, result.AccessToken.Length))}...");
+
+                    // Update state - map UserDto to UserProfileDto
+                    Console.WriteLine("Creating UserProfileDto...");
+                    StateService.CurrentUser = new UserProfileDto
+                    {
+                        UserId = result.User.UserId,
+                        Email = result.User.Email,
+                        FirstName = result.User.FirstName,
+                        LastName = result.User.LastName,
+                        CompanyName = result.User.CompanyName,
+                        PhoneNumber = result.User.PhoneNumber,
+                        ProfileImageUrl = result.User.ProfileImageUrl,
+                        Bio = result.User.Bio,
+                        Skills = result.User.Skills,
+                        ServicePricing = result.User.ServicePricing,
+                        IsEmailVerified = result.User.IsEmailVerified,
+                        Role = result.User.Role,
+                        CreatedAt = result.User.CreatedAt
+                    };
                     
-                    StateService.CurrentUser = result.User;
-                    StateService.CurrentSubscription = result.Subscription;
+                    Console.WriteLine($"StateService.CurrentUser set: {StateService.CurrentUser.Email}");
                     
+                    // Set authentication flag immediately after user is set
+                    StateService.IsAuthenticated = true;
+                    Console.WriteLine("StateService.IsAuthenticated set to true");
+                    
+                    // Subscription will be loaded from API later if needed
+                    StateService.CurrentSubscription = null;
+                    
+                    Console.WriteLine("Notifying auth state changed...");
                     if (AuthStateProvider is CustomAuthStateProvider customProvider)
                     {
                         customProvider.NotifyAuthenticationStateChanged();
                     }
-                    
-                    if (!result.User.IsEmailVerified)
+
+                    // Save to IndexedDB in background (non-blocking)
+                    if (_indexedDBEnabled && _isInteractive && !_disposed)
                     {
-                        Navigation.NavigateTo("/email-verification");
+                        Console.WriteLine("Starting IndexedDB save (background)...");
+                        // Fire-and-forget: Save tokens without blocking navigation
+                        _ = SaveToIndexedDBAsync(result.AccessToken, result.User.UserId.ToString());
                     }
                     else
                     {
-                        Navigation.NavigateTo("/dashboard");
+                        Console.WriteLine($"Skipping IndexedDB - Enabled: {_indexedDBEnabled}, Interactive: {_isInteractive}");
+                    }
+                    
+                    // Navigate immediately to dashboard (don't wait for IndexedDB)
+                    Console.WriteLine($"Preparing to navigate... (disposed: {_disposed})");
+                    
+                    if (!_disposed)
+                    {
+                        if (!result.User.IsEmailVerified)
+                        {
+                            Console.WriteLine("→ Navigating to: /email-verification");
+                            Navigation.NavigateTo("/email-verification");
+                        }
+                        else
+                        {
+                            Console.WriteLine("→ Navigating to: /dashboard");
+                            try
+                            {
+                                Navigation.NavigateTo("/dashboard");
+                                Console.WriteLine("✓ Navigation.NavigateTo called successfully");
+                            }
+                            catch (Exception navEx)
+                            {
+                                Console.WriteLine($"✗ Navigation error: {navEx.Message}");
+                                Console.WriteLine($"Stack: {navEx.StackTrace}");
+                            }
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine("⚠ Navigation skipped - component disposed");
                     }
                 }
                 else
                 {
+                    Console.WriteLine("⚠ Invalid response - result is null or token is empty");
                     errorMessage = "Invalid response from server.";
                 }
             }
             else
             {
+                Console.WriteLine($"⚠ Login failed - Status: {response.StatusCode}");
+                var errorContent = await response.Content.ReadAsStringAsync();
+                Console.WriteLine($"Error response: {errorContent}");
                 errorMessage = "Invalid email or password.";
             }
         }
+        catch (JSDisconnectedException ex)
+        {
+            Console.WriteLine($"✗ Circuit disconnected during login: {ex.Message}");
+            errorMessage = "Connection lost. Please try again.";
+        }
         catch (Exception ex)
         {
-            errorMessage = $"An error occurred: {ex.Message}";
+            if (!_disposed)
+            {
+                Console.WriteLine($"✗ Login error: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                errorMessage = $"An error occurred: {ex.Message}";
+            }
         }
         finally
         {
-            isLoading = false;
-            StateHasChanged();
+            Console.WriteLine("=== HandleLogin COMPLETED ===");
+            if (!_disposed)
+            {
+                isLoading = false;
+                StateHasChanged();
+            }
         }
     }
+
+    private async Task SaveToIndexedDBAsync(string token, string userId)
+    {
+        try
+        {
+            // Delay to ensure SignalR circuit is fully established
+            await Task.Delay(500);
+            
+            if (!_disposed && _isInteractive && _indexedDBEnabled)
+            {
+                Console.WriteLine("Saving auth token to IndexedDB...");
+                await IndexedDB.SetItemAsync("authToken", token);
+                
+                if (!_disposed)
+                {
+                    Console.WriteLine("Saving user ID to IndexedDB...");
+                    await IndexedDB.SetItemAsync("userId", userId);
+                }
+                
+                Console.WriteLine("✓ Auth data saved to IndexedDB successfully");
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+            Console.WriteLine("⚠ Circuit disconnected while saving to IndexedDB (non-critical)");
+        }
+        catch (TaskCanceledException)
+        {
+            Console.WriteLine("⚠ IndexedDB save cancelled (non-critical)");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠ IndexedDB save error (non-critical): {ex.Message}");
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        await Task.CompletedTask;
+    }
 }
+
+

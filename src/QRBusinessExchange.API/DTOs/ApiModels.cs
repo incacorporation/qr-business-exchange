@@ -59,7 +59,26 @@ public class UserDto
     public string? Skills { get; set; }
     public decimal? ServicePricing { get; set; }
     public bool IsEmailVerified { get; set; }
+    public string Role { get; set; } = "User";
     public DateTime CreatedAt { get; set; }
+
+    /// <summary>Which fields the user shows on their business card; only sent with their own profile.</summary>
+    public ProfileVisibilityDto? Visibility { get; set; }
+}
+
+/// <summary>
+/// Which profile fields people who open the user's business card or have them in their contacts can see.
+/// The name is always shown. In an update, a missing value leaves that setting unchanged.
+/// </summary>
+public class ProfileVisibilityDto
+{
+    public bool? ShowEmail { get; set; }
+    public bool? ShowCompanyName { get; set; }
+    public bool? ShowPhoneNumber { get; set; }
+    public bool? ShowBio { get; set; }
+    public bool? ShowSkills { get; set; }
+    public bool? ShowServicePricing { get; set; }
+    public bool? ShowProfileImage { get; set; }
 }
 
 public class UpdateProfileRequest
@@ -71,6 +90,12 @@ public class UpdateProfileRequest
     public string? Bio { get; set; }
     public string? Skills { get; set; }
     public decimal? ServicePricing { get; set; }
+
+    /// <summary>Link to a profile picture (http or https); empty removes it.</summary>
+    public string? ProfileImageUrl { get; set; }
+
+    /// <summary>Which fields to show on the business card (missing values are left unchanged).</summary>
+    public ProfileVisibilityDto? Visibility { get; set; }
 }
 
 public class UpdateLocationRequest

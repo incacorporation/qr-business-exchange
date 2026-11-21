@@ -1,0 +1,156 @@
+@page "/email-verification"
+@layout AuthLayout
+@implements IDisposable
+@using System.ComponentModel.DataAnnotations
+@using QRBusinessExchange.Core.DTOs
+@using QRBusinessExchange.Client.Services
+@inject ApiService ApiService
+@inject IndexedDBService IndexedDB
+
+@* Shown after sign-up or login while the email address isn't verified yet. Verification happens
+   by opening the emailed link (/verify-email#token=...); this page only explains that and sends a
+   new link. Signed-in users get one for their own account; others enter their email. *@
+
+<PageTitle>Verify your email - qrbound</PageTitle>
+
+<div class="auth-narrow">
+    <div class="text-center">
+        <i class="bi bi-envelope-check display-4 text-white" aria-hidden="true"></i>
+        <h1 class="auth-title mt-3">Verify your email</h1>
+        <p class="auth-subtitle">
+            We've emailed you a link. Open it on any device to confirm your address.
+            The link works for 24 hours.
+        </p>
+    </div>
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger auth-alert" role="alert">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>@errorMessage
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(successMessage))
+    {
+        <div class="alert alert-success auth-alert" role="alert">
+            <i class="bi bi-check-circle-fill me-2"></i>@successMessage
+        </div>
+    }
+
+    @if (signedIn)
+    {
+        <button type="button" class="auth-btn" @onclick="() => ResendAsync(null)" disabled="@(working || cooldown > 0)">
+            @if (working)
+            {
+                <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+            }
+            <span>@(cooldown > 0 ? $"Send a new link in {cooldown} s" : "Send a new link")</span>
+        </button>
+    }
+    else
+    {
+        <EditForm Model="form" OnValidSubmit="() => ResendAsync(form.Email)">
+            <DataAnnotationsValidator />
+
+            <div class="auth-field mb-4">
+                <label for="email" class="visually-hidden">Email</label>
+                <InputText id="email" type="email" class="form-control auth-input" placeholder="Email you registered with"
+                           @bind-Value="form.Email" autocomplete="email" disabled="@working" />
+                <ValidationMessage For="() => form.Email" />
+            </div>
+
+            <button type="submit" class="auth-btn" disabled="@(working || cooldown > 0)">
+                @if (working)
+                {
+                    <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                }
+                <span>@(cooldown > 0 ? $"Send a new link in {cooldown} s" : "Send a new link")</span>
+            </button>
+        </EditForm>
+    }
+
+    <p class="auth-subtitle small text-center mt-3">Nothing there? Check your spam folder.</p>
+
+    <hr class="auth-divider" />
+
+    <nav class="auth-links" aria-label="Account help">
+        <a href="/dashboard">Go to dashboard</a>
+        <a href="/login">Back to log in</a>
+    </nav>
+</div>
+
+@code {
+    private readonly ResendForm form = new();
+    private bool signedIn;
+    private bool working;
+    private int cooldown;
+    private string? errorMessage;
+    private string? successMessage;
+    private System.Threading.Timer? cooldownTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        signedIn = !string.IsNullOrEmpty(await IndexedDB.GetItemAsync<string>("authToken"));
+    }
+
+    private async Task ResendAsync(string? email)
+    {
+        working = true;
+        errorMessage = null;
+        successMessage = null;
+        try
+        {
+            var response = await ApiService.PostAsync("api/auth/resend-verification", new ResendVerificationRequest
+            {
+                Email = string.IsNullOrWhiteSpace(email) ? null : email.Trim()
+            });
+
+            if (response.IsSuccessStatusCode)
+            {
+                successMessage = await ApiService.ReadErrorAsync(response, "If that account still needs verifying, we've sent a new link.");
+                StartCooldown();
+            }
+            else
+            {
+                errorMessage = await ApiService.ReadErrorAsync(response, "Couldn't send a new link. Please try again later.");
+                // The saved session may have expired; fall back to asking for the email address.
+                if (signedIn && response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+                {
+                    signedIn = false;
+                }
+            }
+        }
+        catch (Exception)
+        {
+            errorMessage = "Network error. Check your connection and try again.";
+        }
+        finally
+        {
+            working = false;
+        }
+    }
+
+    private void StartCooldown()
+    {
+        cooldown = 60;
+        cooldownTimer?.Dispose();
+        cooldownTimer = new System.Threading.Timer(_ =>
+        {
+            cooldown--;
+            if (cooldown <= 0)
+            {
+                cooldownTimer?.Dispose();
+            }
+            InvokeAsync(StateHasChanged);
+        }, null, 1000, 1000);
+    }
+
+    public void Dispose() => cooldownTimer?.Dispose();
+
+    private sealed class ResendForm
+    {
+        [Required(ErrorMessage = "Enter your email")]
+        [EmailAddress(ErrorMessage = "Enter a valid email address")]
+        public string Email { get; set; } = string.Empty;
+    }
+}

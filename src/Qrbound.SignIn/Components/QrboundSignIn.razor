@@ -1,0 +1,242 @@
+@namespace Qrbound.SignIn
+@implements IAsyncDisposable
+@inject QrboundClient Client
+@inject QrboundAuthState AuthState
+@inject NavigationManager Navigation
+
+@* Shows a qrbound QR code, waits for the user to approve it on their phone, exchanges the code
+   (PKCE) and raises OnSignedIn. Handles expiry, denial and retry. *@
+
+<div class="qrbound-signin @CssClass" data-status="@status">
+    @if (!string.IsNullOrEmpty(Title))
+    {
+        <h3 class="qrbound-title">@Title</h3>
+    }
+
+    @switch (view)
+    {
+        case View.Loading:
+            <div class="qrbound-center"><span class="qrbound-spinner" role="status" aria-label="Loading"></span></div>
+            break;
+
+        case View.Qr:
+            <div class="qrbound-qr @(status == QrboundStatus.Scanned ? "qrbound-dimmed" : null)">
+                @((MarkupString)qrSvg!)
+            </div>
+            @if (status == QrboundStatus.Scanned)
+            {
+                <p class="qrbound-lead">Scanned. Check your phone.</p>
+            }
+            else
+            {
+                <p class="qrbound-lead">Scan with your phone's camera</p>
+            }
+            <p class="qrbound-hint">
+                @if (Mode == QrboundMode.Register)
+                {
+                    <text>No qrbound account yet? Your phone will help you create one. Then tap the number below and confirm with your passkey.</text>
+                }
+                else
+                {
+                    <text>On your phone, tap the number below, then confirm with your passkey.</text>
+                }
+            </p>
+            <div class="qrbound-code" aria-label="Verification number">@session!.VerificationCode</div>
+            <p class="qrbound-hint">Expires in @SecondsLeft s</p>
+            break;
+
+        case View.Completing:
+            <div class="qrbound-center"><span class="qrbound-spinner" role="status"></span></div>
+            <p class="qrbound-lead">Approved. Signing you in…</p>
+            break;
+
+        case View.Done:
+            <p class="qrbound-lead">Signed in as @(AuthState.User?.Name ?? AuthState.User?.Email)</p>
+            break;
+
+        case View.Problem:
+            <div class="qrbound-alert" role="alert">@message</div>
+            <button type="button" class="qrbound-button" @onclick="RestartAsync">New QR code</button>
+            break;
+    }
+
+    @if (ShowRedirectFallback && view is View.Qr or View.Problem)
+    {
+        <p class="qrbound-fallback">
+            <button type="button" class="qrbound-link" @onclick="RedirectAsync">Use a passkey on this device instead</button>
+        </p>
+    }
+</div>
+
+@code {
+    private enum View { Loading, Qr, Completing, Done, Problem }
+
+    /// <summary>Sign in, or let the phone create a qrbound account first.</summary>
+    [Parameter] public QrboundMode Mode { get; set; } = QrboundMode.SignIn;
+
+    /// <summary>Optional heading.</summary>
+    [Parameter] public string? Title { get; set; }
+
+    [Parameter] public string? CssClass { get; set; }
+
+    /// <summary>Show a link to qrbound's own sign-in page (full redirect) as an alternative.</summary>
+    [Parameter] public bool ShowRedirectFallback { get; set; } = true;
+
+    /// <summary>Where the redirect fallback returns after the callback page completes.</summary>
+    [Parameter] public string? ReturnUrl { get; set; }
+
+    /// <summary>Raised once the user is signed in. <see cref="QrboundAuthState"/> is already updated.</summary>
+    [Parameter] public EventCallback<QrboundSignInResult> OnSignedIn { get; set; }
+
+    /// <summary>Raised when sign-in fails (denied, expired, membership refused, network).</summary>
+    [Parameter] public EventCallback<QrboundException> OnError { get; set; }
+
+    /// <summary>Start a new QR code automatically when one expires (at most this many times).</summary>
+    [Parameter] public int AutoRenewCount { get; set; } = 2;
+
+    private View view = View.Loading;
+    private QrboundQrSession? session;
+    private string? qrSvg;
+    private string status = QrboundStatus.Pending;
+    private string? message;
+    private CancellationTokenSource? cts;
+    private int renewals;
+
+    private int SecondsLeft => session == null ? 0 : Math.Max(0, (int)(session.ExpiresAt - DateTimeOffset.UtcNow).TotalSeconds);
+
+    // Start after the first render so prerendering doesn't create a QR session nobody sees.
+    protected override Task OnAfterRenderAsync(bool firstRender) => firstRender ? StartAsync() : Task.CompletedTask;
+
+    private Task RestartAsync()
+    {
+        renewals = 0;
+        return StartAsync();
+    }
+
+    private async Task StartAsync()
+    {
+        cts?.Cancel();
+        cts?.Dispose();
+        cts = new CancellationTokenSource();
+        var token = cts.Token;
+
+        view = View.Loading;
+        message = null;
+        status = QrboundStatus.Pending;
+        StateHasChanged();
+
+        try
+        {
+            session = await Client.StartQrSignInAsync(Mode, token);
+            qrSvg = QrSvg.Render(session.ApproveUrl, "qrbound sign-in QR code");
+            view = View.Qr;
+            StateHasChanged();
+            await PollLoopAsync(session, token);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (QrboundException ex) { await FailAsync(ex); }
+        catch (HttpRequestException) { await FailAsync(new QrboundException("network_error", "Could not reach qrbound. Check your connection and try again.")); }
+    }
+
+    private async Task PollLoopAsync(QrboundQrSession current, CancellationToken token)
+    {
+        var nextPoll = DateTimeOffset.UtcNow + current.PollInterval;
+        var failures = 0;
+
+        while (!token.IsCancellationRequested)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(1), token);
+
+            if (DateTimeOffset.UtcNow > current.ExpiresAt.AddSeconds(5))
+            {
+                await OnExpiredAsync();
+                return;
+            }
+
+            if (DateTimeOffset.UtcNow < nextPoll)
+            {
+                StateHasChanged(); // countdown
+                continue;
+            }
+            nextPoll = DateTimeOffset.UtcNow + current.PollInterval;
+
+            QrboundPollResult result;
+            try
+            {
+                result = await Client.PollAsync(current, token);
+                failures = 0;
+            }
+            catch (HttpRequestException) when (++failures < 5)
+            {
+                continue; // brief network hiccup: keep the QR code up
+            }
+            catch (QrboundException ex) when (ex.Error == "rate_limited" && ++failures < 5)
+            {
+                nextPoll = DateTimeOffset.UtcNow + current.PollInterval * 3;
+                continue;
+            }
+
+            status = result.Status;
+            switch (result.Status)
+            {
+                case QrboundStatus.Approved when result.Code != null:
+                    view = View.Completing;
+                    StateHasChanged();
+                    var signedIn = await Client.CompleteAsync(current, result.Code, token);
+                    AuthState.SignIn(signedIn);
+                    view = View.Done;
+                    StateHasChanged();
+                    await OnSignedIn.InvokeAsync(signedIn);
+                    return;
+
+                case QrboundStatus.Expired:
+                    await OnExpiredAsync();
+                    return;
+
+                case QrboundStatus.Denied:
+                    await FailAsync(new QrboundException("access_denied", "The sign-in was declined on the phone. Nobody was signed in."));
+                    return;
+
+                case QrboundStatus.Consumed:
+                case QrboundStatus.Approved:
+                    await FailAsync(new QrboundException("invalid_state", "This QR code was already used. Please scan a new one."));
+                    return;
+            }
+
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnExpiredAsync()
+    {
+        if (renewals++ < AutoRenewCount)
+        {
+            await StartAsync();
+            return;
+        }
+
+        await FailAsync(new QrboundException("expired", "The QR code expired."));
+    }
+
+    private async Task FailAsync(QrboundException ex)
+    {
+        view = View.Problem;
+        message = ex.Message;
+        StateHasChanged();
+        await OnError.InvokeAsync(ex);
+    }
+
+    private async Task RedirectAsync()
+    {
+        cts?.Cancel();
+        var url = await Client.BuildAuthorizeUrlAsync(ReturnUrl ?? Navigation.Uri);
+        Navigation.NavigateTo(url, forceLoad: true);
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        cts?.Cancel();
+        cts?.Dispose();
+        return ValueTask.CompletedTask;
+    }
+}

@@ -1,0 +1,74 @@
+@page "/admin/seo"
+@layout AdminLayout
+@rendermode InteractiveServer
+@inject NetworkService Network
+@inject AiAssistant Ai
+
+<SeoHead Title="SEO pages" Description="SEO pages." NoIndex="true" />
+<h1>SEO pages</h1>
+<p class="muted">
+    Every active member gets an indexable landing page at <code>/r/&lt;slug&gt;</code> with local keywords, Person
+    structured data and a lead form. All public pages are in <a href="/sitemap.xml" target="_blank">sitemap.xml</a>.
+</p>
+
+<section class="panel">
+    <h2>Draft landing-page copy with AI</h2>
+    <div class="toolbar">
+        <label>Member
+            <select @bind="_memberId">
+                @foreach (var m in _members) { <option value="@m.Id">@m.Name (@m.City)</option> }
+            </select>
+        </label>
+        <label>Search phrase <input @bind="_keyword" /></label>
+        <button class="btn" disabled="@(_busy || !Ai.IsAvailable)" @onclick="DraftAsync">Draft</button>
+    </div>
+    @if (!Ai.IsAvailable) { <p class="muted">Set ANTHROPIC_API_KEY to turn this on.</p> }
+    @if (_copy is not null)
+    {
+        <dl class="seo-preview">
+            <dt>Title (@_copy.Title.Length chars)</dt><dd>@_copy.Title</dd>
+            <dt>Meta description (@_copy.MetaDescription.Length chars)</dt><dd>@_copy.MetaDescription</dd>
+            <dt>Headline</dt><dd>@_copy.Headline</dd>
+            <dt>Body</dt><dd><pre>@_copy.Body</pre></dd>
+            <dt>Compliance</dt>
+            <dd>@{ var issues = ComplianceRules.Check(_copy.Title + " " + _copy.MetaDescription + " " + _copy.Body); }
+                @(issues.Count == 0 ? "No rule problems found." : string.Join("; ", issues.Select(i => i.Phrase)))</dd>
+        </dl>
+    }
+</section>
+
+<section class="panel">
+    <h2>Member landing pages</h2>
+    <table class="table">
+        <thead><tr><th>Member</th><th>City</th><th>Page</th></tr></thead>
+        <tbody>
+            @foreach (var m in _members)
+            {
+                <tr><td>@m.Name</td><td>@m.City</td><td><a href="/r/@m.Slug" target="_blank">/r/@m.Slug</a></td></tr>
+            }
+        </tbody>
+    </table>
+</section>
+
+@code {
+    private List<Member> _members = [];
+    private int _memberId;
+    private string _keyword = "NFC business cards";
+    private bool _busy;
+    private AiSeoCopy? _copy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _members = (await Network.GetMembersAsync()).Where(m => m.SponsorId != null && m.IsActiveAccount).ToList();
+        _memberId = _members.FirstOrDefault()?.Id ?? 0;
+    }
+
+    private async Task DraftAsync()
+    {
+        var member = _members.FirstOrDefault(m => m.Id == _memberId);
+        if (member is null) return;
+        _busy = true;
+        _copy = await Ai.DraftLandingCopyAsync(member, _keyword);
+        _busy = false;
+    }
+}

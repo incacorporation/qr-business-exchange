@@ -1,0 +1,15 @@
+@inherits LayoutComponentBase
+
+<header>
+    <strong>Acme Demo App</strong>
+    <AuthorizeView>
+        <Authorized>
+            <span>@context.User.Identity?.Name · <button class="qrbound-link" @onclick="() => Auth.SignOut()">Sign out</button></span>
+        </Authorized>
+    </AuthorizeView>
+</header>
+<main>@Body</main>
+
+@code {
+    [Inject] private QrboundAuthState Auth { get; set; } = default!;
+}

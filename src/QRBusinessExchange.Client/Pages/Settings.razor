@@ -1,0 +1,230 @@
+@page "/settings"
+@using QRBusinessExchange.Client.Services
+@using QRBusinessExchange.Core.DTOs
+@using QRBusinessExchange.Client.Components.Tools
+@using QRBusinessExchange.Client.Components.Auth
+@inject ApiService ApiService
+@inject NavigationManager Navigation
+@inject StateService StateService
+@inject PingMeService PingMe
+
+<PageTitle>Settings - qrbound</PageTitle>
+
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <h2 class="mb-4">Settings</h2>
+        </div>
+    </div>
+
+    @if (!StateService.IsAuthenticated)
+    {
+        Navigation.NavigateTo("/login");
+    }
+    else
+    {
+        <div class="row g-4">
+            <div class="col-12">
+                <div class="card shadow">
+                    <div class="card-body">
+                        <h5 class="card-title">Ping Me Feature</h5>
+                        <p class="text-muted">Allow others to ping you when nearby</p>
+                        <PingMeToggle @key="pingMeVersion" IsEnabled="@StateService.IsPingMeEnabled" Disabled="@pingMeBusy" OnToggle="HandlePingMeToggle" />
+                        <small class="text-muted d-block mt-2">
+                            When on, your location is shared so people nearby can find you on their map. Turn it off to hide.
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Text messages: optional consent, unchecked unless the user has opted in -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card shadow">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="bi bi-chat-text me-2"></i>Text messages</h5>
+                        @if (smsConsent == null)
+                        {
+                            <p class="text-muted mb-0">@(smsError ?? "Loading...")</p>
+                        }
+                        else
+                        {
+                            <div class="form-check">
+                                <input id="smsOptInSetting" type="checkbox" class="form-check-input"
+                                       checked="@smsConsent.OptIn" disabled="@(smsBusy || smsConsent.PhoneNumber == null)"
+                                       @onchange="OnSmsConsentChangedAsync" />
+                                <label for="smsOptInSetting" class="form-check-label small">
+                                    <SmsConsentText NumberText="@(smsConsent.PhoneNumber ?? "your mobile number")" />
+                                </label>
+                            </div>
+                            @if (smsConsent.PhoneNumber == null)
+                            {
+                                <small class="text-muted d-block mt-2">
+                                    Add your mobile number on your <a href="/profile">profile</a> to turn on text messages.
+                                </small>
+                            }
+                            else if (smsConsent.OptIn && smsConsent.OptInAt is { } since)
+                            {
+                                <small class="text-muted d-block mt-2">On since @since.ToLocalTime().ToString("MMM d, yyyy"). Untick the box or reply STOP to any text to turn them off.</small>
+                            }
+                            @if (smsError != null)
+                            {
+                                <div class="text-danger small mt-2">@smsError</div>
+                            }
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card shadow">
+                    <div class="card-body">
+                        <h5 class="card-title">Account Settings</h5>
+                        <div class="list-group list-group-flush">
+                            <a href="/profile" class="list-group-item list-group-item-action">
+                                <i class="bi bi-person"></i> Edit Profile
+                            </a>
+                            <a href="/subscriptions" class="list-group-item list-group-item-action">
+                                <i class="bi bi-credit-card"></i> Manage Subscription
+                            </a>
+                            <button class="list-group-item list-group-item-action text-danger" @onclick="HandleLogout">
+                                <i class="bi bi-box-arrow-right"></i> Logout
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Passkey Management Section -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card shadow">
+                    <div class="card-body">
+                        <PasskeyManagement @ref="passkeyManagement" />
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Link a phone: register a passkey on a phone by scanning a QR code -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card shadow">
+                    <div class="card-body">
+                        <h5 class="mb-3"><i class="bi bi-phone me-2"></i>Sign in with your phone camera</h5>
+                        <LinkPhonePanel OnLinked="OnPhoneLinkedAsync" />
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(message))
+        {
+            <div class="row mt-3">
+                <div class="col-12">
+                    <div class="alert alert-info">@message</div>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private string message = string.Empty;
+    private PasskeyManagement? passkeyManagement;
+    private bool pingMeBusy;
+    private int pingMeVersion;
+
+    private SmsConsentDto? smsConsent;
+    private bool smsBusy;
+    private string? smsError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Task.WhenAll(PingMe.LoadAsync(), LoadSmsConsentAsync());
+    }
+
+    private async Task LoadSmsConsentAsync()
+    {
+        try
+        {
+            var response = await ApiService.GetResponseAsync("api/user/sms-consent");
+            if (response.IsSuccessStatusCode)
+            {
+                smsConsent = await ApiService.ParseResponseAsync<SmsConsentDto>(response);
+            }
+            else
+            {
+                smsError = await ApiService.ReadErrorAsync(response, "Couldn't load your text message setting.");
+            }
+        }
+        catch (Exception ex)
+        {
+            smsError = $"Couldn't load your text message setting: {ex.Message}";
+        }
+    }
+
+    private async Task OnSmsConsentChangedAsync(ChangeEventArgs e)
+    {
+        var optIn = e.Value is true || (e.Value is string s && bool.TryParse(s, out var b) && b);
+        smsBusy = true;
+        smsError = null;
+        try
+        {
+            var response = await ApiService.PutAsync("api/user/sms-consent", new SetSmsConsentRequest { OptIn = optIn });
+            if (response.IsSuccessStatusCode)
+            {
+                smsConsent = await ApiService.ParseResponseAsync<SmsConsentDto>(response) ?? smsConsent;
+            }
+            else
+            {
+                smsError = await ApiService.ReadErrorAsync(response, "Couldn't save your text message setting.");
+            }
+        }
+        catch (Exception ex)
+        {
+            smsError = $"Couldn't save your text message setting: {ex.Message}";
+        }
+        finally
+        {
+            smsBusy = false;
+            // Redraw the box from the saved setting, so a failed change doesn't leave it showing the wrong state.
+            var saved = smsConsent;
+            smsConsent = null;
+            StateHasChanged();
+            smsConsent = saved;
+        }
+    }
+
+    /// <summary>Refresh the passkey list so the newly linked phone shows up.</summary>
+    private Task OnPhoneLinkedAsync() => passkeyManagement?.ReloadAsync() ?? Task.CompletedTask;
+
+    private async Task HandlePingMeToggle(bool isEnabled)
+    {
+        pingMeBusy = true;
+        message = string.Empty;
+        StateHasChanged();
+
+        var result = await PingMe.SetAsync(isEnabled);
+        message = result.Error ?? (result.Enabled
+            ? "Ping Me is on. People nearby can find you on their map."
+            : "Ping Me is off. You no longer appear on nearby maps.");
+
+        pingMeBusy = false;
+        pingMeVersion++; // redraw the switch so it matches the saved setting, even after a failure
+        StateHasChanged();
+        await Task.Delay(4000);
+        message = string.Empty;
+        StateHasChanged();
+    }
+
+    private async Task HandleLogout()
+    {
+        await StateService.ResetAsync();
+        Navigation.NavigateTo("/login");
+    }
+}

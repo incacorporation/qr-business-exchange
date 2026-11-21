@@ -1,0 +1,41 @@
+@page "/income-disclosure"
+@inject NetworkService Network
+
+<SeoHead Title="Income Disclosure Statement"
+         Description="What QRBound members actually earn: median and average annual commissions by rank, and the share of members who earned nothing."
+         Path="/income-disclosure" />
+
+<section class="wrap narrow">
+    <h1>Income disclosure statement</h1>
+    @if (_data is null)
+    {
+        <p>No commission periods have been paid yet. Figures appear here after the first commission run.</p>
+    }
+    else
+    {
+        <p class="lead">
+            From @_data.FromPeriod to @_data.ToPeriod, annualised. <strong>@_data.PercentEarningNothing.ToString("0%")</strong>
+            of @_data.Participants members earned nothing, and the median member earned
+            <strong>@_data.MedianAll.ToString("C0")</strong> a year. These are gross commissions before any expenses.
+        </p>
+        <table class="table">
+            <thead><tr><th>Rank</th><th>Members</th><th>Median / yr</th><th>Average / yr</th><th>Top 10% earn at least</th></tr></thead>
+            <tbody>
+                @foreach (var b in _data.Bands)
+                {
+                    <tr>
+                        <td>@b.Rank</td><td>@b.People</td><td>@b.Median.ToString("C0")</td>
+                        <td>@b.Mean.ToString("C0")</td><td>@b.Top10Percent.ToString("C0")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <p class="muted">Rank is each member's rank in the latest period. Figures are generated from actual
+            commission records and update after every run.</p>
+    }
+</section>
+
+@code {
+    private IncomeDisclosure? _data;
+    protected override async Task OnInitializedAsync() => _data = await Network.GetIncomeDisclosureAsync();
+}

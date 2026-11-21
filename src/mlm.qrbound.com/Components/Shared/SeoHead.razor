@@ -1,0 +1,48 @@
+@using System.Text.Json
+@inject IConfiguration Config
+@inject NavigationManager Nav
+
+@* One place for every SEO tag a page needs: title, description, canonical URL, Open Graph, Twitter and JSON-LD. *@
+<PageTitle>@FullTitle</PageTitle>
+<HeadContent>
+    <meta name="description" content="@Description" />
+    <link rel="canonical" href="@CanonicalUrl" />
+    @if (NoIndex)
+    {
+        <meta name="robots" content="noindex, nofollow" />
+    }
+    <meta property="og:site_name" content="@SiteName" />
+    <meta property="og:type" content="@OgType" />
+    <meta property="og:title" content="@FullTitle" />
+    <meta property="og:description" content="@Description" />
+    <meta property="og:url" content="@CanonicalUrl" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="@FullTitle" />
+    <meta name="twitter:description" content="@Description" />
+    @if (JsonLd is not null)
+    {
+        @((MarkupString)$"<script type=\"application/ld+json\">{JsonSerializer.Serialize(JsonLd, JsonOptions)}</script>")
+    }
+</HeadContent>
+
+@code {
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        // Escapes <, > and & so user-supplied text can't close the script tag.
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.Default,
+    };
+
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter, EditorRequired] public string Description { get; set; } = "";
+
+    /// <summary>Canonical path such as "/products". Defaults to the current path without its query string.</summary>
+    [Parameter] public string? Path { get; set; }
+    [Parameter] public string OgType { get; set; } = "website";
+    [Parameter] public object? JsonLd { get; set; }
+    [Parameter] public bool NoIndex { get; set; }
+
+    private string SiteName => Config["Site:Name"] ?? "QRBound";
+    private string BaseUrl => (Config["Site:BaseUrl"] ?? "https://mlm.qrbound.com").TrimEnd('/');
+    private string FullTitle => Title.Contains(SiteName, StringComparison.OrdinalIgnoreCase) ? Title : $"{Title} | {SiteName}";
+    private string CanonicalUrl => BaseUrl + (Path ?? "/" + Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0]);
+}
