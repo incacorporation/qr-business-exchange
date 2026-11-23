@@ -43,6 +43,12 @@ public class QrLoginSession
     /// </summary>
     public Guid? SsoApplicationId { get; set; }
 
+    /// <summary>
+    /// Key of the application category the user is signing in (or registering) as, e.g. "business".
+    /// </summary>
+    [StringLength(50)]
+    public string? RequestedCategory { get; set; }
+
     [Required]
     [StringLength(20)]
     public string Status { get; set; } = QrLoginStatus.Pending;

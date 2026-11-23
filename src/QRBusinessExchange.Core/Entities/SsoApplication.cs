@@ -44,6 +44,14 @@ public class SsoApplication
     public bool RequireMembership { get; set; } = false;
 
     /// <summary>
+    /// When true a user may only sign in once they hold at least one approved
+    /// <see cref="SsoAppCategory"/> of this application.
+    /// </summary>
+    public bool RequireApprovedCategory { get; set; } = false;
+
+    public virtual ICollection<SsoAppCategory> Categories { get; set; } = new List<SsoAppCategory>();
+
+    /// <summary>
     /// Lifetime of issued access/ID tokens in minutes.
     /// </summary>
     public int TokenLifetimeMinutes { get; set; } = 60;

@@ -726,6 +726,10 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("RequestedCategory")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
                     b.Property<string>("RequesterIp")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
@@ -763,6 +767,117 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                     b.ToTable("QrLoginSessions", (string)null);
                 });
 
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.SsoAppAccess", b =>
+                {
+                    b.Property<Guid>("SsoAppAccessId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<Guid?>("BusinessId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("DecidedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("DecidedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("DecisionNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("RequestNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime>("RequestedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<Guid>("SsoAppCategoryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SsoApplicationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Status")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("SsoAppAccessId");
+
+                    b.HasIndex("BusinessId");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("IX_SsoAppAccess_UserId");
+
+                    b.HasIndex("SsoAppCategoryId", "UserId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_SsoAppAccess_Category_User");
+
+                    b.HasIndex("SsoApplicationId", "Status")
+                        .HasDatabaseName("IX_SsoAppAccess_Application_Status");
+
+                    b.ToTable("SsoAppAccess", (string)null);
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.SsoAppCategory", b =>
+                {
+                    b.Property<Guid>("SsoAppCategoryId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("RequiresApproval")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("RequiresBusiness")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("SsoApplicationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("SsoAppCategoryId");
+
+                    b.HasIndex("SsoApplicationId", "Key")
+                        .IsUnique()
+                        .HasDatabaseName("IX_SsoAppCategories_Application_Key");
+
+                    b.ToTable("SsoAppCategories", (string)null);
+                });
+
             modelBuilder.Entity("QRBusinessExchange.Core.Entities.SsoApplication", b =>
                 {
                     b.Property<Guid>("SsoApplicationId")
@@ -798,6 +913,9 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                     b.Property<string>("RedirectUris")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("RequireApprovedCategory")
+                        .HasColumnType("bit");
 
                     b.Property<bool>("RequireMembership")
                         .HasColumnType("bit");
@@ -1395,6 +1513,56 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                     b.Navigation("ApprovedUser");
                 });
 
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.SsoAppAccess", b =>
+                {
+                    b.HasOne("QRBusinessExchange.Core.Entities.Business", "Business")
+                        .WithMany()
+                        .HasForeignKey("BusinessId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .HasConstraintName("FK_SsoAppAccess_Businesses");
+
+                    b.HasOne("QRBusinessExchange.Core.Entities.SsoAppCategory", "Category")
+                        .WithMany()
+                        .HasForeignKey("SsoAppCategoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_SsoAppAccess_SsoAppCategories");
+
+                    b.HasOne("QRBusinessExchange.Core.Entities.SsoApplication", "Application")
+                        .WithMany()
+                        .HasForeignKey("SsoApplicationId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("FK_SsoAppAccess_SsoApplications");
+
+                    b.HasOne("QRBusinessExchange.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_SsoAppAccess_Users");
+
+                    b.Navigation("Application");
+
+                    b.Navigation("Business");
+
+                    b.Navigation("Category");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.SsoAppCategory", b =>
+                {
+                    b.HasOne("QRBusinessExchange.Core.Entities.SsoApplication", "Application")
+                        .WithMany("Categories")
+                        .HasForeignKey("SsoApplicationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_SsoAppCategories_SsoApplications");
+
+                    b.Navigation("Application");
+                });
+
             modelBuilder.Entity("QRBusinessExchange.Core.Entities.SsoApplication", b =>
                 {
                     b.HasOne("QRBusinessExchange.Core.Entities.Business", "Business")
@@ -1469,6 +1637,11 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                     b.Navigation("Applications");
 
                     b.Navigation("Members");
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.SsoApplication", b =>
+                {
+                    b.Navigation("Categories");
                 });
 
             modelBuilder.Entity("QRBusinessExchange.Core.Entities.User", b =>

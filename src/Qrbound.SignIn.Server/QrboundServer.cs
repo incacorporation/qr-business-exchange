@@ -109,7 +109,8 @@ public class QrboundTokenValidator
             throw new QrboundTokenException("The token nonce does not match this sign-in.");
         }
 
-        return new ClaimsPrincipal(new ClaimsIdentity(identity.Claims, "qrbound", "name", "business_role"));
+        // Categories and the business role become roles: [Authorize(Roles = "business")]
+        return new ClaimsPrincipal(QrboundClaims.CreateIdentity(identity.Claims, "qrbound"));
     }
 
     private async Task<TokenValidationResult> ValidateWithKeysAsync(string token, CancellationToken cancellationToken)
@@ -285,6 +286,8 @@ public static class QrboundServerExtensions
             BusinessId = Guid.TryParse(Get("business_id"), out var b) ? b : null,
             BusinessSlug = Get("business_slug"),
             BusinessRole = Get("business_role"),
+            Categories = QrboundClaims.Categories(principal.Claims),
+            Organization = QrboundClaims.Organization(principal.Claims),
             ExpiresAt = exp,
             Claims = principal.Claims.ToList()
         };

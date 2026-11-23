@@ -85,6 +85,31 @@ public class ClientFlowTests
     }
 
     [Fact]
+    public async Task Category_is_sent_and_a_pending_approval_is_reported_with_its_message()
+    {
+        var api = new FakeQrbound(_tokens) { Approved = true, AccessOutcome = QrboundStatus.AccessPending };
+        var client = new QrboundClient(new FakeFactory(api), Microsoft.Extensions.Options.Options.Create(Options()), new MemoryStateStore());
+
+        var session = await client.StartQrSignInAsync(QrboundMode.Register, "business");
+        Assert.Equal("business", session.Category);
+        Assert.Equal("business", api.CreateBody!.RootElement.GetProperty("category").GetString());
+
+        var poll = await client.PollAsync(session);
+        Assert.Equal(QrboundStatus.AccessPending, poll.Status);
+        Assert.Equal("Waiting for Eat in Houston", poll.Message);
+        Assert.Null(poll.Code);
+        Assert.True(QrboundStatus.IsFinal(poll.Status));
+    }
+
+    [Fact]
+    public void Redirect_url_carries_the_category()
+    {
+        var url = QrboundClient.BuildAuthorizeUrl(Options(), "s", "n", new string('c', 43), category: "business");
+        Assert.Contains("&category=business", url);
+        Assert.DoesNotContain("category=", QrboundClient.BuildAuthorizeUrl(Options(), "s", "n", new string('c', 43)));
+    }
+
+    [Fact]
     public async Task Missing_session_is_reported_as_expired()
     {
         var api = new FakeQrbound(_tokens) { Gone = true };
@@ -203,6 +228,7 @@ public class ClientFlowTests
         public bool Approved { get; set; }
         public bool Gone { get; set; }
         public bool EndpointMissing { get; set; }
+        public string? AccessOutcome { get; set; } // "AccessPending" or "AccessDenied" once approved
         public string? OverrideState { get; set; }
         public string? NonceOverride { get; set; }
         public (string Error, string Description)? CreateError { get; set; }
@@ -239,6 +265,8 @@ public class ClientFlowTests
                 var root = LastAuthorize.RootElement;
                 Assert.Equal("poll-secret", root.GetProperty("pollSecret").GetString());
                 NonceOverride ??= root.GetProperty("nonce").GetString();
+                if (Approved && AccessOutcome != null)
+                    return Json(HttpStatusCode.OK, new { status = AccessOutcome, expiresAt = DateTime.UtcNow.AddMinutes(3), message = "Waiting for Eat in Houston" });
                 return Json(HttpStatusCode.OK, Approved
                     ? new { status = "Approved", expiresAt = DateTime.UtcNow.AddMinutes(3), code = (string?)"the-code", state = OverrideState ?? root.GetProperty("state").GetString() }
                     : new { status = "Pending", expiresAt = DateTime.UtcNow.AddMinutes(3), code = (string?)null, state = (string?)null });

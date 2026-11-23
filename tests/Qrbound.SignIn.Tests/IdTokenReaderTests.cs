@@ -62,6 +62,43 @@ public class IdTokenReaderTests
     public void Access_token_is_not_accepted_as_id_token() =>
         Assert.Throws<QrboundTokenException>(() => Read(_tokens.Create(tokenUse: "access")));
 
+    [Fact]
+    public void Categories_and_the_acting_business_become_properties_and_roles()
+    {
+        var user = Read(_tokens.Create(extra: new Dictionary<string, object>
+        {
+            ["category"] = new[] { "business", "client" },
+            ["org_id"] = "99999999-8888-7777-6666-555555555555",
+            ["org_slug"] = "johns-tacos",
+            ["org_name"] = "John's Tacos"
+        }));
+
+        Assert.Equal(new[] { "business", "client" }, user.Categories);
+        Assert.True(user.HasCategory("business"));
+        Assert.Equal(new QrboundOrganization(Guid.Parse("99999999-8888-7777-6666-555555555555"), "johns-tacos", "John's Tacos"), user.Organization);
+
+        var principal = user.ToPrincipal();
+        Assert.True(principal.IsInRole("business"));
+        Assert.True(principal.IsInRole("client"));
+        Assert.True(principal.IsInRole("Admin")); // business_role still a role
+        Assert.False(principal.IsInRole("vip"));
+    }
+
+    [Fact]
+    public void A_single_category_arrives_as_a_string()
+    {
+        var user = Read(_tokens.Create(extra: new Dictionary<string, object> { ["category"] = "client" }));
+        Assert.Equal(new[] { "client" }, user.Categories);
+        Assert.Null(user.Organization);
+    }
+
+    [Fact]
+    public void Role_claims_in_a_token_are_ignored()
+    {
+        var user = Read(_tokens.Create(extra: new Dictionary<string, object> { ["role"] = "superadmin" }));
+        Assert.False(user.ToPrincipal().IsInRole("superadmin"));
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("not-a-jwt")]

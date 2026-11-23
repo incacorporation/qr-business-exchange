@@ -114,6 +114,11 @@ public class BusinessService
             throw SsoException.Forbidden("Only the owner can delete a business");
         }
 
+        // Access to this business's apps, and access to other apps granted for acting as this business
+        await _db.SsoAppAccess
+            .Where(a => a.BusinessId == businessId || a.Application.BusinessId == businessId)
+            .ExecuteDeleteAsync();
+
         var business = await _db.Businesses.FirstAsync(b => b.BusinessId == businessId);
         _db.Businesses.Remove(business);
         await _db.SaveChangesAsync();
@@ -231,6 +236,7 @@ public class BusinessService
             ClientSecretHash = secret == null ? null : SsoCrypto.Hash(secret),
             RedirectUris = string.Join('\n', redirectUris),
             RequireMembership = request.RequireMembership,
+            RequireApprovedCategory = request.RequireApprovedCategory,
             TokenLifetimeMinutes = request.TokenLifetimeMinutes,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
@@ -251,6 +257,7 @@ public class BusinessService
         app.Name = request.Name.Trim();
         app.RedirectUris = string.Join('\n', ValidateRedirectUris(request.RedirectUris));
         app.RequireMembership = request.RequireMembership;
+        app.RequireApprovedCategory = request.RequireApprovedCategory;
         app.TokenLifetimeMinutes = request.TokenLifetimeMinutes;
         app.IsActive = request.IsActive;
         app.UpdatedAt = DateTime.UtcNow;
@@ -281,6 +288,7 @@ public class BusinessService
     {
         await RequireManagerAsync(userId, businessId);
         var app = await GetOwnedApplicationAsync(businessId, applicationId);
+        await _db.SsoAppAccess.Where(a => a.SsoApplicationId == applicationId).ExecuteDeleteAsync();
         _db.SsoApplications.Remove(app);
         await _db.SaveChangesAsync();
     }
@@ -340,6 +348,7 @@ public class BusinessService
         IsConfidential = app.IsConfidential,
         RedirectUris = app.GetRedirectUris().ToList(),
         RequireMembership = app.RequireMembership,
+        RequireApprovedCategory = app.RequireApprovedCategory,
         TokenLifetimeMinutes = app.TokenLifetimeMinutes,
         IsActive = app.IsActive,
         CreatedAt = app.CreatedAt,

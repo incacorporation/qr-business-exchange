@@ -54,6 +54,12 @@
             <p class="qrbound-lead">Signed in as @(AuthState.User?.Name ?? AuthState.User?.Email)</p>
             break;
 
+        case View.AccessPending:
+            <div class="qrbound-notice" role="status">@message</div>
+            <p class="qrbound-hint">Once you're approved, sign in again here.</p>
+            <button type="button" class="qrbound-button" @onclick="RestartAsync">Sign in again</button>
+            break;
+
         case View.Problem:
             <div class="qrbound-alert" role="alert">@message</div>
             <button type="button" class="qrbound-button" @onclick="RestartAsync">New QR code</button>
@@ -69,10 +75,17 @@
 </div>
 
 @code {
-    private enum View { Loading, Qr, Completing, Done, Problem }
+    private enum View { Loading, Qr, Completing, Done, Problem, AccessPending }
 
     /// <summary>Sign in, or let the phone create a qrbound account first.</summary>
     [Parameter] public QrboundMode Mode { get; set; } = QrboundMode.SignIn;
+
+    /// <summary>
+    /// One of your app's categories to sign in as, e.g. "business" or "client". When the user doesn't hold it
+    /// yet, their phone requests it; categories that need approval end in an "access pending" message and an
+    /// email to your administrators. Null signs in with the categories the user already holds.
+    /// </summary>
+    [Parameter] public string? Category { get; set; }
 
     /// <summary>Optional heading.</summary>
     [Parameter] public string? Title { get; set; }
@@ -88,7 +101,11 @@
     /// <summary>Raised once the user is signed in. <see cref="QrboundAuthState"/> is already updated.</summary>
     [Parameter] public EventCallback<QrboundSignInResult> OnSignedIn { get; set; }
 
-    /// <summary>Raised when sign-in fails (denied, expired, membership refused, network).</summary>
+    /// <summary>
+    /// Raised when sign-in fails (denied, expired, membership refused, network). Error "access_pending" means
+    /// the user's request for <see cref="Category"/> waits for your administrators; "access_denied" that
+    /// it was refused or never requested.
+    /// </summary>
     [Parameter] public EventCallback<QrboundException> OnError { get; set; }
 
     /// <summary>Start a new QR code automatically when one expires (at most this many times).</summary>
@@ -127,7 +144,7 @@
 
         try
         {
-            session = await Client.StartQrSignInAsync(Mode, token);
+            session = await Client.StartQrSignInAsync(Mode, Category, token);
             qrSvg = QrSvg.Render(session.ApproveUrl, "qrbound sign-in QR code");
             view = View.Qr;
             StateHasChanged();
@@ -193,6 +210,17 @@
                     await OnExpiredAsync();
                     return;
 
+                case QrboundStatus.AccessPending:
+                    view = View.AccessPending;
+                    message = result.Message ?? "Your request was sent. You'll get an email when it's approved.";
+                    StateHasChanged();
+                    await OnError.InvokeAsync(new QrboundException("access_pending", message));
+                    return;
+
+                case QrboundStatus.AccessDenied:
+                    await FailAsync(new QrboundException("access_denied", result.Message ?? "You can't sign in to this app."));
+                    return;
+
                 case QrboundStatus.Denied:
                     await FailAsync(new QrboundException("access_denied", "The sign-in was declined on the phone. Nobody was signed in."));
                     return;
@@ -229,7 +257,7 @@
     private async Task RedirectAsync()
     {
         cts?.Cancel();
-        var url = await Client.BuildAuthorizeUrlAsync(ReturnUrl ?? Navigation.Uri);
+        var url = await Client.BuildAuthorizeUrlAsync(ReturnUrl ?? Navigation.Uri, category: Category);
         Navigation.NavigateTo(url, forceLoad: true);
     }
 

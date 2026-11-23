@@ -19,6 +19,12 @@ else if (Auth.IsSignedIn)
     <h2>Welcome, @Auth.User!.Name</h2>
     <p>Signed in with qrbound (<code>amr = @Auth.User.AuthMethod</code>).
        Business role: <b>@(Auth.User.BusinessRole ?? "not a member")</b>.</p>
+    <p>Categories in this app: <b>@(Auth.User.Categories.Count == 0 ? "none" : string.Join(", ", Auth.User.Categories))</b>
+       @if (Auth.User.Organization is { } org)
+       {
+           <span> · acting for <b>@org.Name</b> (<code>@org.Slug</code>)</span>
+       }
+    </p>
     <table>
         <tr><th>Claim</th><th>Value</th></tr>
         @foreach (var claim in Auth.User.Claims)

@@ -13,7 +13,8 @@ internal sealed class TestTokens
     public RsaSecurityKey Key { get; } = new(RSA.Create(2048)) { KeyId = "k1" };
 
     public string Create(string tokenUse = "id", string? nonce = "n-1", string audience = ClientId,
-        string issuer = Issuer, DateTime? expires = null, RsaSecurityKey? signWith = null)
+        string issuer = Issuer, DateTime? expires = null, RsaSecurityKey? signWith = null,
+        IDictionary<string, object>? extra = null)
     {
         var now = DateTime.UtcNow;
         var claims = new Dictionary<string, object>
@@ -32,6 +33,7 @@ internal sealed class TestTokens
             ["token_use"] = tokenUse
         };
         if (nonce != null) claims["nonce"] = nonce;
+        if (extra != null) foreach (var (k, v) in extra) claims[k] = v;
 
         var exp = expires ?? now.AddMinutes(60);
         var start = exp < now ? exp.AddMinutes(-10) : now;

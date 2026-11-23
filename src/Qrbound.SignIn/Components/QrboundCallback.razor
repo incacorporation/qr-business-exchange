@@ -50,7 +50,11 @@ else
         }
         catch (QrboundException ex)
         {
-            error = ex.Error == "access_denied" ? "Sign-in was cancelled." : ex.Message;
+            // access_denied is also a refused or revoked category; only a bare cancel gets the generic text.
+            // access_pending and access_required carry qrbound's own explanation.
+            error = ex.Error == "access_denied" && (ex.Message == ex.Error || ex.Message == "The user cancelled sign-in")
+                ? "Sign-in was cancelled."
+                : ex.Message;
             StateHasChanged();
         }
         catch (HttpRequestException)

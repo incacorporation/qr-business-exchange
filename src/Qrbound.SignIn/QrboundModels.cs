@@ -25,9 +25,18 @@ public static class QrboundStatus
     public const string Consumed = "Consumed";
     public const string Expired = "Expired";
 
+    /// <summary>
+    /// The phone approved, and the user asked for a category of your app that needs approval: your app's
+    /// administrators were emailed, and the user is emailed once they decide. No code is issued.
+    /// </summary>
+    public const string AccessPending = "AccessPending";
+
+    /// <summary>The user may not use your app (as that category): rejected, revoked or never requested.</summary>
+    public const string AccessDenied = "AccessDenied";
+
     /// <summary>True when the request can no longer be approved.</summary>
     public static bool IsFinal(string status) =>
-        status is Approved or Denied or Consumed or Expired;
+        status is Approved or Denied or Consumed or Expired or AccessPending or AccessDenied;
 }
 
 /// <summary>
@@ -49,6 +58,9 @@ public sealed class QrboundQrSession
 
     public QrboundMode Mode { get; init; }
 
+    /// <summary>The category of your app the user is signing in as (e.g. "business"), if one was asked for.</summary>
+    public string? Category { get; init; }
+
     internal string PollSecret { get; init; } = string.Empty;
     internal string CodeVerifier { get; init; } = string.Empty;
     internal string CodeChallenge { get; init; } = string.Empty;
@@ -64,6 +76,9 @@ public sealed class QrboundPollResult
 
     /// <summary>The one-time authorization code; set only when <see cref="Status"/> is Approved.</summary>
     public string? Code { get; init; }
+
+    /// <summary>Why no code was issued, for AccessPending and AccessDenied; safe to show to the user.</summary>
+    public string? Message { get; init; }
 }
 
 /// <summary>A completed sign-in.</summary>
@@ -95,6 +110,7 @@ internal sealed class QrSessionCreateRequest
 {
     public string ClientId { get; set; } = string.Empty;
     public string RedirectUri { get; set; } = string.Empty;
+    public string? Category { get; set; }
 }
 
 internal sealed class QrSessionCreateResponse
@@ -124,6 +140,7 @@ internal sealed class QrSessionAuthorizeResponse
     public DateTime ExpiresAt { get; set; }
     public string? Code { get; set; }
     public string? State { get; set; }
+    public string? Message { get; set; }
 }
 
 internal sealed class OAuthError
@@ -155,6 +172,10 @@ public sealed class QrboundBackendUser
     public Guid? BusinessId { get; set; }
     public string? BusinessSlug { get; set; }
     public string? BusinessRole { get; set; }
+    public List<string> Categories { get; set; } = new();
+    public Guid? OrganizationId { get; set; }
+    public string? OrganizationSlug { get; set; }
+    public string? OrganizationName { get; set; }
     public DateTimeOffset ExpiresAt { get; set; }
 
     public static QrboundBackendUser From(QrboundUser u) => new()
@@ -162,6 +183,8 @@ public sealed class QrboundBackendUser
         Sub = u.Subject, Email = u.Email, EmailVerified = u.EmailVerified, Name = u.Name,
         GivenName = u.GivenName, FamilyName = u.FamilyName, AuthMethod = u.AuthMethod,
         BusinessId = u.BusinessId, BusinessSlug = u.BusinessSlug, BusinessRole = u.BusinessRole,
+        Categories = u.Categories.ToList(), OrganizationId = u.Organization?.Id,
+        OrganizationSlug = u.Organization?.Slug, OrganizationName = u.Organization?.Name,
         ExpiresAt = u.ExpiresAt
     };
 
@@ -172,11 +195,15 @@ public sealed class QrboundBackendUser
         Add("email", Email); Add("name", Name); Add("given_name", GivenName); Add("family_name", FamilyName);
         Add("amr", AuthMethod); Add("business_id", BusinessId?.ToString()); Add("business_slug", BusinessSlug);
         Add("business_role", BusinessRole);
+        foreach (var category in Categories) Add(QrboundClaims.Category, category);
+        Add(QrboundClaims.OrganizationId, OrganizationId?.ToString()); Add(QrboundClaims.OrganizationSlug, OrganizationSlug);
+        Add(QrboundClaims.OrganizationName, OrganizationName);
         return new QrboundUser
         {
             Subject = Sub, Email = Email, EmailVerified = EmailVerified, Name = Name, GivenName = GivenName,
             FamilyName = FamilyName, AuthMethod = AuthMethod, BusinessId = BusinessId, BusinessSlug = BusinessSlug,
-            BusinessRole = BusinessRole, ExpiresAt = ExpiresAt, Claims = claims
+            BusinessRole = BusinessRole, Categories = QrboundClaims.Categories(claims),
+            Organization = QrboundClaims.Organization(claims), ExpiresAt = ExpiresAt, Claims = claims
         };
     }
 }

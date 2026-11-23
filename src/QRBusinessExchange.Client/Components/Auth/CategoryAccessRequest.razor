@@ -1,0 +1,132 @@
+@using QRBusinessExchange.Core.DTOs
+
+@* What the user is asking an application for: "Sign in to eatinhouston as Restaurant owner".
+   Shows the current status and, when a request is needed, which business and an optional note.
+   The page that hosts it sends the request (POST api/sso/access-requests). *@
+
+<div class="border rounded p-3 mb-3 bg-body-tertiary">
+    <div class="d-flex justify-content-between align-items-start">
+        <div>
+            <div class="small text-muted">Signing in as</div>
+            <div class="fw-semibold">@Access.CategoryName</div>
+            @if (!string.IsNullOrEmpty(Access.Description))
+            {
+                <div class="small text-muted">@Access.Description</div>
+            }
+        </div>
+        @if (Access.Status != null)
+        {
+            <span class="badge @StatusBadge">@Access.Status</span>
+        }
+    </div>
+
+    @switch (Access.Status)
+    {
+        case "Approved":
+            @if (Access.BusinessName != null)
+            {
+                <p class="small mb-0 mt-2">For <strong>@Access.BusinessName</strong>.</p>
+            }
+            break;
+
+        case "Pending":
+            <p class="small mb-0 mt-2">
+                Your request@(Access.BusinessName != null ? $" for {Access.BusinessName}" : "") is waiting for
+                @Access.ApplicationName to approve it. We'll email you when it's decided.
+            </p>
+            break;
+
+        default:
+            @if (Access.Status is "Rejected" or "Revoked")
+            {
+                <p class="small text-danger mt-2 mb-2">
+                    Your earlier request was @Access.Status.ToLowerInvariant().@(Access.DecisionNote != null ? $" {Access.DecisionNote}" : "")
+                    You can ask again.
+                </p>
+            }
+            else if (Access.RequiresApproval)
+            {
+                <p class="small text-muted mt-2 mb-2">
+                    @Access.ApplicationName approves new @Access.CategoryName accounts. You'll get an email once you can sign in.
+                </p>
+            }
+
+            @if (Access.RequiresBusiness)
+            {
+                @if (Access.EligibleBusinesses.Count == 0)
+                {
+                    <div class="alert alert-warning small mb-0 mt-2">
+                        You need a business on qrbound where you are an Owner or Admin.
+                        <a href="/businesses">Create one</a> first, then scan again.
+                    </div>
+                }
+                else
+                {
+                    <label class="form-label small mt-2 mb-1">For which business?</label>
+                    <select class="form-select" value="@BusinessId" @onchange="OnBusinessChanged" disabled="@Disabled">
+                        <option value="">Choose…</option>
+                        @foreach (var b in Access.EligibleBusinesses)
+                        {
+                            <option value="@b.BusinessId">@b.Name (@b.Role)</option>
+                        }
+                    </select>
+                }
+            }
+
+            @if (Access.RequiresApproval)
+            {
+                <label class="form-label small mt-2 mb-1">Message to @Access.ApplicationName <span class="text-muted">(optional)</span></label>
+                <textarea class="form-control" rows="2" maxlength="500" value="@Note" @onchange="OnNoteChanged" disabled="@Disabled"></textarea>
+            }
+            break;
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public SsoCategoryAccessDto Access { get; set; } = null!;
+
+    [Parameter] public Guid? BusinessId { get; set; }
+    [Parameter] public EventCallback<Guid?> BusinessIdChanged { get; set; }
+
+    [Parameter] public string? Note { get; set; }
+    [Parameter] public EventCallback<string?> NoteChanged { get; set; }
+
+    [Parameter] public bool Disabled { get; set; }
+
+    /// <summary>True when the hosting page must send a request before the user can get in.</summary>
+    public static bool NeedsRequest(SsoCategoryAccessDto? access) =>
+        access != null && access.Status is null or "Rejected" or "Revoked";
+
+    /// <summary>True when the form has what a request needs.</summary>
+    public static bool CanRequest(SsoCategoryAccessDto access, Guid? businessId) =>
+        !access.RequiresBusiness || (businessId != null && access.EligibleBusinesses.Any(b => b.BusinessId == businessId));
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Only one business to choose from: choose it
+        if (BusinessId == null && Access.RequiresBusiness && Access.EligibleBusinesses.Count == 1)
+        {
+            BusinessId = Access.EligibleBusinesses[0].BusinessId;
+            await BusinessIdChanged.InvokeAsync(BusinessId);
+        }
+    }
+
+    private string StatusBadge => Access.Status switch
+    {
+        "Approved" => "bg-success",
+        "Pending" => "bg-warning text-dark",
+        _ => "bg-danger"
+    };
+
+    private Task OnBusinessChanged(ChangeEventArgs e)
+    {
+        BusinessId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        return BusinessIdChanged.InvokeAsync(BusinessId);
+    }
+
+    private Task OnNoteChanged(ChangeEventArgs e)
+    {
+        Note = e.Value?.ToString();
+        return NoteChanged.InvokeAsync(Note);
+    }
+}

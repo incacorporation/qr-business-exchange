@@ -31,17 +31,20 @@ public class QrLoginService
 
     private readonly ApplicationDbContext _db;
     private readonly SsoSettings _settings;
+    private readonly SsoAccessService _access;
 
-    public QrLoginService(ApplicationDbContext db, IOptions<SsoSettings> settings)
+    public QrLoginService(ApplicationDbContext db, IOptions<SsoSettings> settings, SsoAccessService access)
     {
         _db = db;
         _settings = settings.Value;
+        _access = access;
     }
 
     public async Task<QrLoginCreateResponse> CreateAsync(string? clientId, string? requesterIp, string? userAgent,
-        string? redirectUri = null)
+        string? redirectUri = null, string? category = null)
     {
         Guid? applicationId = null;
+        category = string.IsNullOrWhiteSpace(category) ? null : category.Trim();
         if (!string.IsNullOrWhiteSpace(clientId))
         {
             var app = await _db.SsoApplications.Include(a => a.Business)
@@ -58,11 +61,21 @@ public class QrLoginService
                 throw new SsoException("invalid_redirect_uri", "The redirect URI is not registered for this application");
             }
 
+            if (category != null &&
+                !await _db.SsoAppCategories.AnyAsync(c => c.SsoApplicationId == app.SsoApplicationId && c.Key == category))
+            {
+                throw new SsoException("invalid_request", $"{app.Name} has no category \"{category}\"");
+            }
+
             applicationId = app.SsoApplicationId;
         }
         else if (!string.IsNullOrEmpty(redirectUri))
         {
             throw new SsoException("invalid_request", "redirectUri requires clientId");
+        }
+        else if (category != null)
+        {
+            throw new SsoException("invalid_request", "category requires clientId");
         }
 
         var pollSecret = SsoCrypto.NewSecret();
@@ -70,6 +83,7 @@ public class QrLoginService
         {
             PollSecretHash = SsoCrypto.Hash(pollSecret),
             SsoApplicationId = applicationId,
+            RequestedCategory = category,
             Status = QrLoginStatus.Pending,
             VerificationCode = RandomNumberGenerator.GetInt32(10, 100).ToString(),
             RequesterIp = Truncate(requesterIp, 64),
@@ -122,7 +136,10 @@ public class QrLoginService
             RequesterUserAgent = session.RequesterUserAgent,
             CreatedAt = session.CreatedAt,
             ExpiresAt = session.ExpiresAt,
-            VerificationChoices = BuildChoices(session.QrLoginSessionId, session.VerificationCode)
+            VerificationChoices = BuildChoices(session.QrLoginSessionId, session.VerificationCode),
+            CategoryAccess = session.Application == null
+                ? null
+                : await _access.TryGetCategoryAccessAsync(approverUserId, session.Application, session.RequestedCategory)
         };
     }
 
@@ -215,7 +232,13 @@ public class QrLoginService
     /// For the requesting (desktop) side: checks the poll secret and returns the client_id the
     /// session was created for (null = the core portal). Does not change the session.
     /// </summary>
-    public async Task<string?> GetClientIdForPollerAsync(Guid sessionId, string pollSecret)
+    public async Task<string?> GetClientIdForPollerAsync(Guid sessionId, string pollSecret) =>
+        (await GetRequestForPollerAsync(sessionId, pollSecret)).ClientId;
+
+    /// <summary>
+    /// Like <see cref="GetClientIdForPollerAsync"/>, plus the application category the session asked for.
+    /// </summary>
+    public async Task<(string? ClientId, string? Category)> GetRequestForPollerAsync(Guid sessionId, string pollSecret)
     {
         var session = await _db.QrLoginSessions
             .Include(s => s.Application)
@@ -226,7 +249,7 @@ public class QrLoginService
             throw SsoException.NotFound("Sign-in request");
         }
 
-        return session.Application?.ClientId;
+        return (session.Application?.ClientId, session.RequestedCategory);
     }
 
     public async Task<string?> GetClientIdAsync(Guid sessionId) =>

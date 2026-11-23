@@ -36,11 +36,18 @@ public class QrboundClient
     // ------------------------------------------------------------------ QR flow
 
     /// <summary>Starts a QR sign-in bound to this app's client_id, redirect URI and a fresh PKCE pair.</summary>
+    /// <param name="mode">Sign in, or offer "Create a qrbound account" on the phone first.</param>
+    /// <param name="category">
+    /// One of your app's categories to sign in as (e.g. "business"); the phone requests it when the user doesn't
+    /// hold it yet. Null signs in with whatever the user already holds.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the request.</param>
     public async Task<QrboundQrSession> StartQrSignInAsync(QrboundMode mode = QrboundMode.SignIn,
-        CancellationToken cancellationToken = default)
+        string? category = null, CancellationToken cancellationToken = default)
     {
+        category = string.IsNullOrWhiteSpace(category) ? null : category.Trim();
         var response = await _http.PostAsJsonAsync("api/qr-login/sessions",
-            new QrSessionCreateRequest { ClientId = _options.ClientId, RedirectUri = _options.RedirectUri },
+            new QrSessionCreateRequest { ClientId = _options.ClientId, RedirectUri = _options.RedirectUri, Category = category },
             cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
 
@@ -56,6 +63,7 @@ public class QrboundClient
             ExpiresAt = new DateTimeOffset(DateTime.SpecifyKind(created.ExpiresAt, DateTimeKind.Utc)),
             PollInterval = created.PollIntervalSeconds > 0 ? TimeSpan.FromSeconds(created.PollIntervalSeconds) : _options.PollInterval,
             Mode = mode,
+            Category = category,
             PollSecret = created.PollSecret,
             CodeVerifier = verifier,
             CodeChallenge = Pkce.CreateChallenge(verifier),
@@ -108,7 +116,8 @@ public class QrboundClient
         {
             Status = body.Status,
             ExpiresAt = new DateTimeOffset(DateTime.SpecifyKind(body.ExpiresAt, DateTimeKind.Utc)),
-            Code = body.Status == QrboundStatus.Approved ? body.Code : null
+            Code = body.Status == QrboundStatus.Approved ? body.Code : null,
+            Message = body.Message
         };
     }
 
@@ -124,7 +133,7 @@ public class QrboundClient
     /// The PKCE verifier, state and nonce are kept in the <see cref="IQrboundStateStore"/> until
     /// <see cref="HandleCallbackAsync"/> runs on the redirect URI.
     /// </summary>
-    public async Task<string> BuildAuthorizeUrlAsync(string? returnUrl = null, bool forceLogin = false)
+    public async Task<string> BuildAuthorizeUrlAsync(string? returnUrl = null, bool forceLogin = false, string? category = null)
     {
         var pending = new QrboundPendingRedirect
         {
@@ -136,12 +145,12 @@ public class QrboundClient
         };
         await _stateStore.SaveAsync(pending);
 
-        return BuildAuthorizeUrl(_options, pending.State, pending.Nonce, Pkce.CreateChallenge(pending.CodeVerifier), forceLogin);
+        return BuildAuthorizeUrl(_options, pending.State, pending.Nonce, Pkce.CreateChallenge(pending.CodeVerifier), forceLogin, category);
     }
 
     /// <summary>Pure URL builder for the redirect flow.</summary>
     public static string BuildAuthorizeUrl(QrboundOptions options, string state, string nonce, string codeChallenge,
-        bool forceLogin = false)
+        bool forceLogin = false, string? category = null)
     {
         var query = new List<KeyValuePair<string, string>>
         {
@@ -154,6 +163,7 @@ public class QrboundClient
             new("code_challenge_method", Pkce.MethodS256)
         };
         if (forceLogin) query.Add(new("prompt", "login"));
+        if (!string.IsNullOrWhiteSpace(category)) query.Add(new("category", category.Trim()));
 
         return $"{options.PortalBaseUrl.TrimEnd('/')}/sso/authorize?" +
                string.Join("&", query.Select(kv => $"{kv.Key}={Uri.EscapeDataString(kv.Value)}"));

@@ -29,13 +29,74 @@ public sealed class QrboundUser
     public string? BusinessSlug { get; init; }
     /// <summary>The user's role in the business that owns your app (absent when not a member).</summary>
     public string? BusinessRole { get; init; }
+
+    /// <summary>
+    /// Your app's categories this user is approved for, in your app's order (e.g. "business", "client").
+    /// Empty when your app defines no categories.
+    /// </summary>
+    public IReadOnlyList<string> Categories { get; init; } = Array.Empty<string>();
+
+    /// <summary>The user's own business they signed in for (a category that acts for a business).</summary>
+    public QrboundOrganization? Organization { get; init; }
+
     public DateTimeOffset ExpiresAt { get; init; }
     /// <summary>All claims of the ID token.</summary>
     public IReadOnlyList<Claim> Claims { get; init; } = Array.Empty<Claim>();
 
-    /// <summary>Builds a <see cref="ClaimsPrincipal"/> (authentication type "qrbound").</summary>
+    /// <summary>True when the user holds <paramref name="category"/> in your app.</summary>
+    public bool HasCategory(string category) => Categories.Contains(category, StringComparer.Ordinal);
+
+    /// <summary>
+    /// Builds a <see cref="ClaimsPrincipal"/> (authentication type "qrbound"). Each category and the business
+    /// role become roles, so <c>[Authorize(Roles = "business")]</c> and <c>IsInRole("Owner")</c> work.
+    /// </summary>
     public ClaimsPrincipal ToPrincipal(string authenticationType = "qrbound") =>
-        new(new ClaimsIdentity(Claims, authenticationType, "name", "business_role"));
+        new(QrboundClaims.CreateIdentity(Claims, authenticationType));
+}
+
+/// <summary>A business the user acts for in your app (the <c>org_*</c> claims).</summary>
+public sealed record QrboundOrganization(Guid Id, string? Slug, string? Name);
+
+/// <summary>Claim names and identity building shared by the browser and server packages.</summary>
+public static class QrboundClaims
+{
+    public const string Category = "category";
+    public const string BusinessRole = "business_role";
+    public const string OrganizationId = "org_id";
+    public const string OrganizationSlug = "org_slug";
+    public const string OrganizationName = "org_name";
+
+    /// <summary>The role claim type of identities built here.</summary>
+    public const string Role = "role";
+
+    /// <summary>
+    /// An identity whose name is the <c>name</c> claim and whose roles are the user's categories plus their
+    /// business role. Existing <c>role</c> claims are replaced so a token can't add roles of its own.
+    /// </summary>
+    public static ClaimsIdentity CreateIdentity(IEnumerable<Claim> claims, string authenticationType)
+    {
+        var list = claims.Where(c => c.Type != Role).ToList();
+        var roles = list.Where(c => c.Type is Category or BusinessRole && !string.IsNullOrEmpty(c.Value))
+            .Select(c => c.Value)
+            .Distinct(StringComparer.Ordinal)
+            .Select(r => new Claim(Role, r))
+            .ToList();
+        return new ClaimsIdentity(list.Concat(roles), authenticationType, "name", Role);
+    }
+
+    /// <summary>Categories in token order.</summary>
+    public static List<string> Categories(IEnumerable<Claim> claims) =>
+        claims.Where(c => c.Type == Category && !string.IsNullOrEmpty(c.Value)).Select(c => c.Value).Distinct(StringComparer.Ordinal).ToList();
+
+    /// <summary>The organization from the <c>org_*</c> claims, if any.</summary>
+    public static QrboundOrganization? Organization(IEnumerable<Claim> claims)
+    {
+        var list = claims as IReadOnlyCollection<Claim> ?? claims.ToList();
+        string? Get(string type) => list.FirstOrDefault(c => c.Type == type)?.Value;
+        return Guid.TryParse(Get(OrganizationId), out var id)
+            ? new QrboundOrganization(id, Get(OrganizationSlug), Get(OrganizationName))
+            : null;
+    }
 }
 
 /// <summary>Raised when a token fails validation.</summary>
@@ -107,6 +168,7 @@ public static class QrboundIdTokenReader
         if (string.IsNullOrEmpty(subject))
             throw new QrboundTokenException("The token has no subject.");
 
+        var claims = ToClaims(payload, issuer!);
         return new QrboundUser
         {
             Subject = subject,
@@ -119,8 +181,10 @@ public static class QrboundIdTokenReader
             BusinessId = Guid.TryParse(GetString(payload, "business_id"), out var b) ? b : null,
             BusinessSlug = GetString(payload, "business_slug"),
             BusinessRole = GetString(payload, "business_role"),
+            Categories = QrboundClaims.Categories(claims),
+            Organization = QrboundClaims.Organization(claims),
             ExpiresAt = exp,
-            Claims = ToClaims(payload, issuer!)
+            Claims = claims
         };
     }
 

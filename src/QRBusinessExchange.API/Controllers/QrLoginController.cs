@@ -55,7 +55,8 @@ public class QrLoginController : ControllerBase
             request?.ClientId,
             HttpContext.Connection.RemoteIpAddress?.ToString(),
             Request.Headers.UserAgent.ToString(),
-            request?.RedirectUri));
+            request?.RedirectUri,
+            request?.Category));
 
     /// <summary>
     /// [Desktop, qrbound portal] Poll for the result. Returns a portal session exactly once after approval.
@@ -105,7 +106,7 @@ public class QrLoginController : ControllerBase
     public Task<IActionResult> AuthorizeForApplication(Guid sessionId, [FromBody] QrLoginAuthorizeRequest request) =>
         Run(async () =>
         {
-            var sessionClientId = await _qrLoginService.GetClientIdForPollerAsync(sessionId, request.PollSecret);
+            var (sessionClientId, category) = await _qrLoginService.GetRequestForPollerAsync(sessionId, request.PollSecret);
             if (sessionClientId == null || !string.Equals(sessionClientId, request.ClientId, StringComparison.Ordinal))
             {
                 throw new SsoException("invalid_client", "This sign-in request was not created for this application");
@@ -118,7 +119,8 @@ public class QrLoginController : ControllerBase
                 CodeChallenge = request.CodeChallenge,
                 CodeChallengeMethod = request.CodeChallengeMethod,
                 Nonce = request.Nonce,
-                State = request.State
+                State = request.State,
+                Category = category
             };
 
             // Check everything we can before the approval is consumed.
@@ -129,8 +131,23 @@ public class QrLoginController : ControllerBase
 
             if (approvedUserId.HasValue)
             {
-                response.Code = await _ssoService.IssueAuthorizationCodeAsync(
-                    approvedUserId.Value, "qr", DateTime.UtcNow, authorizeRequest);
+                try
+                {
+                    response.Code = await _ssoService.IssueAuthorizationCodeAsync(
+                        approvedUserId.Value, "qr", DateTime.UtcNow, authorizeRequest);
+                }
+                catch (SsoException ex) when (ex.Error is SsoAccessService.Errors.Pending
+                                                  or SsoAccessService.Errors.Required
+                                                  or SsoAccessService.Errors.Denied)
+                {
+                    // Signed in on the phone, but not allowed into this application (yet): tell the
+                    // waiting screen why instead of failing. The session is used up either way.
+                    response.Status = ex.Error == SsoAccessService.Errors.Pending ? "AccessPending" : "AccessDenied";
+                    response.Message = ex.Message;
+                    _logger.LogInformation("QR login {SessionId} for {ClientId}: {Error}", sessionId, request.ClientId, ex.Error);
+                    return response;
+                }
+
                 response.State = request.State;
                 Response.Headers.CacheControl = "no-store";
                 _logger.LogInformation("QR login {SessionId} issued a code to {ClientId} for {UserId}",

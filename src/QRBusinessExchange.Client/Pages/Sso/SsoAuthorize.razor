@@ -9,7 +9,8 @@
 @inject NavigationManager Navigation
 
 @* Sign-in page that business applications redirect users to.
-   Query: client_id, redirect_uri, state, code_challenge, code_challenge_method, nonce, prompt=login *@
+   Query: client_id, redirect_uri, state, code_challenge, code_challenge_method, nonce, prompt=login,
+   category (sign in as one of the application's categories, e.g. "business") *@
 
 <PageTitle>Sign in@(client != null ? $" to {client.ApplicationName}" : "")</PageTitle>
 
@@ -63,7 +64,19 @@
                             </div>
                         }
 
-                        @if (signedInUser != null && !needsPasskey)
+                        @if (categoryAccess != null && signedInUser != null)
+                        {
+                            @* Signed in, but this app needs the user to ask for the category first *@
+                            <CategoryAccessRequest Access="categoryAccess" @bind-BusinessId="requestBusinessId" @bind-Note="requestNote" />
+                            <div class="d-grid gap-2 mb-4">
+                                <button class="btn btn-primary btn-lg" @onclick="RequestAccessAsync"
+                                        disabled="@(!CategoryAccessRequest.CanRequest(categoryAccess, requestBusinessId))">
+                                    <i class="bi bi-send me-2"></i>Request access as @categoryAccess.CategoryName
+                                </button>
+                                <button class="btn btn-link btn-sm" @onclick="UseAnotherAccountAsync">Use a different account</button>
+                            </div>
+                        }
+                        else if (signedInUser != null && !needsPasskey)
                         {
                             <div class="d-grid gap-2 mb-4">
                                 <button class="btn btn-primary btn-lg" @onclick="ContinueAsync">
@@ -119,6 +132,7 @@
     [SupplyParameterFromQuery(Name = "code_challenge_method")] public string? CodeChallengeMethod { get; set; }
     [SupplyParameterFromQuery(Name = "nonce")] public string? Nonce { get; set; }
     [SupplyParameterFromQuery(Name = "prompt")] public string? Prompt { get; set; }
+    [SupplyParameterFromQuery(Name = "category")] public string? Category { get; set; }
 
     private string? clientId;
     private SsoClientInfoDto? client;
@@ -128,6 +142,9 @@
     private string? error;
     private bool busy;
     private string? busyText;
+    private SsoCategoryAccessDto? categoryAccess;
+    private Guid? requestBusinessId;
+    private string? requestNote;
 
     protected override async Task OnInitializedAsync()
     {
@@ -166,6 +183,7 @@
         await PortalAuth.SignOutAsync();
         signedInUser = null;
         needsPasskey = false;
+        categoryAccess = null;
     }
 
     private async Task PasskeySignInAsync()
@@ -208,7 +226,8 @@
             State = State,
             CodeChallenge = CodeChallenge,
             CodeChallengeMethod = CodeChallengeMethod,
-            Nonce = Nonce
+            Nonce = Nonce,
+            Category = string.IsNullOrWhiteSpace(Category) ? null : Category
         });
 
         if (response.IsSuccessStatusCode)
@@ -236,6 +255,17 @@
                 // Signed in with a password: SSO requires a passkey or QR approval
                 needsPasskey = true;
                 break;
+            case System.Net.HttpStatusCode.Forbidden when errorBody?.Error == "access_required" && !string.IsNullOrWhiteSpace(Category):
+                // The app wants this category and the user hasn't asked for it yet: show the request form
+                categoryAccess = await ApiService.GetAsync<SsoCategoryAccessDto>(
+                    $"api/sso/access?clientId={Uri.EscapeDataString(clientId!)}&category={Uri.EscapeDataString(Category)}");
+                if (categoryAccess == null) error = errorBody.ErrorDescription;
+                break;
+            case System.Net.HttpStatusCode.Forbidden when errorBody?.Error is "access_pending" or "access_required":
+                // Waiting for the app's administrators, or the app needs approval and named no category:
+                // the app explains it to the user
+                RedirectWithError(errorBody.Error, errorBody.ErrorDescription);
+                return;
             case System.Net.HttpStatusCode.Forbidden when errorBody?.Error == "access_denied":
                 RedirectWithError("access_denied", errorBody.ErrorDescription);
                 return;
@@ -245,6 +275,33 @@
         }
 
         StateHasChanged();
+    }
+
+    private async Task RequestAccessAsync()
+    {
+        error = null;
+        busy = true;
+        busyText = "Sending your request…";
+        StateHasChanged();
+
+        var response = await ApiService.PostAsync("api/sso/access-requests", new SsoAccessRequest
+        {
+            ClientId = clientId!,
+            Category = Category!,
+            BusinessId = categoryAccess!.RequiresBusiness ? requestBusinessId : null,
+            Note = requestNote
+        });
+
+        if (!response.IsSuccessStatusCode)
+        {
+            busy = false;
+            error = await ApiService.ReadErrorAsync(response, "Could not send your request.");
+            return;
+        }
+
+        // Granted at once (no approval needed) signs in; a pending request goes back to the app
+        categoryAccess = null;
+        await AuthorizeAsync();
     }
 
     private Task CancelAsync()

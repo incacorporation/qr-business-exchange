@@ -22,11 +22,13 @@ namespace QRBusinessExchange.API.Controllers;
 public class SsoController : ControllerBase
 {
     private readonly SsoService _ssoService;
+    private readonly SsoAccessService _accessService;
     private readonly ILogger<SsoController> _logger;
 
-    public SsoController(SsoService ssoService, ILogger<SsoController> logger)
+    public SsoController(SsoService ssoService, SsoAccessService accessService, ILogger<SsoController> logger)
     {
         _ssoService = ssoService;
+        _accessService = accessService;
         _logger = logger;
     }
 
@@ -74,6 +76,36 @@ public class SsoController : ControllerBase
 
         return Run(() => _ssoService.CreateAuthorizationCodeAsync(
             userId.Value, User.GetAuthMethod(), User.GetAuthTime(), request));
+    }
+
+    /// <summary>
+    /// Where the signed-in user stands with one category of an application (e.g. "business"):
+    /// never asked, pending, approved, rejected or revoked, plus the businesses they may act for.
+    /// </summary>
+    [HttpGet("access")]
+    [Authorize]
+    [ProducesResponseType(typeof(SsoCategoryAccessDto), StatusCodes.Status200OK)]
+    public Task<IActionResult> GetAccess([FromQuery] string clientId, [FromQuery] string category)
+    {
+        var userId = User.GetUserId();
+        return userId == null
+            ? Task.FromResult<IActionResult>(Unauthorized())
+            : Run(() => _accessService.GetCategoryAccessAsync(userId.Value, clientId, category));
+    }
+
+    /// <summary>
+    /// The signed-in user asks to use an application as one of its categories. Granted at once when
+    /// the category needs no approval; otherwise pending, and the application's administrators are emailed.
+    /// </summary>
+    [HttpPost("access-requests")]
+    [Authorize]
+    [ProducesResponseType(typeof(SsoCategoryAccessDto), StatusCodes.Status200OK)]
+    public Task<IActionResult> RequestAccess([FromBody] SsoAccessRequest request)
+    {
+        var userId = User.GetUserId();
+        return userId == null
+            ? Task.FromResult<IActionResult>(Unauthorized())
+            : Run(() => _accessService.RequestAsync(userId.Value, request));
     }
 
     /// <summary>

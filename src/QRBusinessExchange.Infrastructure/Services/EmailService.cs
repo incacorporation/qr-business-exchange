@@ -215,6 +215,52 @@ public class EmailService : IEmailService
         return SendEmailAsync(email, "Your qrbound password was changed", body);
     }
 
+    /// <inheritdoc/>
+    public Task<bool> SendSsoAccessRequestedEmailAsync(string email, string firstName, string requesterName,
+        string requesterEmail, string applicationName, string categoryName, string? actingBusinessName,
+        string? note, string reviewUrl)
+    {
+        var e = (string? s) => WebUtility.HtmlEncode(s ?? string.Empty);
+        var asBusiness = actingBusinessName == null ? "" : $" for <strong>{e(actingBusinessName)}</strong>";
+        var noteHtml = string.IsNullOrWhiteSpace(note)
+            ? ""
+            : $"<blockquote style='margin:16px 0;padding:8px 16px;border-left:4px solid #0B5CFF;color:#444;'>{e(note)}</blockquote>";
+
+        var body = BrandedEmail(
+            $"Hi {e(firstName)},",
+            $@"<p><strong>{e(requesterName)}</strong> ({e(requesterEmail)}) asked to use <strong>{e(applicationName)}</strong>
+                  as <strong>{e(categoryName)}</strong>{asBusiness}.</p>
+               {noteHtml}
+               <p style='text-align:center;margin:28px 0;'>
+                   <a href='{e(reviewUrl)}' style='display:inline-block;padding:12px 28px;background:#0B5CFF;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold;'>Review the request</a>
+               </p>
+               <p>They can't sign in as {e(categoryName)} until you or another administrator approves it.</p>");
+
+        return SendEmailAsync(email, $"{applicationName}: {requesterName} asks to sign in as {categoryName}", body);
+    }
+
+    /// <inheritdoc/>
+    public Task<bool> SendSsoAccessDecisionEmailAsync(string email, string firstName, string applicationName,
+        string categoryName, string status, string? note, string? applicationUrl)
+    {
+        var e = (string? s) => WebUtility.HtmlEncode(s ?? string.Empty);
+        var noteHtml = string.IsNullOrWhiteSpace(note) ? "" : $"<p>Message from {e(applicationName)}: <em>{e(note)}</em></p>";
+
+        var (subject, text) = status switch
+        {
+            "Approved" => ($"You can now sign in to {applicationName}",
+                $"<p>Your request to use <strong>{e(applicationName)}</strong> as <strong>{e(categoryName)}</strong> was approved. You can sign in now with qrbound.</p>" +
+                (applicationUrl == null ? "" :
+                    $@"<p style='text-align:center;margin:28px 0;'><a href='{e(applicationUrl)}' style='display:inline-block;padding:12px 28px;background:#0B5CFF;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold;'>Open {e(applicationName)}</a></p>")),
+            "Revoked" => ($"Your access to {applicationName} was removed",
+                $"<p>Your access to <strong>{e(applicationName)}</strong> as <strong>{e(categoryName)}</strong> was removed by its administrators.</p>"),
+            _ => ($"Your request for {applicationName} was declined",
+                $"<p>Your request to use <strong>{e(applicationName)}</strong> as <strong>{e(categoryName)}</strong> was declined.</p>")
+        };
+
+        return SendEmailAsync(email, subject, BrandedEmail($"Hi {e(firstName)},", text + noteHtml));
+    }
+
     /// <summary>Wraps content in the qrbound email layout (royal-blue header).</summary>
     private static string BrandedEmail(string greeting, string contentHtml) => $@"
         <html>

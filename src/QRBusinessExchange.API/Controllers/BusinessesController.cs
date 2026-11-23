@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using QRBusinessExchange.API.Extensions;
 using QRBusinessExchange.Core.DTOs;
+using QRBusinessExchange.Core.Entities;
 using QRBusinessExchange.Infrastructure.Services;
 
 namespace QRBusinessExchange.API.Controllers;
@@ -15,10 +16,12 @@ namespace QRBusinessExchange.API.Controllers;
 public class BusinessesController : ControllerBase
 {
     private readonly BusinessService _businessService;
+    private readonly SsoAccessService _accessService;
 
-    public BusinessesController(BusinessService businessService)
+    public BusinessesController(BusinessService businessService, SsoAccessService accessService)
     {
         _businessService = businessService;
+        _accessService = accessService;
     }
 
     // Businesses ------------------------------------------------------------
@@ -87,6 +90,45 @@ public class BusinessesController : ControllerBase
     [HttpDelete("{businessId:guid}/applications/{applicationId:guid}")]
     public Task<IActionResult> DeleteApplication(Guid businessId, Guid applicationId) =>
         WithUser(async u => { await _businessService.DeleteApplicationAsync(u, businessId, applicationId); return new { deleted = true }; });
+
+    // Application categories and access requests --------------------------
+
+    /// <summary>The kinds of users an application recognises ("client", "business", ...).</summary>
+    [HttpGet("{businessId:guid}/applications/{applicationId:guid}/categories")]
+    [ProducesResponseType(typeof(List<SsoAppCategoryDto>), StatusCodes.Status200OK)]
+    public Task<IActionResult> GetCategories(Guid businessId, Guid applicationId) =>
+        WithUser(u => _accessService.GetCategoriesAsync(u, businessId, applicationId));
+
+    [HttpPost("{businessId:guid}/applications/{applicationId:guid}/categories")]
+    public Task<IActionResult> CreateCategory(Guid businessId, Guid applicationId, [FromBody] SaveSsoAppCategoryRequest request) =>
+        WithUser(u => _accessService.SaveCategoryAsync(u, businessId, applicationId, null, request));
+
+    [HttpPut("{businessId:guid}/applications/{applicationId:guid}/categories/{categoryId:guid}")]
+    public Task<IActionResult> UpdateCategory(Guid businessId, Guid applicationId, Guid categoryId, [FromBody] SaveSsoAppCategoryRequest request) =>
+        WithUser(u => _accessService.SaveCategoryAsync(u, businessId, applicationId, categoryId, request));
+
+    /// <summary>Deletes a category and everyone's access to it.</summary>
+    [HttpDelete("{businessId:guid}/applications/{applicationId:guid}/categories/{categoryId:guid}")]
+    public Task<IActionResult> DeleteCategory(Guid businessId, Guid applicationId, Guid categoryId) =>
+        WithUser(async u => { await _accessService.DeleteCategoryAsync(u, businessId, applicationId, categoryId); return new { deleted = true }; });
+
+    /// <summary>Access requests and grants for an application, pending first. Filter with ?status=Pending.</summary>
+    [HttpGet("{businessId:guid}/applications/{applicationId:guid}/access")]
+    [ProducesResponseType(typeof(List<SsoAppAccessDto>), StatusCodes.Status200OK)]
+    public Task<IActionResult> GetAccess(Guid businessId, Guid applicationId, [FromQuery] string? status) =>
+        WithUser(u => _accessService.GetAccessAsync(u, businessId, applicationId, status));
+
+    [HttpPost("{businessId:guid}/applications/{applicationId:guid}/access/{accessId:guid}/approve")]
+    public Task<IActionResult> ApproveAccess(Guid businessId, Guid applicationId, Guid accessId, [FromBody] SsoAccessDecisionRequest? request) =>
+        WithUser(u => _accessService.DecideAsync(u, businessId, applicationId, accessId, SsoAccessStatus.Approved, request?.Note));
+
+    [HttpPost("{businessId:guid}/applications/{applicationId:guid}/access/{accessId:guid}/reject")]
+    public Task<IActionResult> RejectAccess(Guid businessId, Guid applicationId, Guid accessId, [FromBody] SsoAccessDecisionRequest? request) =>
+        WithUser(u => _accessService.DecideAsync(u, businessId, applicationId, accessId, SsoAccessStatus.Rejected, request?.Note));
+
+    [HttpPost("{businessId:guid}/applications/{applicationId:guid}/access/{accessId:guid}/revoke")]
+    public Task<IActionResult> RevokeAccess(Guid businessId, Guid applicationId, Guid accessId, [FromBody] SsoAccessDecisionRequest? request) =>
+        WithUser(u => _accessService.DecideAsync(u, businessId, applicationId, accessId, SsoAccessStatus.Revoked, request?.Note));
 
     // -----------------------------------------------------------------------
 

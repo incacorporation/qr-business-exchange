@@ -160,7 +160,7 @@ builder.Services.AddAuthentication().AddJwtBearer(o =>
 | `BackendExchangePath` | `/qrbound/exchange` | your backend endpoint in Backend mode |
 | `PollInterval` | 2 s | used when qrbound does not suggest one |
 
-Component parameters: `Mode`, `Title`, `CssClass`, `ShowRedirectFallback`, `ReturnUrl`,
+Component parameters: `Mode`, `Category`, `Title`, `CssClass`, `ShowRedirectFallback`, `ReturnUrl`,
 `AutoRenewCount`, `OnSignedIn`, `OnError`. `<QrboundCallback>` also takes `DefaultReturnUrl`,
 `FailureUrl` and `ForceLoad`. Restyle with the `qrbound-*` CSS classes, or set `--qrbound-accent`.
 
@@ -176,6 +176,39 @@ The components also run as interactive server components inside MVC views
 * Backend mode does not work here: the component runs on the server, so the cookie set by `/qrbound/exchange`
   would never reach the browser. Use Direct mode, validate `result.Tokens.IdToken` with
   `QrboundTokenValidator` on the server, and set your cookie from a normal request.
+
+## User categories: one person, different roles on different sites
+
+The same qrbound user can sign in to one site as a **business** and to another as a **client**. Each app
+defines its own categories in the qrbound portal (Businesses → your business → SSO applications →
+**Categories & access**), for example:
+
+| Key | Name | Rules |
+|---|---|---|
+| `client` | Client | open, default: everyone who signs in gets it |
+| `business` | Restaurant | requires approval, acts for a business |
+| `vip` | VIP guest | requires approval |
+
+Ask for a category with the `Category` parameter (on the QR components and the redirect fallback):
+
+```razor
+<QrboundRegister Category="business" Title="Register your restaurant" OnError="OnError" />
+<QrboundSignIn Category="client" />
+```
+
+* **Registration with approval.** When the user doesn't hold the category yet, their phone asks for it
+  (with an optional message, and which of their businesses when the category acts for one). Your Owners
+  and Admins get an email with a link to approve or reject it; the user is emailed the decision. Until
+  then the component shows "waiting for approval" and raises `OnError` with error `access_pending`;
+  a refused or revoked request gives `access_denied`.
+* **Claims.** Approved categories arrive as `category` claims (`QrboundUser.Categories`). A category that
+  acts for a business adds `org_id`, `org_slug` and `org_name` (`QrboundUser.Organization`): the user's
+  own business, unlike `business_id`, which is always the business that owns your app.
+* **Roles.** `ToPrincipal()` and the server validator turn categories and `business_role` into roles,
+  so `[Authorize(Roles = "business")]`, `<AuthorizeView Roles="business">` and `User.IsInRole("vip")` work.
+* **Only approved users.** Tick *Users need an approved category to sign in* on the app to turn away
+  anyone without one. Without categories nothing changes for your app.
+* Acting for a business only counts while the user is still an Owner or Admin of it.
 
 ## Matching qrbound users to your accounts
 

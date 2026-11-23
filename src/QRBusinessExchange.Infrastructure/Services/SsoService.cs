@@ -28,11 +28,14 @@ public class SsoService
     private readonly ApplicationDbContext _db;
     private readonly SsoSigningKeyProvider _keys;
     private readonly SsoSettings _settings;
+    private readonly SsoAccessService _access;
     private readonly JwtSecurityTokenHandler _handler = new() { MapInboundClaims = false };
 
-    public SsoService(ApplicationDbContext db, SsoSigningKeyProvider keys, IOptions<SsoSettings> settings)
+    public SsoService(ApplicationDbContext db, SsoSigningKeyProvider keys, IOptions<SsoSettings> settings,
+        SsoAccessService access)
     {
         _db = db;
+        _access = access;
         _keys = keys;
         _settings = settings.Value;
     }
@@ -148,6 +151,9 @@ public class SsoService
             throw new SsoException("access_denied", $"Your account is not a member of {app.Business.Name}", 403);
         }
 
+        // Application categories: pending, rejected or missing access stops here (access_pending / access_required / access_denied)
+        await _access.EnsureCanSignInAsync(app, userId, request.Category);
+
         var code = SsoCrypto.NewSecret();
         _db.SsoAuthorizationCodes.Add(new SsoAuthorizationCode
         {
@@ -244,7 +250,8 @@ public class SsoService
             .FirstOrDefaultAsync();
 
         var lifetime = TimeSpan.FromMinutes(app.TokenLifetimeMinutes);
-        var claims = BuildUserClaims(user, app, membershipRole, record.AuthMethod, record.AuthTime);
+        var (categories, actingFor) = await _access.GetClaimsAsync(app, user.UserId);
+        var claims = BuildUserClaims(user, app, membershipRole, record.AuthMethod, record.AuthTime, categories, actingFor);
 
         var accessToken = CreateJwt(app.ClientId, lifetime, claims.Append(new Claim("token_use", "access")));
 
@@ -315,7 +322,11 @@ public class SsoService
             ["picture"] = user.ProfileImageUrl,
             ["company"] = user.CompanyName,
             ["business_id"] = principal.FindFirst("business_id")?.Value,
-            ["business_role"] = principal.FindFirst("business_role")?.Value
+            ["business_role"] = principal.FindFirst("business_role")?.Value,
+            ["category"] = principal.FindAll("category").Select(c => c.Value).ToArray(),
+            ["org_id"] = principal.FindFirst("org_id")?.Value,
+            ["org_slug"] = principal.FindFirst("org_slug")?.Value,
+            ["org_name"] = principal.FindFirst("org_name")?.Value
         };
     }
 
@@ -341,7 +352,8 @@ public class SsoService
         claims_supported = new[]
         {
             "sub", "email", "email_verified", "name", "given_name", "family_name",
-            "amr", "auth_time", "nonce", "client_id", "business_id", "business_slug", "business_role"
+            "amr", "auth_time", "nonce", "client_id", "business_id", "business_slug", "business_role",
+            "category", "org_id", "org_slug", "org_name"
         }
     };
 
@@ -363,7 +375,8 @@ public class SsoService
     }
 
     private static List<Claim> BuildUserClaims(
-        User user, SsoApplication app, string? membershipRole, string authMethod, DateTime authTime)
+        User user, SsoApplication app, string? membershipRole, string authMethod, DateTime authTime,
+        IReadOnlyList<string> categories, Business? actingFor)
     {
         var claims = new List<Claim>
         {
@@ -383,6 +396,18 @@ public class SsoService
         if (membershipRole != null)
         {
             claims.Add(new Claim("business_role", membershipRole));
+        }
+
+        // The application's categories this user holds ("client", "business", ...); one claim each, so
+        // several become a JSON array
+        claims.AddRange(categories.Select(c => new Claim("category", c)));
+
+        // The user's own business they act for (a category with RequiresBusiness)
+        if (actingFor != null)
+        {
+            claims.Add(new Claim("org_id", actingFor.BusinessId.ToString()));
+            claims.Add(new Claim("org_slug", actingFor.Slug));
+            claims.Add(new Claim("org_name", actingFor.Name));
         }
 
         return claims;

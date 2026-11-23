@@ -84,6 +84,10 @@ public class ApplicationDbContext : IdentityDbContext
     /// <summary>QR code login sessions</summary>
     public DbSet<QrLoginSession> QrLoginSessions { get; set; } = null!;
 
+    public DbSet<SsoAppCategory> SsoAppCategories { get; set; } = null!;
+
+    public DbSet<SsoAppAccess> SsoAppAccess { get; set; } = null!;
+
     /// <summary>People saved by scanning their business card</summary>
     public DbSet<Contact> Contacts { get; set; } = null!;
 
@@ -205,6 +209,73 @@ public class ApplicationDbContext : IdentityDbContext
             entity.Property(e => e.SsoApplicationId).HasDefaultValueSql("NEWID()");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
+        });
+
+        modelBuilder.Entity<SsoAppCategory>(entity =>
+        {
+            entity.ToTable("SsoAppCategories");
+            entity.HasKey(e => e.SsoAppCategoryId);
+
+            entity.HasOne(e => e.Application)
+                .WithMany(a => a.Categories)
+                .HasForeignKey(e => e.SsoApplicationId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_SsoAppCategories_SsoApplications");
+
+            entity.HasIndex(e => new { e.SsoApplicationId, e.Key })
+                .IsUnique()
+                .HasDatabaseName("IX_SsoAppCategories_Application_Key");
+
+            entity.Property(e => e.SsoAppCategoryId).HasDefaultValueSql("NEWID()");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+        });
+
+        modelBuilder.Entity<SsoAppAccess>(entity =>
+        {
+            entity.ToTable("SsoAppAccess");
+            entity.HasKey(e => e.SsoAppAccessId);
+
+            // Cascades come through the category (deleting an app deletes its categories, which
+            // deletes their access rows); SQL Server forbids a second cascade path from the app.
+            entity.HasOne(e => e.Application)
+                .WithMany()
+                .HasForeignKey(e => e.SsoApplicationId)
+                .OnDelete(DeleteBehavior.NoAction)
+                .HasConstraintName("FK_SsoAppAccess_SsoApplications");
+
+            entity.HasOne(e => e.Category)
+                .WithMany()
+                .HasForeignKey(e => e.SsoAppCategoryId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_SsoAppAccess_SsoAppCategories");
+
+            entity.HasOne(e => e.User)
+                .WithMany()
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("FK_SsoAppAccess_Users");
+
+            entity.HasOne(e => e.Business)
+                .WithMany()
+                .HasForeignKey(e => e.BusinessId)
+                .OnDelete(DeleteBehavior.NoAction)
+                .HasConstraintName("FK_SsoAppAccess_Businesses");
+
+            entity.HasIndex(e => new { e.SsoAppCategoryId, e.UserId })
+                .IsUnique()
+                .HasDatabaseName("IX_SsoAppAccess_Category_User");
+
+            entity.HasIndex(e => new { e.SsoApplicationId, e.Status })
+                .HasDatabaseName("IX_SsoAppAccess_Application_Status");
+
+            entity.HasIndex(e => e.UserId)
+                .HasDatabaseName("IX_SsoAppAccess_UserId");
+
+            entity.Property(e => e.SsoAppAccessId).HasDefaultValueSql("NEWID()");
+            entity.Property(e => e.RequestedAt).HasDefaultValueSql("GETUTCDATE()");
+
+            // Two admins deciding the same request at once: only one wins
+            entity.Property(e => e.Status).IsConcurrencyToken();
         });
 
         modelBuilder.Entity<SsoAuthorizationCode>(entity =>

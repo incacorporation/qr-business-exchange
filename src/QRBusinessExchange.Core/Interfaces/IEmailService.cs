@@ -43,6 +43,23 @@ public interface IEmailService
     Task<bool> SendPasswordChangedEmailAsync(string email, string firstName, string forgotPasswordUrl);
 
     /// <summary>
+    /// Tells an Owner or Admin of an application's business that someone asked to use the
+    /// application as one of its categories, with a link to review the request.
+    /// </summary>
+    Task<bool> SendSsoAccessRequestedEmailAsync(string email, string firstName, string requesterName,
+        string requesterEmail, string applicationName, string categoryName, string? actingBusinessName,
+        string? note, string reviewUrl) => Task.FromResult(false);
+
+    /// <summary>
+    /// Tells a user that their request to use an application as a category was approved or
+    /// rejected, or that their access was revoked.
+    /// </summary>
+    /// <param name="status">Approved, Rejected or Revoked</param>
+    /// <param name="applicationUrl">Where to sign in after approval, if known</param>
+    Task<bool> SendSsoAccessDecisionEmailAsync(string email, string firstName, string applicationName,
+        string categoryName, string status, string? note, string? applicationUrl) => Task.FromResult(false);
+
+    /// <summary>
     /// Sends a short test email straight away, for diagnosing the mail setup.
     /// </summary>
     /// <returns>Null if the mail server accepted it, otherwise why it failed (never includes the password)</returns>

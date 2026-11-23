@@ -106,4 +106,30 @@ public class TokenValidatorTests
         Assert.Equal(user.Subject, back.Subject);
         Assert.Equal("Admin", back.BusinessRole);
     }
+
+    [Fact]
+    public async Task Server_principal_has_categories_as_roles_and_keeps_them_through_the_backend_user()
+    {
+        var token = _tokens.Create(extra: new Dictionary<string, object>
+        {
+            ["category"] = new[] { "business", "vip" },
+            ["org_id"] = "99999999-8888-7777-6666-555555555555",
+            ["org_slug"] = "johns-tacos",
+            ["org_name"] = "John's Tacos"
+        });
+
+        var principal = await CreateValidator().ValidateIdTokenAsync(token, "n-1");
+        Assert.True(principal.IsInRole("business"));
+        Assert.True(principal.IsInRole("vip"));
+        Assert.True(principal.IsInRole("Admin"));
+
+        var user = QrboundServerExtensions.ToUser(principal);
+        Assert.Equal(new[] { "business", "vip" }, user.Categories);
+        Assert.Equal("johns-tacos", user.Organization?.Slug);
+
+        var back = QrboundBackendUser.From(user).ToUser();
+        Assert.Equal(new[] { "business", "vip" }, back.Categories);
+        Assert.Equal(user.Organization, back.Organization);
+        Assert.True(back.ToPrincipal().IsInRole("business"));
+    }
 }

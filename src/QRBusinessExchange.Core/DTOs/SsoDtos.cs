@@ -97,6 +97,9 @@ public class CreateSsoApplicationRequest
 
     public bool RequireMembership { get; set; } = false;
 
+    /// <summary>Users need an approved category before they can sign in.</summary>
+    public bool RequireApprovedCategory { get; set; }
+
     [Range(5, 1440)]
     public int TokenLifetimeMinutes { get; set; } = 60;
 }
@@ -110,6 +113,8 @@ public class UpdateSsoApplicationRequest
     public List<string> RedirectUris { get; set; } = new();
 
     public bool RequireMembership { get; set; }
+
+    public bool RequireApprovedCategory { get; set; }
 
     [Range(5, 1440)]
     public int TokenLifetimeMinutes { get; set; } = 60;
@@ -126,6 +131,7 @@ public class SsoApplicationDto
     public bool IsConfidential { get; set; }
     public List<string> RedirectUris { get; set; } = new();
     public bool RequireMembership { get; set; }
+    public bool RequireApprovedCategory { get; set; }
     public int TokenLifetimeMinutes { get; set; }
     public bool IsActive { get; set; }
     public DateTime CreatedAt { get; set; }
@@ -168,6 +174,9 @@ public class SsoAuthorizeRequest
     public string? CodeChallengeMethod { get; set; }
 
     public string? Nonce { get; set; }
+
+    /// <summary>Key of the application category to sign in as (e.g. "business"). Optional.</summary>
+    public string? Category { get; set; }
 }
 
 public class SsoAuthorizeResponse
@@ -216,6 +225,9 @@ public class QrLoginCreateRequest
     /// <see cref="ClientId"/>), it must be registered for the application.
     /// </summary>
     public string? RedirectUri { get; set; }
+
+    /// <summary>Key of the application category to sign in or register as (e.g. "business"). Optional.</summary>
+    public string? Category { get; set; }
 }
 
 /// <summary>
@@ -253,6 +265,9 @@ public class QrLoginAuthorizeResponse
 
     /// <summary>The state sent by the application, echoed with the code.</summary>
     public string? State { get; set; }
+
+    /// <summary>Why no code was issued, for AccessPending and AccessDenied.</summary>
+    public string? Message { get; set; }
 }
 
 public class QrLoginCreateResponse
@@ -304,6 +319,9 @@ public class QrLoginSessionInfoDto
 
     /// <summary>Candidate numbers; the user picks the one shown on the other screen.</summary>
     public List<string> VerificationChoices { get; set; } = new();
+
+    /// <summary>Set when the application asked for a category; tells the phone whether to request it.</summary>
+    public SsoCategoryAccessDto? CategoryAccess { get; set; }
 }
 
 public class QrLoginApproveRequest

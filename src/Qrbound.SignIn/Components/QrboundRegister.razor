@@ -4,9 +4,11 @@
 
 <QrboundSignIn Mode="QrboundMode.Register" Title="@Title" CssClass="@CssClass"
                ShowRedirectFallback="@ShowRedirectFallback" ReturnUrl="@ReturnUrl"
-               OnSignedIn="OnSignedIn" OnError="OnError" AutoRenewCount="@AutoRenewCount" />
+               Category="@Category" OnSignedIn="OnSignedIn" OnError="OnError" AutoRenewCount="@AutoRenewCount" />
 
 @code {
+    /// <summary>The category to register as (e.g. "business"); see <see cref="QrboundSignIn.Category"/>.</summary>
+    [Parameter] public string? Category { get; set; }
     [Parameter] public string? Title { get; set; }
     [Parameter] public string? CssClass { get; set; }
     [Parameter] public bool ShowRedirectFallback { get; set; } = false;
