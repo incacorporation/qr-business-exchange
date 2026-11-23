@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -8,7 +8,7 @@
 
     <IsPackable>true</IsPackable>
     <PackageId>Qrbound.SignIn.Server</PackageId>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Authors>QRBound</Authors>
     <Description>Server-side helpers for qrbound sign-in: validates qrbound tokens against the published signing keys, exchanges authorization codes (optionally with a client secret kept on the server) and signs users in with a cookie.</Description>
     <PackageTags>qrbound;sso;passkey;jwt;aspnetcore;pkce</PackageTags>

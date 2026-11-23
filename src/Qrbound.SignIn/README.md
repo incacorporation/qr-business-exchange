@@ -28,6 +28,36 @@ The request expires after about 3 minutes. The component renews it automatically
 "New QR code". If the user denies on the phone or picks the wrong number, the request is cancelled.
 "Use a passkey on this device instead" falls back to qrbound's normal sign-in page (full redirect).
 
+## Installing (private GitHub Packages feed)
+
+The packages are published privately to the `incacorporation` GitHub Packages feed. Add a
+`nuget.config` next to your solution:
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+    <add key="qrbound" value="https://nuget.pkg.github.com/incacorporation/index.json" />
+  </packageSources>
+  <packageSourceMapping>
+    <packageSource key="nuget.org"><package pattern="*" /></packageSource>
+    <packageSource key="qrbound"><package pattern="Qrbound.*" /></packageSource>
+  </packageSourceMapping>
+</configuration>
+```
+
+Give NuGet a GitHub token with `read:packages` (a classic personal access token, or in GitHub Actions
+`${{ secrets.GITHUB_TOKEN }}` with `packages: read`). Store it in your user-level NuGet config, never in
+the repository:
+
+```bash
+dotnet nuget add source https://nuget.pkg.github.com/incacorporation/index.json --name qrbound --username <github-user> --password <token>
+```
+
+or set it only for the build with the `NuGetPackageSourceCredentials_qrbound` environment variable
+(`Username=<github-user>;Password=<token>`).
+
 ## 1. Register your app in qrbound
 
 In the qrbound portal open **Businesses → your business → Applications → New application**:
