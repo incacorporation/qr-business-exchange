@@ -337,6 +337,15 @@ main {
     padding: var(--content-pt) var(--content-px) 2rem;
 }
 
+/* Full-width page with 50px on every side (business management). It replaces the article padding;
+   phones keep the normal padding. */
+@media (min-width: 768px) {
+    .page-wide {
+        margin: calc(-1 * var(--content-pt)) calc(-1 * var(--content-px)) -2rem;
+        padding: 50px;
+    }
+}
+
 /* Full-width band that cancels the article padding (e.g. the Home hero) */
 .content-bleed {
     width: auto;
