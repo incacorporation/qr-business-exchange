@@ -101,6 +101,20 @@ builder.Services.AddScoped<IGeolocationService, GeolocationService>();
 builder.Services.AddScoped<INotificationService, OneSignalService>();
 builder.Services.AddScoped<WebAuthnService>();
 
+// CardPointe card payments. ApiUsername/ApiPassword come from user-secrets or
+// CardPointe__ApiUsername / CardPointe__ApiPassword environment variables, never appsettings.
+builder.Services.Configure<QRBusinessExchange.API.Services.CardPointeOptions>(
+    builder.Configuration.GetSection(QRBusinessExchange.API.Services.CardPointeOptions.SectionName));
+builder.Services.AddHttpClient<QRBusinessExchange.API.Services.ICardPointeService, QRBusinessExchange.API.Services.CardPointeService>(
+    (sp, http) =>
+    {
+        var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<QRBusinessExchange.API.Services.CardPointeOptions>>().Value;
+        http.Timeout = TimeSpan.FromSeconds(Math.Clamp(options.TimeoutSeconds, 5, 120));
+    });
+// QR payments: staff show a QR code, anyone who scans it pays by card.
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<QRBusinessExchange.API.Services.QrPaymentService>();
+
 // Password-reset links: signed and encrypted with Data Protection keys kept on the server.
 // In containers, persist the keys (PersistKeysToFileSystem on a volume) so links survive restarts.
 builder.Services.AddDataProtection().SetApplicationName("QRBusinessExchange");

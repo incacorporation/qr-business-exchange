@@ -4,6 +4,7 @@
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/mlm.qrbound.com/mlm.qrbound.com.csproj" />
+    <Project Path="src/Qrbound.Payments/Qrbound.Payments.csproj" />
     <Project Path="src/Qrbound.SignIn.Server/Qrbound.SignIn.Server.csproj" />
     <Project Path="src/Qrbound.SignIn/Qrbound.SignIn.csproj" />
     <Project Path="src/QRBusinessExchange.API/QRBusinessExchange.API.csproj" />

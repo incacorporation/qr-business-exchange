@@ -25,6 +25,7 @@
   <ItemGroup>
     <ProjectReference Include="..\QRBusinessExchange.Core\QRBusinessExchange.Core.csproj" />
     <ProjectReference Include="..\QRBusinessExchange.Infrastructure\QRBusinessExchange.Infrastructure.csproj" />
+    <ProjectReference Include="..\Qrbound.Payments\Qrbound.Payments.csproj" />
   </ItemGroup>
 
 </Project>

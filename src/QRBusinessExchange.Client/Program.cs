@@ -16,6 +16,9 @@ var apiBaseUrl = builder.Configuration["ApiSettings:BaseUrl"] ?? "https://localh
 Console.WriteLine($"[Startup] API Base URL: {apiBaseUrl}");
 builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(apiBaseUrl) });
 
+// Card payments (Qrbound.Payments): only the public payment endpoints, so no sign-in token is attached.
+builder.Services.AddQrboundPayments(new Uri(apiBaseUrl));
+
 // Register services
 Console.WriteLine("[Startup] Registering services...");
 builder.Services.AddScoped<ApiService>();

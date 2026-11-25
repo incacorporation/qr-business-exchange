@@ -36,6 +36,7 @@ public class QrCodeLinksTests
     [InlineData($"https://www.qrbound.com/user/{Id}", $"/user/{Id}")]
     [InlineData($"https://www.qrbound.com/qr/approve/{Id}", $"/qr/approve/{Id}")]
     [InlineData($"https://qrbound.com/qr/link/{Id}#k=abc", $"/qr/link/{Id}#k=abc")]
+    [InlineData($"https://www.qrbound.com/pay/{Id}", $"/pay/{Id}")]
     public void AppRoute_AllowsOwnQrFlowsAndBusinessCards(string scanned, string expected)
     {
         Assert.Equal(expected, QrCodeLinks.ToAppRoute(scanned, Site));

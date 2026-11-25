@@ -1,0 +1,31 @@
+@namespace Qrbound.Payments
+
+@* Draws a QR code for a payment link, as inline SVG. *@
+
+<div class="qrbound-qr @CssClass" style="width: @Size; height: @Size">
+    @((MarkupString)svg)
+</div>
+
+@code {
+    private string svg = string.Empty;
+    private string? rendered;
+
+    /// <summary>The link to encode, e.g. https://example.com/pay/{id}.</summary>
+    [Parameter, EditorRequired] public string Value { get; set; } = string.Empty;
+
+    /// <summary>Accessible name of the image.</summary>
+    [Parameter] public string Title { get; set; } = "Payment QR code";
+
+    [Parameter] public string Size { get; set; } = "16rem";
+
+    [Parameter] public string? CssClass { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        if (Value != rendered)
+        {
+            svg = string.IsNullOrEmpty(Value) ? string.Empty : QrCodeSvg.Render(Value, Title);
+            rendered = Value;
+        }
+    }
+}

@@ -37,10 +37,18 @@
                     <p class="small text-muted mb-0">Owner: @business.OwnerEmail</p>
                 }
             </div>
-            @if (HasOwnerRights)
-            {
-                <button class="btn btn-outline-danger btn-sm" @onclick="DeleteBusinessAsync">Delete business</button>
-            }
+            <div class="d-flex gap-2 flex-wrap justify-content-end">
+                @if (business.IsActive)
+                {
+                    <a class="btn btn-success btn-sm" href="@($"/businesses/{BusinessId}/payments")">
+                        <i class="bi bi-qr-code me-1"></i>Take a payment
+                    </a>
+                }
+                @if (HasOwnerRights)
+                {
+                    <button class="btn btn-outline-danger btn-sm" @onclick="DeleteBusinessAsync">Delete business</button>
+                }
+            </div>
         </div>
 
         @if (!string.IsNullOrEmpty(error))

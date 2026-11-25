@@ -14,7 +14,8 @@ public static partial class QrCodeLinks
     // /qr/approve/{id}  - approve a sign-in shown on another screen (QrLoginService.ApproveUrl)
     // /qr/link/{id}     - link this phone with a passkey (DeviceLinkService.LinkUrl, secret in #k=...)
     // /user/{id}        - someone's business card (QRCodeCard: their public profile)
-    [GeneratedRegex($"^/(qr/(approve|link)|user)/{Guid}$")]
+    // /pay/{id}         - pay a business's QR payment request (TakePayment page)
+    [GeneratedRegex($"^/(qr/(approve|link)|user|pay)/{Guid}$")]
     private static partial Regex AllowedPath();
 
     [GeneratedRegex($"^/user/(?<id>{Guid})$")]

@@ -1,0 +1,156 @@
+@namespace Qrbound.Payments
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+@* Hosts CardPointe's iFrame tokenizer. The card number and expiry are typed into CardPointe's page,
+   which posts back a token; OnTokenized receives it. The card number never reaches this app. *@
+
+@if (frameUrl is null)
+{
+    <div class="qrbound-pay-alert" role="alert">The card form is not configured.</div>
+}
+else
+{
+    <iframe @ref="frame"
+            class="qrbound-tokenizer @CssClass"
+            src="@frameUrl"
+            title="@Title"
+            style="height: @Height"
+            scrolling="no"
+            frameborder="0"></iframe>
+}
+
+@code {
+    private ElementReference frame;
+    private string? frameUrl;
+    private string? origin;
+    private string? listeningTo;
+    private IJSObjectReference? module;
+    private IJSObjectReference? listener;
+    private DotNetObjectReference<CardPointeTokenizer>? selfRef;
+
+    /// <summary>CardPointe's hosted tokenizer page, e.g. https://fts-uat.cardconnect.com/itoke/ajax-tokenizer.html.</summary>
+    [Parameter, EditorRequired] public string? TokenizerUrl { get; set; }
+
+    /// <summary>Raised each time the tokenizer posts: a new token, or a validation error.</summary>
+    [Parameter] public EventCallback<TokenizationResult> OnTokenized { get; set; }
+
+    /// <summary>
+    /// CSS for the inputs inside CardPointe's page, passed as its css parameter.
+    /// Leave null for the default look.
+    /// </summary>
+    [Parameter] public string? Css { get; set; }
+
+    // No CVV option: with usecvv=true CardPointe shows a CVV field but posts back only the token
+    // and expiry (checked against UAT), so a CVV typed there would never reach the charge.
+
+    /// <summary>Height of the iframe; the default fits the card number and expiry fields.</summary>
+    [Parameter] public string Height { get; set; } = "9.5rem";
+
+    /// <summary>Accessible name of the iframe.</summary>
+    [Parameter] public string Title { get; set; } = "Card details";
+
+    [Parameter] public string? CssClass { get; set; }
+
+    /// <summary>Default styling for the fields inside the iframe.</summary>
+    public const string DefaultCss =
+        "body{margin:0;font-family:sans-serif;}" +
+        "label{display:block;font-size:14px;margin:8px 0 4px;}" +
+        "input,select{font-size:16px;padding:8px;border:1px solid #ced4da;border-radius:6px;box-sizing:border-box;}" +
+        "input{width:100%;}" +
+        ".error{color:#dc3545;border-color:#dc3545;}";
+
+    protected override void OnParametersSet()
+    {
+        frameUrl = null;
+        origin = null;
+
+        if (string.IsNullOrWhiteSpace(TokenizerUrl) ||
+            !Uri.TryCreate(TokenizerUrl, UriKind.Absolute, out var uri) ||
+            uri.Scheme != Uri.UriSchemeHttps)
+        {
+            return;
+        }
+
+        origin = uri.GetLeftPart(UriPartial.Authority);
+
+        var query = new List<string>
+        {
+            "useexpiry=true",
+            "usemonthnames=true",
+            "formatinput=true",
+            "invalidinputevent=true",
+            "tokenizewheninactive=true",
+            "inactivityto=500",
+            "css=" + Uri.EscapeDataString(Css ?? DefaultCss)
+        };
+        var separator = string.IsNullOrEmpty(uri.Query) ? "?" : "&";
+        frameUrl = TokenizerUrl + separator + string.Join("&", query);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // (Re)attach whenever the iframe's origin changes; frameUrl null means no iframe to listen to.
+        if (origin is null || origin == listeningTo)
+        {
+            return;
+        }
+
+        await DetachAsync();
+
+        module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./_content/Qrbound.Payments/cardpointeTokenizer.js");
+        selfRef ??= DotNetObjectReference.Create(this);
+        listener = await module.InvokeAsync<IJSObjectReference>("listen", frame, origin, selfRef);
+        listeningTo = origin;
+    }
+
+    /// <summary>Called from JS with the fields of the tokenizer's message.</summary>
+    [JSInvokable]
+    public Task OnTokenizerMessage(string? token, string? expiry, string? validationError)
+    {
+        return OnTokenized.InvokeAsync(new TokenizationResult
+        {
+            Token = string.IsNullOrEmpty(validationError) ? token : null,
+            Expiry = expiry,
+            ValidationError = validationError
+        });
+    }
+
+    private async Task DetachAsync()
+    {
+        if (listener is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await listener.InvokeVoidAsync("dispose");
+            await listener.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+
+        listener = null;
+        listeningTo = null;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await DetachAsync();
+
+        if (module is not null)
+        {
+            try
+            {
+                await module.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+
+        selfRef?.Dispose();
+    }
+}

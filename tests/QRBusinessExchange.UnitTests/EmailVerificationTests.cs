@@ -121,8 +121,9 @@ public class EmailVerificationEndpointTests
             .BuildServiceProvider();
 
         _controller = new AuthController(
+            null!, // businessService: not used by these endpoints
             _users,
-            jwtService: null!, // not used by these endpoints
+            null!, // jwtService: not used by these endpoints
             _email,
             NullLogger<AuthController>.Instance,
             new PasswordResetTokens(new EphemeralDataProtectionProvider()),

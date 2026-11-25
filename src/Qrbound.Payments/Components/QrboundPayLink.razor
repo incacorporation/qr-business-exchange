@@ -1,0 +1,147 @@
+@namespace Qrbound.Payments
+@inject QrboundPaymentsClient Payments
+
+@* The payer's page for a QR payment link: loads the request and shows the card form for its fixed
+   amount, or says why it can't be paid (already paid, expired, cancelled, locked). *@
+
+<div class="qrbound-paylink @CssClass">
+    @if (loading)
+    {
+        <div class="qrbound-paylink-box"><span class="qrbound-paylink-spinner" role="status" aria-label="Loading"></span></div>
+    }
+    else if (info is null)
+    {
+        <div class="qrbound-paylink-box" role="alert">
+            <p class="qrbound-paylink-lead">Payment link not found</p>
+            <p class="qrbound-paylink-hint">@(loadError ?? "Check the QR code, or ask for a new one.")</p>
+            @if (loadError is not null)
+            {
+                <button type="button" class="qrbound-paylink-button" @onclick="LoadAsync">Try again</button>
+            }
+        </div>
+    }
+    else if (info.Status == QrPaymentStates.Open)
+    {
+        <QrboundCardPayment @key="info.Id"
+                            Title="@($"Pay {info.BusinessName}")"
+                            Subtitle="Card details are entered on CardPointe's secure form"
+                            AmountCents="info.AmountCents"
+                            InvoiceNumber="@info.InvoiceNumber"
+                            Description="@(info.Description ?? $"Payment to {info.BusinessName}")"
+                            RequireEmail="RequireEmail"
+                            ShowClearButton="false"
+                            ButtonText="@($"Pay {FormatAmount(info.AmountCents, info.Currency)}")"
+                            ChargeHandler="ChargeAsync"
+                            OnCompleted="OnCompletedAsync" />
+    }
+    else
+    {
+        <div class="qrbound-paylink-box @(info.Status == QrPaymentStates.Paid ? "qrbound-paylink-paid" : null)" role="status">
+            <p class="qrbound-paylink-business">@info.BusinessName</p>
+            <p class="qrbound-paylink-amount">@FormatAmount(info.AmountCents, info.Currency)</p>
+            @if (!string.IsNullOrEmpty(info.Description))
+            {
+                <p class="qrbound-paylink-hint">@info.Description</p>
+            }
+            <p class="qrbound-paylink-lead">@Headline(info.Status)</p>
+            <p class="qrbound-paylink-hint">@Detail(info)</p>
+            @if (info.Status == QrPaymentStates.Processing)
+            {
+                <button type="button" class="qrbound-paylink-button" @onclick="LoadAsync">Check again</button>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private QrPaymentInfo? info;
+    private bool loading = true;
+    private string? loadError;
+    private Guid? loadedId;
+
+    /// <summary>The payment link's ID (the {id} in /pay/{id}).</summary>
+    [Parameter, EditorRequired] public Guid PaymentId { get; set; }
+
+    /// <summary>Whether the payer must give an email for a receipt. Default false: walk-up payers can skip it.</summary>
+    [Parameter] public bool RequireEmail { get; set; }
+
+    /// <summary>Raised when the payment is approved.</summary>
+    [Parameter] public EventCallback<CardPaymentResult> OnPaid { get; set; }
+
+    [Parameter] public string? CssClass { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedId != PaymentId)
+        {
+            loadedId = PaymentId;
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        loadError = null;
+        try
+        {
+            info = await Payments.GetQrPaymentAsync(PaymentId);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException)
+        {
+            info = null;
+            loadError = "We couldn't load this payment. Check your connection and try again.";
+        }
+        loading = false;
+    }
+
+    private Task<CardPaymentResult> ChargeAsync(CardPaymentRequest request) =>
+        Payments.PayQrPaymentAsync(PaymentId, new QrPaymentPayRequest
+        {
+            PaymentToken = request.PaymentToken,
+            Expiry = request.Expiry,
+            CardholderName = request.CardholderName,
+            Email = request.Email
+        });
+
+    private async Task OnCompletedAsync(CardPaymentResult result)
+    {
+        if (result.IsSuccess)
+        {
+            await OnPaid.InvokeAsync(result);
+        }
+
+        // Show the link's new state: paid, locked after too many declines, or still open to retry.
+        var refreshed = await Payments.GetQrPaymentAsync(PaymentId);
+        if (refreshed is not null && refreshed.Status != QrPaymentStates.Open)
+        {
+            info = refreshed;
+        }
+    }
+
+    private static string Headline(string status) => status switch
+    {
+        QrPaymentStates.Paid => "Paid. Thank you!",
+        QrPaymentStates.Expired => "This payment link has expired",
+        QrPaymentStates.Cancelled => "This payment was cancelled",
+        QrPaymentStates.Locked => "This payment link is locked",
+        QrPaymentStates.Processing => "Payment in progress",
+        QrPaymentStates.NeedsReview => "Payment being checked",
+        _ => "This payment can't be made"
+    };
+
+    private static string Detail(QrPaymentInfo p) => p.Status switch
+    {
+        QrPaymentStates.Paid => p.TransactionId is null ? "Your payment went through." : $"Reference {p.TransactionId}",
+        QrPaymentStates.Expired or QrPaymentStates.Cancelled or QrPaymentStates.Locked => "Ask for a new QR code.",
+        QrPaymentStates.Processing => "A payment for this is being processed right now.",
+        QrPaymentStates.NeedsReview => "We couldn't confirm an earlier attempt. Please ask staff before paying again.",
+        _ => string.Empty
+    };
+
+    private static string FormatAmount(long cents, string currency)
+    {
+        var amount = (cents / 100m).ToString("N2", System.Globalization.CultureInfo.InvariantCulture);
+        return currency == "USD" ? "$" + amount : amount + " " + currency;
+    }
+}

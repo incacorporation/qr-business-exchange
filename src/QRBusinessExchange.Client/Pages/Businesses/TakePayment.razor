@@ -1,0 +1,433 @@
+@page "/businesses/{BusinessId:guid}/payments"
+@using System.Globalization
+@implements IAsyncDisposable
+@inject ApiService ApiService
+@inject PortalAuthService PortalAuth
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+@* Staff take a card payment: enter an amount, show the QR code, and watch it get paid.
+   The customer scans it with their phone camera and pays on /pay/{id}; no account needed. *@
+
+<PageTitle>Take a payment - @(business?.Name ?? "qrbound")</PageTitle>
+
+<div class="page-wide">
+    <a href="@($"/businesses/{BusinessId}")" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> @(business?.Name ?? "Business")</a>
+
+    <h2 class="mt-2 mb-4"><i class="bi bi-qr-code me-2"></i>Take a payment</h2>
+
+    @if (!string.IsNullOrEmpty(error))
+    {
+        <div class="alert alert-danger alert-dismissible">
+            @error
+            <button type="button" class="btn-close" @onclick="() => error = null"></button>
+        </div>
+    }
+
+    @if (business == null)
+    {
+        @if (error == null) { <div class="text-center py-5"><span class="spinner-border text-primary"></span></div> }
+    }
+    else
+    {
+        <div class="row g-4">
+            <div class="col-lg-5">
+                @if (current == null)
+                {
+                    <div class="card shadow-sm">
+                        <div class="card-body">
+                            <h5 class="card-title mb-3">New payment</h5>
+                            <div class="mb-3">
+                                <label class="form-label" for="pay-amount">Amount (USD) <span class="text-danger">*</span></label>
+                                <div class="input-group">
+                                    <span class="input-group-text">$</span>
+                                    <input id="pay-amount" class="form-control form-control-lg" inputmode="decimal" placeholder="0.00"
+                                           @bind="amountText" @bind:event="oninput" disabled="@creating" />
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="pay-description">Description</label>
+                                <input id="pay-description" class="form-control" maxlength="250" placeholder="e.g. Order 42, 2 lattes"
+                                       @bind="description" @bind:event="oninput" disabled="@creating" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="pay-expiry">QR code works for</label>
+                                <select id="pay-expiry" class="form-select" @bind="expiresInMinutes" disabled="@creating">
+                                    <option value="15">15 minutes</option>
+                                    <option value="30">30 minutes</option>
+                                    <option value="60">1 hour</option>
+                                    <option value="240">4 hours</option>
+                                    <option value="1440">24 hours</option>
+                                </select>
+                            </div>
+                            <button class="btn btn-success btn-lg w-100" disabled="@creating" @onclick="CreateAsync">
+                                @if (creating) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                                Show QR code
+                            </button>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="card shadow-sm text-center">
+                        <div class="card-body">
+                            <p class="text-muted mb-1">@business.Name</p>
+                            <p class="display-6 fw-bold mb-1">@Money(current.AmountCents)</p>
+                            @if (!string.IsNullOrEmpty(current.Description))
+                            {
+                                <p class="text-muted mb-3">@current.Description</p>
+                            }
+
+                            @if (current.Status == QrPaymentStates.Paid)
+                            {
+                                <div class="alert alert-success my-3" role="status">
+                                    <div class="fs-4"><i class="bi bi-check-circle-fill me-2"></i>Paid</div>
+                                    <div class="small">
+                                        @if (!string.IsNullOrEmpty(current.PayerName)) { <text>by @current.PayerName · </text> }
+                                        ref @current.TransactionId
+                                    </div>
+                                </div>
+                            }
+                            else if (current.Status is QrPaymentStates.Open or QrPaymentStates.Processing)
+                            {
+                                <PaymentQrCode Value="@PayUrl(current.Id)" Title="@($"Pay {Money(current.AmountCents)} to {business.Name}")" Size="min(18rem, 100%)" />
+                                <p class="mt-3 mb-1 fw-semibold">
+                                    @if (current.Status == QrPaymentStates.Processing)
+                                    {
+                                        <span class="spinner-border spinner-border-sm me-1"></span><text>Payment in progress…</text>
+                                    }
+                                    else
+                                    {
+                                        <text>Scan with your phone camera to pay</text>
+                                    }
+                                </p>
+                                <p class="small text-muted mb-2">
+                                    Works until @current.ExpiresAt.ToLocalTime().ToString("t") · @current.InvoiceNumber
+                                    @if (current.FailedAttempts > 0)
+                                    {
+                                        <br /><span class="text-danger">@current.FailedAttempts declined @(current.FailedAttempts == 1 ? "attempt" : "attempts"): @current.LastError</span>
+                                    }
+                                </p>
+                                <div class="d-flex gap-2 justify-content-center">
+                                    <button class="btn btn-outline-secondary btn-sm" @onclick="() => CopyAsync(PayUrl(current.Id))">
+                                        <i class="bi bi-link-45deg"></i> @(copied ? "Copied" : "Copy link")
+                                    </button>
+                                    @if (current.Status == QrPaymentStates.Open)
+                                    {
+                                        <button class="btn btn-outline-danger btn-sm" @onclick="() => CancelAsync(current.Id)">Cancel</button>
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="alert @(current.Status == QrPaymentStates.NeedsReview ? "alert-warning" : "alert-secondary") my-3" role="status">
+                                    <div class="fw-semibold">@StatusText(current.Status)</div>
+                                    <div class="small">@StatusHelp(current)</div>
+                                </div>
+                            }
+
+                            <button class="btn btn-success w-100 mt-3" @onclick="NewPayment">New payment</button>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <div class="col-lg-7">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h5 class="card-title mb-0">Recent payments</h5>
+                            <button class="btn btn-link btn-sm" @onclick="LoadRecentAsync"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+                        </div>
+                        @if (recent == null)
+                        {
+                            <div class="text-center py-3"><span class="spinner-border spinner-border-sm text-primary"></span></div>
+                        }
+                        else if (recent.Count == 0)
+                        {
+                            <p class="text-muted small mb-0">No payments yet.</p>
+                        }
+                        else
+                        {
+                            <div class="table-responsive">
+                                <table class="table table-sm align-middle mb-0">
+                                    <thead>
+                                        <tr><th>When</th><th class="text-end">Amount</th><th>For</th><th>Status</th><th></th></tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var p in recent)
+                                        {
+                                            <tr>
+                                                <td class="small text-nowrap">@p.CreatedAt.ToLocalTime().ToString("MMM d, h:mm tt")</td>
+                                                <td class="text-end text-nowrap">@Money(p.AmountCents)</td>
+                                                <td class="small">
+                                                    @(p.Description ?? "—")
+                                                    @if (!string.IsNullOrEmpty(p.PayerName)) { <div class="text-muted">@p.PayerName</div> }
+                                                </td>
+                                                <td><span class="badge @StatusBadge(p.Status)">@StatusText(p.Status)</span></td>
+                                                <td class="text-end text-nowrap">
+                                                    @if (p.Status is QrPaymentStates.Open or QrPaymentStates.Processing)
+                                                    {
+                                                        <button class="btn btn-outline-primary btn-sm" @onclick="() => Show(p)">Show QR</button>
+                                                    }
+                                                    @if (p.Status is QrPaymentStates.Open or QrPaymentStates.Locked)
+                                                    {
+                                                        <button class="btn btn-link btn-sm text-danger" @onclick="() => CancelAsync(p.Id)">Cancel</button>
+                                                    }
+                                                    @if (p.Status == QrPaymentStates.NeedsReview)
+                                                    {
+                                                        <button class="btn btn-outline-success btn-sm" @onclick="() => ResolveAsync(p.Id, true)">It was paid</button>
+                                                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => ResolveAsync(p.Id, false)">Not charged</button>
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid BusinessId { get; set; }
+
+    private BusinessDto? business;
+    private QrPaymentDetails? current;
+    private List<QrPaymentDetails>? recent;
+    private string amountText = string.Empty;
+    private string description = string.Empty;
+    private int expiresInMinutes = 30;
+    private bool creating;
+    private bool copied;
+    private string? error;
+    private CancellationTokenSource? polling;
+
+    private string Api => $"api/businesses/{BusinessId}/qr-payments";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await PortalAuth.HasSessionAsync())
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        var response = await ApiService.GetResponseAsync($"api/businesses/{BusinessId}");
+        if (!response.IsSuccessStatusCode)
+        {
+            error = await ApiService.ReadErrorAsync(response, "Business not found.");
+            return;
+        }
+
+        business = await ApiService.ParseResponseAsync<BusinessDto>(response);
+        await LoadRecentAsync();
+    }
+
+    private async Task LoadRecentAsync() =>
+        recent = await ApiService.GetAsync<List<QrPaymentDetails>>(Api) ?? new();
+
+    private async Task CreateAsync()
+    {
+        error = null;
+        if (!TryParseCents(amountText, out var cents) || cents <= 0)
+        {
+            error = "Enter an amount, like 12.50.";
+            return;
+        }
+
+        creating = true;
+        try
+        {
+            var response = await ApiService.PostAsync(Api, new CreateQrPaymentRequest
+            {
+                AmountCents = cents,
+                Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim(),
+                ExpiresInMinutes = expiresInMinutes
+            });
+
+            if (!response.IsSuccessStatusCode)
+            {
+                error = await ApiService.ReadErrorAsync(response, "The payment couldn't be created.");
+                return;
+            }
+
+            Show((await ApiService.ParseResponseAsync<QrPaymentDetails>(response))!);
+            await LoadRecentAsync();
+        }
+        finally
+        {
+            creating = false;
+        }
+    }
+
+    private void Show(QrPaymentDetails payment)
+    {
+        current = payment;
+        copied = false;
+        StartPolling();
+    }
+
+    private void NewPayment()
+    {
+        StopPolling();
+        current = null;
+        amountText = string.Empty;
+        description = string.Empty;
+    }
+
+    /// <summary>Checks the shown payment every 2 seconds until it's paid or can't be paid any more.</summary>
+    private void StartPolling()
+    {
+        StopPolling();
+        var cts = polling = new CancellationTokenSource();
+        _ = PollAsync(cts.Token);
+    }
+
+    private async Task PollAsync(CancellationToken token)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(token))
+            {
+                if (current == null || QrPaymentStates.IsFinal(current.Status) || current.Status == QrPaymentStates.NeedsReview)
+                {
+                    return;
+                }
+
+                var latest = await ApiService.GetAsync<QrPaymentDetails>($"{Api}/{current.Id}");
+                if (token.IsCancellationRequested || latest == null || current?.Id != latest.Id)
+                {
+                    continue;
+                }
+
+                var changed = latest.Status != current.Status || latest.FailedAttempts != current.FailedAttempts;
+                current = latest;
+                if (changed)
+                {
+                    await LoadRecentAsync();
+                }
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private void StopPolling()
+    {
+        polling?.Cancel();
+        polling?.Dispose();
+        polling = null;
+    }
+
+    private async Task CancelAsync(Guid id)
+    {
+        var response = await ApiService.PostAsync<object?>($"{Api}/{id}/cancel", null);
+        await AfterActionAsync(response, "The payment couldn't be cancelled.");
+    }
+
+    private async Task ResolveAsync(Guid id, bool paid)
+    {
+        var question = paid
+            ? "Mark this payment as paid? Only do this if CardPointe shows the charge went through."
+            : "Mark this payment as not charged? The customer can then pay again with the same QR code.";
+        if (!await JS.InvokeAsync<bool>("confirm", question))
+        {
+            return;
+        }
+
+        var response = await ApiService.PostAsync($"{Api}/{id}/resolve", new ResolveQrPaymentRequest { Paid = paid });
+        await AfterActionAsync(response, "The payment couldn't be updated.");
+    }
+
+    private async Task AfterActionAsync(HttpResponseMessage response, string fallback)
+    {
+        if (!response.IsSuccessStatusCode)
+        {
+            error = await ApiService.ReadErrorAsync(response, fallback);
+            return;
+        }
+
+        var updated = await ApiService.ParseResponseAsync<QrPaymentDetails>(response);
+        if (updated != null && current?.Id == updated.Id)
+        {
+            current = updated;
+            if (updated.Status == QrPaymentStates.Open)
+            {
+                StartPolling();
+            }
+        }
+        await LoadRecentAsync();
+    }
+
+    private async Task CopyAsync(string text)
+    {
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+        copied = true;
+    }
+
+    private string PayUrl(Guid id) => $"{Navigation.BaseUri}pay/{id}";
+
+    private static string Money(long cents) => (cents / 100m).ToString("C2", CultureInfo.GetCultureInfo("en-US"));
+
+    private static bool TryParseCents(string? text, out long cents)
+    {
+        cents = 0;
+        var cleaned = (text ?? string.Empty).Trim().TrimStart('$').Replace(",", string.Empty);
+        if (!decimal.TryParse(cleaned, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var amount))
+        {
+            return false;
+        }
+
+        var scaled = amount * 100m;
+        if (scaled != decimal.Truncate(scaled) || scaled > long.MaxValue)
+        {
+            return false;
+        }
+
+        cents = (long)scaled;
+        return true;
+    }
+
+    private static string StatusText(string status) => status switch
+    {
+        QrPaymentStates.Open => "Waiting",
+        QrPaymentStates.Processing => "Processing",
+        QrPaymentStates.Paid => "Paid",
+        QrPaymentStates.Cancelled => "Cancelled",
+        QrPaymentStates.Expired => "Expired",
+        QrPaymentStates.Locked => "Locked: too many declines",
+        QrPaymentStates.NeedsReview => "Check in CardPointe",
+        _ => status
+    };
+
+    private static string StatusHelp(QrPaymentDetails p) => p.Status switch
+    {
+        QrPaymentStates.NeedsReview => $"CardPointe didn't answer in time, so we don't know if {p.PayerName ?? "the customer"} was charged. Look up {p.InvoiceNumber} in CardPointe, then mark it in Recent payments.",
+        QrPaymentStates.Locked => "The card was declined too many times. Start a new payment.",
+        QrPaymentStates.Expired => "Nobody paid before the QR code expired. Start a new payment.",
+        QrPaymentStates.Cancelled => "This payment was cancelled.",
+        _ => string.Empty
+    };
+
+    private static string StatusBadge(string status) => status switch
+    {
+        QrPaymentStates.Paid => "bg-success",
+        QrPaymentStates.Open or QrPaymentStates.Processing => "bg-primary",
+        QrPaymentStates.NeedsReview or QrPaymentStates.Locked => "bg-warning text-dark",
+        _ => "bg-secondary"
+    };
+
+    public ValueTask DisposeAsync()
+    {
+        StopPolling();
+        return ValueTask.CompletedTask;
+    }
+}

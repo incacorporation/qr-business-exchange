@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Qrbound.Payments</RootNamespace>
+
+    <!-- NuGet package -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Qrbound.Payments</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>QRBound</Authors>
+    <Description>Blazor client for qrbound card payments: the shared payment models and a typed client for the server's CardPointe endpoints. Cards are tokenized by CardPointe's hosted iFrame, so card numbers never reach your code.</Description>
+    <PackageTags>qrbound;payments;qr;blazor;cardpointe</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <SupportedPlatform Include="browser" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.14" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.14" />
+    <PackageReference Include="QRCoder" Version="1.7.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

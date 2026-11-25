@@ -97,6 +97,9 @@ public class ApplicationDbContext : IdentityDbContext
     /// <summary>Uploaded profile pictures and business logos</summary>
     public DbSet<ProfileImage> ProfileImages { get; set; } = null!;
 
+    /// <summary>Card payments a business asks for with a QR code</summary>
+    public DbSet<QrPaymentRequest> QrPaymentRequests { get; set; } = null!;
+
     /// <summary>
     /// Configures the database schema using Fluent API
     /// </summary>
@@ -134,6 +137,34 @@ public class ApplicationDbContext : IdentityDbContext
         ConfigureEmailVerification(modelBuilder);
         ConfigureUsageAnalytics(modelBuilder);
         ConfigureSso(modelBuilder);
+        ConfigureQrPaymentRequest(modelBuilder);
+    }
+
+    /// <summary>
+    /// Configures QR payment requests
+    /// </summary>
+    private static void ConfigureQrPaymentRequest(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<QrPaymentRequest>(entity =>
+        {
+            entity.ToTable("QrPaymentRequests");
+            entity.HasKey(e => e.QrPaymentRequestId);
+
+            entity.HasOne(e => e.Business)
+                .WithMany()
+                .HasForeignKey(e => e.BusinessId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_QrPaymentRequests_Businesses");
+
+            entity.HasIndex(e => e.InvoiceNumber)
+                .IsUnique()
+                .HasDatabaseName("IX_QrPaymentRequests_InvoiceNumber");
+
+            entity.HasIndex(e => new { e.BusinessId, e.CreatedAt })
+                .HasDatabaseName("IX_QrPaymentRequests_Business_Created");
+
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+        });
     }
 
     /// <summary>
