@@ -1,0 +1,27 @@
+@page "/pay/{PaymentId:guid}"
+
+@* The whole payer page: QrboundPayLink loads the payment, shows the card form for its fixed amount,
+   charges the card through the qrbound API, and shows "Paid" (or why it can't be paid). *@
+
+<PageTitle>Pay - Qrbound payments sample</PageTitle>
+
+<QrboundPayLink PaymentId="PaymentId" OnPaid="OnPaid" />
+
+@if (paid != null)
+{
+    <p class="ok" style="margin-top:1rem">
+        <b>OnPaid</b> fired: @((paid.AmountCents / 100m).ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("en-US"))) paid,
+        CardPointe reference <code>@paid.TransactionId</code>.
+        Your app could record the order as paid here.
+    </p>
+}
+
+<p class="hint" style="margin-top:1.5rem"><a href="">← Pay another link</a></p>
+
+@code {
+    [Parameter] public Guid PaymentId { get; set; }
+
+    private CardPaymentResult? paid;
+
+    private void OnPaid(CardPaymentResult result) => paid = result;
+}

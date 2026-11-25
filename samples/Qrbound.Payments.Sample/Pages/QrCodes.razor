@@ -1,0 +1,25 @@
+@page "/qr"
+
+<PageTitle>QR codes - Qrbound payments sample</PageTitle>
+
+<h2>Draw a payment QR code</h2>
+<p>
+    <code>PaymentQrCode</code> turns a link into a QR code (inline SVG, no JavaScript). Show it at a counter
+    or print it on a bill; scanning it with a phone camera opens the link.
+</p>
+
+<label for="value">Link to encode</label>
+<input id="value" type="text" @bind="value" @bind:event="oninput" />
+
+@if (!string.IsNullOrWhiteSpace(value))
+{
+    <div style="margin:1.5rem 0">
+        <PaymentQrCode Value="@value" Title="@($"QR code for {value}")" Size="14rem" />
+    </div>
+}
+
+<pre>&lt;PaymentQrCode Value="@@payUrl" Size="14rem" /&gt;</pre>
+
+@code {
+    private string value = "https://www.qrbound.com/pay/00000000-0000-0000-0000-000000000000";
+}

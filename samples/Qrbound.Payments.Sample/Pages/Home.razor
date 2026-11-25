@@ -1,0 +1,57 @@
+@page "/"
+@using System.Text.RegularExpressions
+@inject NavigationManager Navigation
+@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+
+<PageTitle>Qrbound payments sample</PageTitle>
+
+<h2>Pay a qrbound payment link</h2>
+<p>
+    A business creates a payment in qrbound (<b>Business → Take a payment</b>) and shows its QR code.
+    The code is a link like <code>https://www.qrbound.com/pay/{id}</code>. Paste that link, or just the ID,
+    to pay it here with the <code>QrboundPayLink</code> component.
+</p>
+
+<label for="link">Payment link or ID</label>
+<div class="row">
+    <input id="link" type="text" placeholder="https://www.qrbound.com/pay/…" @bind="link" @bind:event="oninput"
+           @onkeydown='e => { if (e.Key == "Enter") Open(); }' />
+    <button class="button" @onclick="Open">Open</button>
+</div>
+@if (error != null)
+{
+    <p class="warn">@error</p>
+}
+
+<h3>In your own app</h3>
+<pre>// Program.cs
+builder.Services.AddQrboundPayments(new Uri("https://webapi.qrbound.com/"));
+
+// Pay.razor
+@@page "/pay/{PaymentId:guid}"
+&lt;QrboundPayLink PaymentId="PaymentId" OnPaid="OnPaid" /&gt;</pre>
+
+<p class="hint">
+    Talking to <code>@ApiBaseUrl</code>. Card numbers are typed into CardPointe's own form and never reach this app.
+</p>
+
+@code {
+    private string link = string.Empty;
+    private string? error;
+
+    private string? ApiBaseUrl => Configuration["QrboundPayments:ApiBaseUrl"];
+
+    private void Open()
+    {
+        // Accepts a full link (…/pay/{id}) or a bare ID.
+        var match = Regex.Match(link ?? string.Empty, "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
+        if (!match.Success)
+        {
+            error = "That doesn't look like a payment link or ID.";
+            return;
+        }
+
+        error = null;
+        Navigation.NavigateTo($"pay/{match.Value}");
+    }
+}
