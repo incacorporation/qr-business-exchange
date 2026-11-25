@@ -68,12 +68,12 @@ public class QrPaymentsController : ControllerBase
 }
 
 /// <summary>
-/// The payer's side of a QR payment: anyone with the link can see it and pay it, without an account.
-/// The amount always comes from the stored request.
+/// The payer's side of a QR payment: anyone with the link can see it and pay it by card, without an
+/// account. Paying with a saved card needs a signed-in customer. The amount always comes from the
+/// stored request.
 /// </summary>
 [ApiController]
 [Route("api/pay")]
-[AllowAnonymous]
 public class PayController : ControllerBase
 {
     private readonly QrPaymentService _payments;
@@ -81,6 +81,7 @@ public class PayController : ControllerBase
     public PayController(QrPaymentService payments) => _payments = payments;
 
     [HttpGet("{id:guid}")]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(QrPaymentInfo), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Get(Guid id)
@@ -97,6 +98,7 @@ public class PayController : ControllerBase
 
     /// <summary>Pays the request with a tokenized card. A decline returns 200 with IsSuccess false.</summary>
     [HttpPost("{id:guid}")]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(CardPaymentResult), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Pay(Guid id, [FromBody] QrPaymentPayRequest request)

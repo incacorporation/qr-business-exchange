@@ -120,6 +120,13 @@ public class QrPaymentFlowTests : IDisposable
         Assert.Equal(HttpStatusCode.BadRequest, badExpiry.StatusCode);
 
         Assert.Equal(HttpStatusCode.NotFound, (await anonymous.GetAsync($"/api/pay/{Guid.NewGuid()}")).StatusCode);
+
+        // Paying with a saved card needs a signed-in customer; the public pay endpoints don't.
+        var savedCardInit = await anonymous.PostAsJsonAsync($"/api/pay/{created.Id}/saved-card/init", new { savedCardId = Guid.NewGuid() });
+        Assert.Equal(HttpStatusCode.Unauthorized, savedCardInit.StatusCode);
+        var savedCardPay = await anonymous.PostAsJsonAsync($"/api/pay/{created.Id}/saved-card", new { savedCardId = Guid.NewGuid(), challenge = "x", assertion = new { } });
+        Assert.Equal(HttpStatusCode.Unauthorized, savedCardPay.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await anonymous.GetAsync($"/api/pay/{created.Id}")).StatusCode);
     }
 
     private HttpClient StaffClient()
