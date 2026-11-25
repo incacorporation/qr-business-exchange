@@ -26,7 +26,12 @@ public class BusinessesController : ControllerBase
 
     // Businesses ------------------------------------------------------------
 
-    /// <summary>Businesses the signed-in user belongs to.</summary>
+    /// <summary>Whether the signed-in user is a SuperAdmin, and how many businesses they can open and manage.</summary>
+    [HttpGet("access")]
+    [ProducesResponseType(typeof(MyBusinessAccessDto), StatusCodes.Status200OK)]
+    public Task<IActionResult> GetMyAccess() => WithUser(u => _businessService.GetMyAccessAsync(u));
+
+    /// <summary>Businesses the signed-in user belongs to or is Administrator of; every business for a SuperAdmin.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(List<BusinessDto>), StatusCodes.Status200OK)]
     public Task<IActionResult> GetMine() => WithUser(u => _businessService.GetMyBusinessesAsync(u));
@@ -64,6 +69,24 @@ public class BusinessesController : ControllerBase
     [HttpDelete("{businessId:guid}/members/{memberUserId:guid}")]
     public Task<IActionResult> RemoveMember(Guid businessId, Guid memberUserId) =>
         WithUser(async u => { await _businessService.RemoveMemberAsync(u, businessId, memberUserId); return new { removed = true }; });
+
+    // Business roles --------------------------------------------------------
+
+    /// <summary>Named roles held in the business (Administrator, ...), several per account.</summary>
+    [HttpGet("{businessId:guid}/roles")]
+    [ProducesResponseType(typeof(List<BusinessRoleDto>), StatusCodes.Status200OK)]
+    public Task<IActionResult> GetRoles(Guid businessId) =>
+        WithUser(u => _businessService.GetRolesAsync(u, businessId));
+
+    /// <summary>Give an existing account a role; it joins the business as a Member if it is not one yet.</summary>
+    [HttpPost("{businessId:guid}/roles")]
+    [ProducesResponseType(typeof(BusinessRoleDto), StatusCodes.Status200OK)]
+    public Task<IActionResult> AddRole(Guid businessId, [FromBody] AddBusinessRoleRequest request) =>
+        WithUser(u => _businessService.AddRoleAsync(u, businessId, request));
+
+    [HttpDelete("{businessId:guid}/roles/{businessRoleId:guid}")]
+    public Task<IActionResult> RemoveRole(Guid businessId, Guid businessRoleId) =>
+        WithUser(async u => { await _businessService.RemoveRoleAsync(u, businessId, businessRoleId); return new { removed = true }; });
 
     // Applications ----------------------------------------------------------
 

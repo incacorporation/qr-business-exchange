@@ -46,21 +46,36 @@ public class BusinessService
                     WebsiteUrl = b.WebsiteUrl,
                     LogoUrl = b.LogoUrl,
                     IsActive = b.IsActive,
+                    OwnerEmail = b.Owner.Email,
                     ApplicationCount = b.Applications.Count,
                     MemberCount = b.Members.Count,
                     CreatedAt = b.CreatedAt
                 },
                 MemberRole = b.Members.Where(m => m.UserId == userId).Select(m => m.Role).FirstOrDefault(),
-                IsAdministrator = b.Roles.Any(r => r.UserId == userId && r.RoleName == BusinessRoleNames.Administrator)
+                MyRoles = b.Roles.Where(r => r.UserId == userId).Select(r => r.RoleName).ToList()
             })
             .ToListAsync();
 
         foreach (var row in rows)
         {
-            row.Dto.MyRole = BusinessAccess.Combine(row.MemberRole, row.IsAdministrator, isSuperAdmin) ?? string.Empty;
+            var isAdministrator = row.MyRoles.Contains(BusinessRoleNames.Administrator);
+            row.Dto.MyRole = BusinessAccess.Combine(row.MemberRole, isAdministrator, isSuperAdmin) ?? string.Empty;
+            row.Dto.MyRoles = row.MyRoles.OrderBy(r => r).ToList();
         }
 
         return rows.Select(r => r.Dto).OrderBy(b => b.Name).ToList();
+    }
+
+    /// <summary>Whether the user is a SuperAdmin, and how many businesses they can open and manage.</summary>
+    public async Task<MyBusinessAccessDto> GetMyAccessAsync(Guid userId)
+    {
+        var businesses = await GetMyBusinessesAsync(userId);
+        return new MyBusinessAccessDto
+        {
+            IsSuperAdmin = await BusinessAccess.IsSuperAdminAsync(_db, userId),
+            BusinessCount = businesses.Count,
+            ManagedCount = businesses.Count(b => BusinessRoles.CanManage(b.MyRole))
+        };
     }
 
     public async Task<BusinessDto> GetBusinessAsync(Guid userId, Guid businessId)
@@ -69,7 +84,8 @@ public class BusinessService
         return dto ?? throw SsoException.NotFound("Business");
     }
 
-    public async Task<BusinessDto> CreateBusinessAsync(Guid userId, CreateBusinessRequest request)
+    /// <param name="makeSlugUnique">When the slug is taken, add "-2", "-3", ... instead of refusing (used at registration).</param>
+    public async Task<BusinessDto> CreateBusinessAsync(Guid userId, CreateBusinessRequest request, bool makeSlugUnique = false)
     {
         var slug = Slugify(string.IsNullOrWhiteSpace(request.Slug) ? request.Name : request.Slug);
         if (slug.Length < 2)
@@ -79,7 +95,18 @@ public class BusinessService
 
         if (await _db.Businesses.AnyAsync(b => b.Slug == slug))
         {
-            throw new SsoException("slug_taken", $"The slug '{slug}' is already in use", 409);
+            if (!makeSlugUnique)
+            {
+                throw new SsoException("slug_taken", $"The slug '{slug}' is already in use", 409);
+            }
+
+            var baseSlug = slug.Length > 90 ? slug[..90].Trim('-') : slug;
+            var n = 2;
+            do
+            {
+                slug = $"{baseSlug}-{n++}";
+            }
+            while (await _db.Businesses.AnyAsync(b => b.Slug == slug));
         }
 
         var business = new Business
@@ -226,8 +253,143 @@ public class BusinessService
         }
 
         await EnsureOwnerRemainsAsync(businessId, changingUserId: memberUserId, newRole: null);
+
+        // Leaving the business ends the roles held in it (Administrator included); SuperAdmin is platform-wide and stays.
+        _db.BusinessRoles.RemoveRange(await _db.BusinessRoles
+            .Where(r => r.BusinessId == businessId && r.UserId == memberUserId && r.RoleName != BusinessRoleNames.SuperAdmin)
+            .ToListAsync());
         _db.BusinessMembers.Remove(member);
         await _db.SaveChangesAsync();
+    }
+
+    // -----------------------------------------------------------------------
+    // Business roles (BusinessRoles): several named roles per business and user
+    // -----------------------------------------------------------------------
+
+    public async Task<List<BusinessRoleDto>> GetRolesAsync(Guid userId, Guid businessId)
+    {
+        await RequireMemberAsync(userId, businessId);
+
+        return await _db.BusinessRoles
+            .Where(r => r.BusinessId == businessId)
+            .OrderBy(r => r.RoleName).ThenBy(r => r.User.Email)
+            .Select(r => new BusinessRoleDto
+            {
+                BusinessRoleId = r.BusinessRoleId,
+                UserId = r.UserId,
+                Email = r.User.Email,
+                FullName = r.User.FirstName + " " + r.User.LastName,
+                RoleName = r.RoleName,
+                CreatedAt = r.CreatedAt
+            })
+            .ToListAsync();
+    }
+
+    /// <summary>
+    /// Gives an account a named role in the business. Managers (Owner, Admin, Administrator, SuperAdmin) can
+    /// give any role except SuperAdmin, which only a SuperAdmin can give, and only to
+    /// <see cref="BusinessRoleNames.SuperAdminEmail"/>. An account that is not yet a member joins as a Member.
+    /// </summary>
+    public async Task<BusinessRoleDto> AddRoleAsync(Guid userId, Guid businessId, AddBusinessRoleRequest request)
+    {
+        await RequireManagerAsync(userId, businessId);
+        var roleName = NormalizeRoleName(request.RoleName);
+
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == request.Email.Trim())
+            ?? throw new SsoException("user_not_found", "No account exists with that email. Ask them to register first.", 404);
+
+        if (roleName == BusinessRoleNames.SuperAdmin)
+        {
+            // Checked on the account: in a business they own, a SuperAdmin's role there reads "Owner".
+            if (!await BusinessAccess.IsSuperAdminAsync(_db, userId))
+            {
+                throw SsoException.Forbidden("Only a SuperAdmin can give the SuperAdmin role");
+            }
+            if (!string.Equals(user.Email.Trim(), BusinessRoleNames.SuperAdminEmail, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new SsoException("invalid_request", $"The SuperAdmin role can only be given to {BusinessRoleNames.SuperAdminEmail}");
+            }
+        }
+
+        if (await _db.BusinessRoles.AnyAsync(r => r.BusinessId == businessId && r.UserId == user.UserId && r.RoleName == roleName))
+        {
+            throw new SsoException("role_exists", $"{user.Email} already has the {roleName} role", 409);
+        }
+
+        // Holding a role in a business means belonging to it (SuperAdmin is platform-wide, so it adds no membership).
+        if (roleName != BusinessRoleNames.SuperAdmin &&
+            !await _db.BusinessMembers.AnyAsync(m => m.BusinessId == businessId && m.UserId == user.UserId))
+        {
+            _db.BusinessMembers.Add(new BusinessMember
+            {
+                BusinessId = businessId,
+                UserId = user.UserId,
+                Role = BusinessRoles.Member,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        var role = new BusinessRole
+        {
+            BusinessId = businessId,
+            UserId = user.UserId,
+            RoleName = roleName,
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.BusinessRoles.Add(role);
+        await _db.SaveChangesAsync();
+
+        return new BusinessRoleDto
+        {
+            BusinessRoleId = role.BusinessRoleId,
+            UserId = user.UserId,
+            Email = user.Email,
+            FullName = $"{user.FirstName} {user.LastName}",
+            RoleName = role.RoleName,
+            CreatedAt = role.CreatedAt
+        };
+    }
+
+    public async Task RemoveRoleAsync(Guid userId, Guid businessId, Guid businessRoleId)
+    {
+        await RequireManagerAsync(userId, businessId);
+
+        var role = await _db.BusinessRoles.FirstOrDefaultAsync(r => r.BusinessRoleId == businessRoleId && r.BusinessId == businessId)
+            ?? throw SsoException.NotFound("Role");
+
+        if (role.RoleName == BusinessRoleNames.SuperAdmin)
+        {
+            if (!await BusinessAccess.IsSuperAdminAsync(_db, userId))
+            {
+                throw SsoException.Forbidden("Only a SuperAdmin can remove the SuperAdmin role");
+            }
+            if (!await _db.BusinessRoles.AnyAsync(r => r.RoleName == BusinessRoleNames.SuperAdmin && r.BusinessRoleId != businessRoleId))
+            {
+                throw new SsoException("last_superadmin", "This is the only SuperAdmin role; it cannot be removed");
+            }
+        }
+
+        _db.BusinessRoles.Remove(role);
+        await _db.SaveChangesAsync();
+    }
+
+    /// <summary>Known role names keep their spelling ("administrator" becomes "Administrator"); others are checked.</summary>
+    private static string NormalizeRoleName(string value)
+    {
+        var name = Regex.Replace(value.Trim(), @"\s+", " ");
+        foreach (var known in new[] { BusinessRoleNames.Administrator, BusinessRoleNames.SuperAdmin })
+        {
+            if (string.Equals(name, known, StringComparison.OrdinalIgnoreCase))
+            {
+                return known;
+            }
+        }
+
+        if (name.Length is < 2 or > 50 || !Regex.IsMatch(name, @"^[A-Za-z0-9][A-Za-z0-9 _\-]*$"))
+        {
+            throw new SsoException("invalid_request", "A role name has 2 to 50 letters, digits, spaces, '-' or '_'");
+        }
+        return name;
     }
 
     // -----------------------------------------------------------------------

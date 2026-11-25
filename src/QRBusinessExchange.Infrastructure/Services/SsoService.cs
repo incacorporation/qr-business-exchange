@@ -249,9 +249,20 @@ public class SsoService
             .Select(m => m.Role)
             .FirstOrDefaultAsync();
 
+        // Named roles in the app's business. SuperAdmin is QRBound's own platform role, so apps never receive it.
+        var businessRoles = await _db.BusinessRoles
+            .Where(r => r.BusinessId == app.BusinessId && r.UserId == user.UserId && r.RoleName != BusinessRoleNames.SuperAdmin)
+            .Select(r => r.RoleName)
+            .OrderBy(r => r)
+            .ToListAsync();
+        membershipRole = BusinessAccess.Combine(membershipRole,
+            businessRoles.Contains(BusinessRoleNames.Administrator), isSuperAdmin: false);
+
         var lifetime = TimeSpan.FromMinutes(app.TokenLifetimeMinutes);
         var (categories, actingFor) = await _access.GetClaimsAsync(app, user.UserId);
         var claims = BuildUserClaims(user, app, membershipRole, record.AuthMethod, record.AuthTime, categories, actingFor);
+        // One claim per role, so several become a JSON array
+        claims.AddRange(businessRoles.Select(r => new Claim("business_roles", r)));
 
         var accessToken = CreateJwt(app.ClientId, lifetime, claims.Append(new Claim("token_use", "access")));
 
@@ -323,6 +334,7 @@ public class SsoService
             ["company"] = user.CompanyName,
             ["business_id"] = principal.FindFirst("business_id")?.Value,
             ["business_role"] = principal.FindFirst("business_role")?.Value,
+            ["business_roles"] = principal.FindAll("business_roles").Select(c => c.Value).ToArray(),
             ["category"] = principal.FindAll("category").Select(c => c.Value).ToArray(),
             ["org_id"] = principal.FindFirst("org_id")?.Value,
             ["org_slug"] = principal.FindFirst("org_slug")?.Value,
@@ -353,7 +365,7 @@ public class SsoService
         {
             "sub", "email", "email_verified", "name", "given_name", "family_name",
             "amr", "auth_time", "nonce", "client_id", "business_id", "business_slug", "business_role",
-            "category", "org_id", "org_slug", "org_name"
+            "business_roles", "category", "org_id", "org_slug", "org_name"
         }
     };
 

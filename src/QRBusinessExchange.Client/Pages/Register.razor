@@ -54,6 +54,13 @@
                 <InputText id="company" class="form-control auth-input" placeholder="Company (optional)" @bind-Value="form.CompanyName" autocomplete="organization" disabled="@working" />
             </div>
 
+            <div class="auth-field form-check mb-3">
+                <InputCheckbox id="createBusiness" class="form-check-input" @bind-Value="form.CreateBusiness" disabled="@working" />
+                <label for="createBusiness" class="form-check-label small">
+                    Create a business profile for this company. You'll be its Administrator and can register apps and add people.
+                </label>
+            </div>
+
             <div class="auth-field">
                 <label for="email" class="visually-hidden">Email</label>
                 <InputText id="email" type="email" class="form-control auth-input" placeholder="Email" @bind-Value="form.Email" autocomplete="email" disabled="@working" />
@@ -214,6 +221,12 @@
 
     private async Task CreateAccountAsync()
     {
+        if (form.CreateBusiness && string.IsNullOrWhiteSpace(form.CompanyName))
+        {
+            errorMessage = "Enter the company name to create its business profile, or untick the business box.";
+            return;
+        }
+
         if (form.SmsOptIn && string.IsNullOrWhiteSpace(form.PhoneNumber))
         {
             errorMessage = "Enter your mobile number to get text messages, or untick the text message box.";
@@ -231,6 +244,7 @@
                 FirstName = form.FirstName.Trim(),
                 LastName = form.LastName.Trim(),
                 CompanyName = string.IsNullOrWhiteSpace(form.CompanyName) ? null : form.CompanyName.Trim(),
+                CreateBusiness = form.CreateBusiness && !string.IsNullOrWhiteSpace(form.CompanyName),
                 PhoneNumber = string.IsNullOrWhiteSpace(form.PhoneNumber) ? null : form.PhoneNumber.Trim(),
                 SmsOptIn = form.SmsOptIn
             });
@@ -336,6 +350,9 @@
 
         [StringLength(255)]
         public string? CompanyName { get; set; }
+
+        /// <summary>Also create a business for the company, with this user as its Administrator.</summary>
+        public bool CreateBusiness { get; set; }
 
         [Phone(ErrorMessage = "Enter a valid phone number")]
         [StringLength(20)]

@@ -53,9 +53,48 @@ public class BusinessDto
     public string? LogoUrl { get; set; }
     public bool IsActive { get; set; }
     public string MyRole { get; set; } = string.Empty;
+
+    /// <summary>The signed-in user's named roles in this business (BusinessRoles), e.g. "Administrator".</summary>
+    public List<string> MyRoles { get; set; } = new();
+
+    public string? OwnerEmail { get; set; }
     public int ApplicationCount { get; set; }
     public int MemberCount { get; set; }
     public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>What the signed-in user can do with businesses.</summary>
+public class MyBusinessAccessDto
+{
+    /// <summary>A SuperAdmin sees and manages every business.</summary>
+    public bool IsSuperAdmin { get; set; }
+
+    /// <summary>Number of businesses the user can open (all of them for a SuperAdmin).</summary>
+    public int BusinessCount { get; set; }
+
+    /// <summary>Number of businesses the user manages (Owner, Admin or Administrator; all for a SuperAdmin).</summary>
+    public int ManagedCount { get; set; }
+}
+
+/// <summary>A named role a user holds in a business (BusinessRoles).</summary>
+public class BusinessRoleDto
+{
+    public Guid BusinessRoleId { get; set; }
+    public Guid UserId { get; set; }
+    public string Email { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;
+    public string RoleName { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+}
+
+public class AddBusinessRoleRequest
+{
+    [Required, EmailAddress]
+    public string Email { get; set; } = string.Empty;
+
+    /// <summary>"Administrator", or any other name of 2–50 letters, digits, spaces, '-' or '_'.</summary>
+    [Required, StringLength(50, MinimumLength = 2)]
+    public string RoleName { get; set; } = "Administrator";
 }
 
 public class BusinessMemberDto

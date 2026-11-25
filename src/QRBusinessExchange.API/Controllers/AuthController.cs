@@ -39,8 +39,10 @@ public class AuthController : ControllerBase
     private readonly SsoSettings _ssoSettings;
     private readonly IWebHostEnvironment _environment;
     private readonly IConfiguration _configuration;
+    private readonly BusinessService _businessService;
 
     public AuthController(
+        BusinessService businessService,
         IUserRepository userRepository,
         JwtService jwtService,
         IEmailService emailService,
@@ -53,6 +55,7 @@ public class AuthController : ControllerBase
         IWebHostEnvironment environment,
         IConfiguration configuration)
     {
+        _businessService = businessService;
         _configuration = configuration;
         _userRepository = userRepository;
         _jwtService = jwtService;
@@ -114,6 +117,23 @@ public class AuthController : ControllerBase
         };
 
         var createdUser = await _userRepository.CreateAsync(user);
+
+        // Optional: a business for the company, with the new user as its owner and Administrator.
+        // The account is already created, so a failure here is logged and the business can be created later.
+        if (request.CreateBusiness && !string.IsNullOrWhiteSpace(request.CompanyName))
+        {
+            try
+            {
+                var businessName = request.CompanyName.Trim();
+                businessName = businessName.Length > 200 ? businessName[..200].Trim() : businessName;
+                await _businessService.CreateBusinessAsync(createdUser.UserId,
+                    new Core.DTOs.CreateBusinessRequest { Name = businessName }, makeSlugUnique: true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Registration of {UserId}: the business could not be created", createdUser.UserId);
+            }
+        }
 
         // Send the verification link in the background (own DI scope: the request's DbContext is gone by then).
         var userIdToVerify = createdUser.UserId;

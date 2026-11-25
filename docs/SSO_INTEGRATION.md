@@ -98,7 +98,9 @@ Errors use OAuth style: `{ "error": "invalid_grant", "error_description": "…" 
 * `iss` = `Sso:Issuer` (default `https://localhost:7059`), `aud` = your `client_id`
 * Claims: `sub`, `email`, `email_verified`, `name`, `given_name`, `family_name`,
   `amr` (`passkey` | `qr`), `auth_time`, `client_id`, `business_id`, `business_slug`,
-  `business_role` (if the user is a member), `token_use` (`access` | `id`), `nonce` (id_token).
+  `business_role` (if the user is a member: `Owner`, `Admin` or `Member`; an Administrator counts as `Admin`),
+  `business_roles` (the user's named roles in the app's business, such as `Administrator`; one value or an array),
+  `token_use` (`access` | `id`), `nonce` (id_token).
 
 ASP.NET Core example:
 
