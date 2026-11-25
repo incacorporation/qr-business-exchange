@@ -103,6 +103,9 @@ public class ApplicationDbContext : IdentityDbContext
     /// <summary>Cards users keep on file (in CardPointe) for fingerprint checkout</summary>
     public DbSet<SavedCard> SavedCards { get; set; } = null!;
 
+    /// <summary>Each business's own payment settings (on/off, limits, expiry, who can take payments)</summary>
+    public DbSet<BusinessPaymentSettings> BusinessPaymentSettings { get; set; } = null!;
+
     /// <summary>
     /// Configures the database schema using Fluent API
     /// </summary>
@@ -188,6 +191,20 @@ public class ApplicationDbContext : IdentityDbContext
                 .HasDatabaseName("IX_SavedCards_Profile_Account");
 
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+        });
+
+        modelBuilder.Entity<BusinessPaymentSettings>(entity =>
+        {
+            entity.ToTable("BusinessPaymentSettings");
+            entity.HasKey(e => e.BusinessId);
+
+            entity.HasOne(e => e.Business)
+                .WithOne()
+                .HasForeignKey<BusinessPaymentSettings>(e => e.BusinessId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_BusinessPaymentSettings_Businesses");
+
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
         });
     }
 

@@ -32,6 +32,7 @@ public class SavedCardPaymentTests : IDisposable
         db.PasskeyCredentials.Add(_patPhone.CredentialFor(_pat.UserId));
         db.PasskeyCredentials.Add(_samPhone.CredentialFor(_sam.UserId));
         db.SaveChanges();
+        _rig.EnablePayments(_shop.BusinessId);
     }
 
     [Fact]

@@ -30,6 +30,7 @@ public class QrPaymentServiceTests
         db.Businesses.Add(_shop);
         db.BusinessMembers.Add(new BusinessMember { BusinessId = _shop.BusinessId, UserId = _owner.UserId, Role = BusinessRoles.Owner });
         db.SaveChanges();
+        _rig.EnablePayments(_shop.BusinessId);
     }
 
     [Fact]

@@ -62,7 +62,7 @@
         <QrboundPayLink @key="payLinkKey" PaymentId="PaymentId" OnPaid="OnPaidByCard" />
     }
 
-    @if (signedIn && info?.Status == QrPaymentStates.Open && usableCards.Count == 0 && cardsLoaded)
+    @if (signedIn && info?.Status == QrPaymentStates.Open && info.SavedCardsAccepted && usableCards.Count == 0 && cardsLoaded)
     {
         <p class="text-center small mt-3">
             <a href="@($"/saved-cards?returnUrl={Uri.EscapeDataString($"/pay/{PaymentId}")}")">
@@ -70,7 +70,7 @@
             </a>
         </p>
     }
-    else if (!signedIn && info?.Status == QrPaymentStates.Open)
+    else if (!signedIn && info?.Status == QrPaymentStates.Open && info.SavedCardsAccepted)
     {
         <p class="text-center small mt-3 text-muted">
             Have a qrbound account with a saved card?
@@ -111,7 +111,7 @@
     private string? fpError;
     private int payLinkKey;
 
-    private bool ShowFingerprint => info?.Status == QrPaymentStates.Open && usableCards.Count > 0;
+    private bool ShowFingerprint => info?.Status == QrPaymentStates.Open && info.SavedCardsAccepted && usableCards.Count > 0;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -125,7 +125,7 @@
         }
 
         signedIn = await PortalAuth.HasSessionAsync();
-        if (signedIn && info?.Status == QrPaymentStates.Open)
+        if (signedIn && info?.Status == QrPaymentStates.Open && info.SavedCardsAccepted)
         {
             var cards = await ApiService.GetAsync<List<SavedCardDto>>("api/saved-cards") ?? new();
             usableCards = cards.Where(c => !c.IsExpired).ToList();

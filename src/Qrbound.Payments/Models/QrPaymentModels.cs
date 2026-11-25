@@ -38,6 +38,9 @@ public sealed class QrPaymentInfo
 
     /// <summary>CardPointe reference, once paid.</summary>
     public string? TransactionId { get; set; }
+
+    /// <summary>Whether the business lets signed-in customers pay with a saved card and their fingerprint.</summary>
+    public bool SavedCardsAccepted { get; set; } = true;
 }
 
 /// <summary>A payer's card for a QR payment request. The amount comes from the request, not from here.</summary>
@@ -67,9 +70,9 @@ public sealed class CreateQrPaymentRequest
     [StringLength(250)]
     public string? Description { get; set; }
 
-    /// <summary>How long the QR code can be paid, in minutes (5 to 1440). Default 30.</summary>
+    /// <summary>How long the QR code can be paid, in minutes (5 to 1440). Null uses the business's default.</summary>
     [Range(5, 1440)]
-    public int ExpiresInMinutes { get; set; } = 30;
+    public int? ExpiresInMinutes { get; set; }
 }
 
 /// <summary>A QR payment request as staff of the business see it.</summary>

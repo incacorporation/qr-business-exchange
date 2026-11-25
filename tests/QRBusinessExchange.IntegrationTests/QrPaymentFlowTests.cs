@@ -54,6 +54,7 @@ public class QrPaymentFlowTests : IDisposable
         db.Users.Add(new User { UserId = _ownerId, Email = "owner@shop.test", FirstName = "Olive", LastName = "Test", PasswordHash = "x", IsActive = true, IsEmailVerified = true });
         db.Businesses.Add(new Business { BusinessId = _businessId, Name = "Corner Coffee", Slug = "corner-coffee-" + Guid.NewGuid().ToString("N")[..6], OwnerUserId = _ownerId, IsActive = true });
         db.BusinessMembers.Add(new BusinessMember { BusinessId = _businessId, UserId = _ownerId, Role = BusinessRoles.Owner });
+        db.BusinessPaymentSettings.Add(new BusinessPaymentSettings { BusinessId = _businessId, PaymentsEnabled = true });
         db.SaveChanges();
     }
 

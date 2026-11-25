@@ -27,6 +27,7 @@ public sealed class QrPaymentService
     private readonly ICardPointeService _cardPointe;
     private readonly SavedCardService _savedCards;
     private readonly WebAuthnService _webAuthn;
+    private readonly BusinessPaymentSettingsService _settings;
     private readonly CardPointeOptions _options;
     private readonly TimeProvider _clock;
     private readonly ILogger<QrPaymentService> _logger;
@@ -36,6 +37,7 @@ public sealed class QrPaymentService
         ICardPointeService cardPointe,
         SavedCardService savedCards,
         WebAuthnService webAuthn,
+        BusinessPaymentSettingsService settings,
         IOptions<CardPointeOptions> options,
         TimeProvider clock,
         ILogger<QrPaymentService> logger)
@@ -44,6 +46,7 @@ public sealed class QrPaymentService
         _cardPointe = cardPointe;
         _savedCards = savedCards;
         _webAuthn = webAuthn;
+        _settings = settings;
         _options = options.Value;
         _clock = clock;
         _logger = logger;
@@ -55,15 +58,16 @@ public sealed class QrPaymentService
 
     public async Task<QrPaymentDetails> CreateAsync(Guid userId, Guid businessId, CreateQrPaymentRequest request)
     {
-        await RequireStaffAsync(userId, businessId);
+        var settings = await RequirePaymentTakerAsync(userId, businessId);
 
-        if (request.AmountCents < _options.MinAmountCents || request.AmountCents > _options.MaxAmountCents)
+        if (request.AmountCents < settings.MinAmountCents || request.AmountCents > settings.MaxAmountCents)
         {
             throw new QrPaymentException(400,
-                $"Amount must be between {_options.MinAmountCents / 100m:0.00} and {_options.MaxAmountCents / 100m:0.00} {_options.Currency}.");
+                $"This business takes payments between {settings.MinAmountCents / 100m:0.00} and {settings.MaxAmountCents / 100m:0.00} {_options.Currency}.");
         }
 
-        if (request.ExpiresInMinutes is < 5 or > 1440)
+        var expiresIn = request.ExpiresInMinutes ?? settings.DefaultExpiresInMinutes;
+        if (expiresIn is < 5 or > 1440)
         {
             throw new QrPaymentException(400, "The QR code must stay payable for 5 minutes to 24 hours.");
         }
@@ -80,7 +84,7 @@ public sealed class QrPaymentService
             InvoiceNumber = "QR-" + id.ToString("N")[..12].ToUpperInvariant(),
             Status = QrPaymentStatus.Open,
             CreatedAt = Now,
-            ExpiresAt = Now.AddMinutes(request.ExpiresInMinutes)
+            ExpiresAt = Now.AddMinutes(expiresIn)
         };
 
         _db.QrPaymentRequests.Add(payment);
@@ -92,14 +96,25 @@ public sealed class QrPaymentService
         return ToDetails(payment);
     }
 
-    public async Task<IReadOnlyList<QrPaymentDetails>> ListAsync(Guid userId, Guid businessId, int take = 50)
+    /// <summary>The business's requests, newest first; optionally only those created between two UTC dates (inclusive).</summary>
+    public async Task<IReadOnlyList<QrPaymentDetails>> ListAsync(Guid userId, Guid businessId, int take = 50, DateTime? from = null, DateTime? to = null)
     {
         await RequireStaffAsync(userId, businessId);
 
-        var payments = await _db.QrPaymentRequests
-            .Where(p => p.BusinessId == businessId)
+        var query = _db.QrPaymentRequests.Where(p => p.BusinessId == businessId);
+        if (from is { } start)
+        {
+            query = query.Where(p => p.CreatedAt >= start.Date);
+        }
+
+        if (to is { } end)
+        {
+            query = query.Where(p => p.CreatedAt < end.Date.AddDays(1));
+        }
+
+        var payments = await query
             .OrderByDescending(p => p.CreatedAt)
-            .Take(Math.Clamp(take, 1, 200))
+            .Take(Math.Clamp(take, 1, 5000))
             .ToListAsync();
 
         return payments.Select(ToDetails).ToList();
@@ -114,7 +129,13 @@ public sealed class QrPaymentService
     /// <summary>Stops an Open (or Locked) request from being paid.</summary>
     public async Task<QrPaymentDetails> CancelAsync(Guid userId, Guid businessId, Guid id)
     {
-        await RequireStaffAsync(userId, businessId);
+        // Whoever may take payments may cancel them; this works even with payments turned off.
+        var role = await RequireStaffAsync(userId, businessId);
+        if (!(await _settings.GetEffectiveAsync(businessId)).CanTakePayments(role))
+        {
+            throw new QrPaymentException(403, "Only the business's Owners and Admins can cancel payments.");
+        }
+
         var payment = await FindAsync(businessId, id);
 
         if (payment.Status is not (QrPaymentStatus.Open or QrPaymentStatus.Locked))
@@ -132,7 +153,8 @@ public sealed class QrPaymentService
     /// </summary>
     public async Task<QrPaymentDetails> ResolveAsync(Guid userId, Guid businessId, Guid id, ResolveQrPaymentRequest request)
     {
-        await RequireStaffAsync(userId, businessId);
+        // Marking money as received (or not) is for the business's Owners and Admins.
+        await _settings.RequireManagerAsync(userId, businessId);
         var payment = await FindAsync(businessId, id);
 
         if (payment.Status != QrPaymentStatus.NeedsReview)
@@ -171,8 +193,11 @@ public sealed class QrPaymentService
             .FirstOrDefaultAsync(p => p.QrPaymentRequestId == id)
             ?? throw new QrPaymentException(404, "This payment link doesn't exist.");
 
+        var settings = await _settings.GetEffectiveAsync(payment.BusinessId);
+
         return new QrPaymentInfo
         {
+            SavedCardsAccepted = settings.AllowSavedCards,
             Id = payment.QrPaymentRequestId,
             BusinessName = payment.Business.Name,
             BusinessLogoUrl = payment.Business.LogoUrl,
@@ -221,6 +246,7 @@ public sealed class QrPaymentService
     public async Task<PasskeyAuthenticationOptionsDto> BeginSavedCardPaymentAsync(Guid userId, Guid paymentId, Guid savedCardId)
     {
         var payment = await LoadPayableAsync(paymentId);
+        await RequireSavedCardsAllowedAsync(payment);
         var card = await _savedCards.GetUsableAsync(userId, savedCardId);
         var user = await RequirePasskeyUserAsync(userId);
 
@@ -235,6 +261,7 @@ public sealed class QrPaymentService
     public async Task<CardPaymentResult> PaySavedCardAsync(Guid userId, Guid paymentId, SavedCardPayRequest request)
     {
         var payment = await LoadPayableAsync(paymentId);
+        await RequireSavedCardsAllowedAsync(payment);
         var card = await _savedCards.GetUsableAsync(userId, request.SavedCardId);
         var user = await RequirePasskeyUserAsync(userId);
 
@@ -317,7 +344,7 @@ public sealed class QrPaymentService
             });
         }
 
-        if (!payment.Business.IsActive)
+        if (!payment.Business.IsActive || !(await _settings.GetEffectiveAsync(payment.BusinessId)).PaymentsEnabled)
         {
             throw new QrPaymentException(409, "This business isn't taking payments right now.");
         }
@@ -410,12 +437,41 @@ public sealed class QrPaymentService
 
     // ---------------------------------------------------------------------------
 
-    private async Task RequireStaffAsync(Guid userId, Guid businessId)
+    /// <summary>Any member of the business (or its Administrator, or a SuperAdmin) can see its payments.</summary>
+    private Task<string> RequireStaffAsync(Guid userId, Guid businessId) =>
+        _settings.RequireMemberAsync(userId, businessId);
+
+    /// <summary>
+    /// The business has payments turned on and this user may take them (any member, or only Owners and
+    /// Admins, as the business chose). Returns the business's settings.
+    /// </summary>
+    private async Task<EffectivePaymentSettings> RequirePaymentTakerAsync(Guid userId, Guid businessId)
     {
-        // Any member of the business (or its Administrator, or a SuperAdmin) may take payments.
-        if (await BusinessAccess.GetRoleAsync(_db, userId, businessId) is null)
+        var role = await RequireStaffAsync(userId, businessId);
+        var settings = await _settings.GetEffectiveAsync(businessId);
+
+        if (!settings.PaymentsEnabled)
         {
-            throw new QrPaymentException(404, "Business not found.");
+            throw new QrPaymentException(409,
+                BusinessRoles.CanManage(role)
+                    ? "Payments are turned off for this business. Turn them on in Payment settings."
+                    : "Payments are turned off for this business. Ask an Owner or Admin to turn them on.");
+        }
+
+        if (!settings.CanTakePayments(role))
+        {
+            throw new QrPaymentException(403, "In this business only Owners and Admins can take payments.");
+        }
+
+        return settings;
+    }
+
+    /// <summary>Fingerprint checkout must be allowed by the business that's being paid.</summary>
+    private async Task RequireSavedCardsAllowedAsync(QrPaymentRequest payment)
+    {
+        if (!(await _settings.GetEffectiveAsync(payment.BusinessId)).AllowSavedCards)
+        {
+            throw new QrPaymentException(409, "This business doesn't accept saved cards. Pay with a card instead.");
         }
     }
 

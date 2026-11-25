@@ -45,15 +45,32 @@ internal sealed class PaymentTestRig
 
     public SavedCardService SavedCards() => SavedCards(NewDb());
 
+    public static readonly IOptions<CardPointeOptions> Platform =
+        Options.Create(new CardPointeOptions { Currency = "USD", MinAmountCents = 100, MaxAmountCents = 1_000_000 });
+
     // Each call gets its own DbContext, like separate HTTP requests.
     public QrPaymentService Payments()
     {
         var db = NewDb();
         return new QrPaymentService(
-            db, Gateway, SavedCards(db), WebAuthn(db),
-            Options.Create(new CardPointeOptions { Currency = "USD", MinAmountCents = 100, MaxAmountCents = 1_000_000 }),
+            db, Gateway, SavedCards(db), WebAuthn(db), Settings(db), Platform,
             Clock, NullLogger<QrPaymentService>.Instance);
     }
+
+    public BusinessPaymentSettingsService Settings() => Settings(NewDb());
+
+    /// <summary>Turns payments on for a business (they start off), optionally with its own rules.</summary>
+    public void EnablePayments(Guid businessId, Action<BusinessPaymentSettings>? configure = null)
+    {
+        using var db = NewDb();
+        var settings = new BusinessPaymentSettings { BusinessId = businessId, PaymentsEnabled = true };
+        configure?.Invoke(settings);
+        db.BusinessPaymentSettings.Add(settings);
+        db.SaveChanges();
+    }
+
+    private BusinessPaymentSettingsService Settings(ApplicationDbContext db) =>
+        new(db, Platform, Clock, NullLogger<BusinessPaymentSettingsService>.Instance);
 
     private SavedCardService SavedCards(ApplicationDbContext db) =>
         new(db, Gateway, Clock, NullLogger<SavedCardService>.Instance);

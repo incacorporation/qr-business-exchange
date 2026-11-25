@@ -28,8 +28,8 @@ public class QrPaymentsController : ControllerBase
     /// <summary>The business's most recent payment requests, newest first.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<QrPaymentDetails>), StatusCodes.Status200OK)]
-    public Task<IActionResult> List(Guid businessId, [FromQuery] int take = 50) =>
-        Run(userId => _payments.ListAsync(userId, businessId, take));
+    public Task<IActionResult> List(Guid businessId, [FromQuery] int take = 50, [FromQuery] DateTime? from = null, [FromQuery] DateTime? to = null) =>
+        Run(userId => _payments.ListAsync(userId, businessId, take, from, to));
 
     /// <summary>One payment request; poll this to see it get paid.</summary>
     [HttpGet("{id:guid}")]

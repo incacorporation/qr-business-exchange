@@ -116,6 +116,8 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<QRBusinessExchange.API.Services.QrPaymentService>();
 // Cards on file (CardPointe profiles) for fingerprint checkout.
 builder.Services.AddScoped<QRBusinessExchange.API.Services.SavedCardService>();
+// Each business's own payment settings and report.
+builder.Services.AddScoped<QRBusinessExchange.API.Services.BusinessPaymentSettingsService>();
 
 // Password-reset links: signed and encrypted with Data Protection keys kept on the server.
 // In containers, persist the keys (PersistKeysToFileSystem on a volume) so links survive restarts.

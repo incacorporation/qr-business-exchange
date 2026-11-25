@@ -1,0 +1,358 @@
+@page "/businesses/{BusinessId:guid}/payments/settings"
+@using System.Globalization
+@using System.Text
+@inject ApiService ApiService
+@inject PortalAuthService PortalAuth
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+@* A business's own payment settings and its payments report. Members see the settings; only Owners
+   and Admins can change them or see the report. *@
+
+<PageTitle>Payment settings - @(business?.Name ?? "qrbound")</PageTitle>
+
+<div class="page-wide">
+    <a href="@($"/businesses/{BusinessId}/payments")" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> Take a payment</a>
+    <h2 class="mt-2 mb-1"><i class="bi bi-sliders me-2"></i>Payment settings</h2>
+    @if (business != null)
+    {
+        <p class="text-muted mb-4">@business.Name: how this business takes payments. Other businesses have their own settings.</p>
+    }
+
+    @if (!string.IsNullOrEmpty(error))
+    {
+        <div class="alert alert-danger alert-dismissible">
+            @error
+            <button type="button" class="btn-close" @onclick="() => error = null"></button>
+        </div>
+    }
+
+    @if (settings == null)
+    {
+        @if (error == null) { <div class="text-center py-5"><span class="spinner-border text-primary"></span></div> }
+    }
+    else
+    {
+        <div class="row g-4">
+            <div class="col-lg-5">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        @if (!settings.CanEdit)
+                        {
+                            <div class="alert alert-light border small">Only this business's Owners and Admins can change these settings.</div>
+                        }
+
+                        <div class="form-check form-switch mb-3">
+                            <input id="ps-enabled" class="form-check-input" type="checkbox" role="switch" @bind="form.PaymentsEnabled" disabled="@ReadOnly" />
+                            <label class="form-check-label fw-semibold" for="ps-enabled">Take payments</label>
+                            <div class="form-text">When off, no new QR codes can be made and open ones can't be paid.</div>
+                        </div>
+
+                        <div class="row g-2 mb-3">
+                            <div class="col">
+                                <label class="form-label" for="ps-min">Minimum (@settings.Currency)</label>
+                                <input id="ps-min" class="form-control" inputmode="decimal" placeholder="@Plain(settings.PlatformMinAmountCents)"
+                                       @bind="minText" disabled="@ReadOnly" />
+                            </div>
+                            <div class="col">
+                                <label class="form-label" for="ps-max">Maximum (@settings.Currency)</label>
+                                <input id="ps-max" class="form-control" inputmode="decimal" placeholder="@Plain(settings.PlatformMaxAmountCents)"
+                                       @bind="maxText" disabled="@ReadOnly" />
+                            </div>
+                        </div>
+                        <div class="form-text mt-n2 mb-3">
+                            Leave blank for the platform limits (@Money(settings.PlatformMinAmountCents) to @Money(settings.PlatformMaxAmountCents)).
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label" for="ps-expiry">New QR codes work for</label>
+                            <select id="ps-expiry" class="form-select" @bind="form.DefaultExpiresInMinutes" disabled="@ReadOnly">
+                                <option value="15">15 minutes</option>
+                                <option value="30">30 minutes</option>
+                                <option value="60">1 hour</option>
+                                <option value="240">4 hours</option>
+                                <option value="1440">24 hours</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label" for="ps-who">Who can take payments</label>
+                            <select id="ps-who" class="form-select" value="@(form.ManagersOnly ? "managers" : "members")"
+                                    @onchange='e => form.ManagersOnly = (string?)e.Value == "managers"' disabled="@ReadOnly">
+                                <option value="members">Any member of the business</option>
+                                <option value="managers">Only Owners and Admins</option>
+                            </select>
+                        </div>
+
+                        <div class="form-check form-switch mb-4">
+                            <input id="ps-saved" class="form-check-input" type="checkbox" role="switch" @bind="form.AllowSavedCards" disabled="@ReadOnly" />
+                            <label class="form-check-label" for="ps-saved">Accept saved cards with fingerprint confirmation</label>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(saved))
+                        {
+                            <div class="alert alert-success py-2 small">@saved</div>
+                        }
+
+                        @if (settings.CanEdit)
+                        {
+                            <button class="btn btn-primary" disabled="@saving" @onclick="SaveAsync">
+                                @if (saving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                                Save settings
+                            </button>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            @if (settings.CanEdit)
+            {
+                <div class="col-lg-7">
+                    <div class="card shadow-sm">
+                        <div class="card-body">
+                            <h5 class="card-title">Payments report</h5>
+                            <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+                                <div>
+                                    <label class="form-label small mb-1" for="rp-from">From</label>
+                                    <input id="rp-from" type="date" class="form-control form-control-sm" @bind="from" />
+                                </div>
+                                <div>
+                                    <label class="form-label small mb-1" for="rp-to">To</label>
+                                    <input id="rp-to" type="date" class="form-control form-control-sm" @bind="to" />
+                                </div>
+                                <button class="btn btn-outline-primary btn-sm" disabled="@loadingReport" @onclick="LoadReportAsync">Show</button>
+                                <button class="btn btn-outline-secondary btn-sm ms-auto" disabled="@(report == null || downloading)" @onclick="DownloadCsvAsync">
+                                    <i class="bi bi-download me-1"></i>Download CSV
+                                </button>
+                            </div>
+
+                            @if (report == null)
+                            {
+                                <div class="text-center py-3"><span class="spinner-border spinner-border-sm text-primary"></span></div>
+                            }
+                            else
+                            {
+                                <div class="row g-2 text-center mb-3">
+                                    <div class="col-6 col-md-3"><div class="border rounded p-2"><div class="fs-5 fw-bold">@Money(report.PaidTotalCents)</div><div class="small text-muted">received</div></div></div>
+                                    <div class="col-6 col-md-3"><div class="border rounded p-2"><div class="fs-5 fw-bold">@report.PaidCount</div><div class="small text-muted">paid</div></div></div>
+                                    <div class="col-6 col-md-3"><div class="border rounded p-2"><div class="fs-5 fw-bold">@report.OpenCount</div><div class="small text-muted">waiting</div></div></div>
+                                    <div class="col-6 col-md-3"><div class="border rounded p-2"><div class="fs-5 fw-bold">@(report.ExpiredCount + report.CancelledCount + report.LockedCount)</div><div class="small text-muted">not paid</div></div></div>
+                                </div>
+                                @if (report.NeedsReviewCount > 0)
+                                {
+                                    <div class="alert alert-warning small py-2">
+                                        @report.NeedsReviewCount @(report.NeedsReviewCount == 1 ? "payment needs" : "payments need") checking in CardPointe.
+                                        <a href="@($"/businesses/{BusinessId}/payments")" class="alert-link">Review</a>
+                                    </div>
+                                }
+
+                                @if (report.Days.Count == 0)
+                                {
+                                    <p class="text-muted small mb-0">No payments received between @report.From.ToString("MMM d") and @report.To.ToString("MMM d, yyyy").</p>
+                                }
+                                else
+                                {
+                                    <table class="table table-sm mb-0">
+                                        <thead><tr><th>Day (UTC)</th><th class="text-end">Payments</th><th class="text-end">Received</th></tr></thead>
+                                        <tbody>
+                                            @foreach (var d in report.Days.OrderByDescending(d => d.Date))
+                                            {
+                                                <tr>
+                                                    <td>@d.Date.ToString("ddd, MMM d")</td>
+                                                    <td class="text-end">@d.PaidCount</td>
+                                                    <td class="text-end">@Money(d.PaidTotalCents)</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                }
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid BusinessId { get; set; }
+
+    private BusinessDto? business;
+    private BusinessPaymentSettingsDto? settings;
+    private UpdateBusinessPaymentSettingsRequest form = new();
+    private string minText = string.Empty;
+    private string maxText = string.Empty;
+    private QrPaymentReportDto? report;
+    private DateTime from = DateTime.UtcNow.Date.AddDays(-29);
+    private DateTime to = DateTime.UtcNow.Date;
+    private string? error;
+    private string? saved;
+    private bool saving;
+    private bool loadingReport;
+    private bool downloading;
+
+    private bool ReadOnly => settings?.CanEdit != true || saving;
+    private string Api => $"api/businesses/{BusinessId}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await PortalAuth.HasSessionAsync())
+        {
+            Navigation.NavigateTo($"/login?returnUrl={Uri.EscapeDataString($"/businesses/{BusinessId}/payments/settings")}");
+            return;
+        }
+
+        business = await ApiService.GetAsync<BusinessDto>(Api);
+        var response = await ApiService.GetResponseAsync($"{Api}/payment-settings");
+        if (!response.IsSuccessStatusCode)
+        {
+            error = await ApiService.ReadErrorAsync(response, "Payment settings couldn't be loaded.");
+            return;
+        }
+
+        Apply((await ApiService.ParseResponseAsync<BusinessPaymentSettingsDto>(response))!);
+        if (settings!.CanEdit)
+        {
+            await LoadReportAsync();
+        }
+    }
+
+    private void Apply(BusinessPaymentSettingsDto dto)
+    {
+        settings = dto;
+        form = new UpdateBusinessPaymentSettingsRequest
+        {
+            PaymentsEnabled = dto.PaymentsEnabled,
+            MinAmountCents = dto.MinAmountCents,
+            MaxAmountCents = dto.MaxAmountCents,
+            DefaultExpiresInMinutes = dto.DefaultExpiresInMinutes,
+            AllowSavedCards = dto.AllowSavedCards,
+            ManagersOnly = dto.ManagersOnly
+        };
+        minText = dto.MinAmountCents is { } min ? Plain(min) : string.Empty;
+        maxText = dto.MaxAmountCents is { } max ? Plain(max) : string.Empty;
+    }
+
+    private async Task SaveAsync()
+    {
+        error = null;
+        saved = null;
+        if (!TryParseOptionalCents(minText, out var min) || !TryParseOptionalCents(maxText, out var max))
+        {
+            error = "Enter amounts like 5.00, or leave them blank.";
+            return;
+        }
+
+        form.MinAmountCents = min;
+        form.MaxAmountCents = max;
+        saving = true;
+        try
+        {
+            var response = await ApiService.PutAsync($"{Api}/payment-settings", form);
+            if (!response.IsSuccessStatusCode)
+            {
+                error = await ApiService.ReadErrorAsync(response, "The settings couldn't be saved.");
+                return;
+            }
+
+            Apply((await ApiService.ParseResponseAsync<BusinessPaymentSettingsDto>(response))!);
+            saved = settings!.PaymentsEnabled ? "Saved. This business is taking payments." : "Saved. Payments are off for this business.";
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+
+    private async Task LoadReportAsync()
+    {
+        loadingReport = true;
+        error = null;
+        try
+        {
+            var response = await ApiService.GetResponseAsync($"{Api}/qr-payments/report?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+            if (!response.IsSuccessStatusCode)
+            {
+                error = await ApiService.ReadErrorAsync(response, "The report couldn't be loaded.");
+                return;
+            }
+
+            report = await ApiService.ParseResponseAsync<QrPaymentReportDto>(response);
+        }
+        finally
+        {
+            loadingReport = false;
+        }
+    }
+
+    private async Task DownloadCsvAsync()
+    {
+        downloading = true;
+        try
+        {
+            var payments = await ApiService.GetAsync<List<QrPaymentDetails>>(
+                $"{Api}/qr-payments?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}&take=5000") ?? new();
+
+            var csv = new StringBuilder("Created (UTC),Invoice,Description,Amount,Currency,Status,Paid (UTC),Payer,Payer email,CardPointe reference,Failed attempts\r\n");
+            foreach (var p in payments.OrderBy(p => p.CreatedAt))
+            {
+                csv.AppendJoin(',',
+                    Cell(p.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)),
+                    Cell(p.InvoiceNumber), Cell(p.Description), Plain(p.AmountCents), Cell(p.Currency), Cell(p.Status),
+                    Cell(p.PaidAt?.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)),
+                    Cell(p.PayerName), Cell(p.PayerEmail), Cell(p.TransactionId),
+                    p.FailedAttempts.ToString(CultureInfo.InvariantCulture)).Append("\r\n");
+            }
+
+            var slug = business?.Slug ?? "business";
+            await JS.InvokeVoidAsync("fileDownload.saveText", $"{slug}-payments-{from:yyyyMMdd}-{to:yyyyMMdd}.csv", csv.ToString(), "text/csv;charset=utf-8");
+        }
+        finally
+        {
+            downloading = false;
+        }
+    }
+
+    /// <summary>A CSV cell, quoted, and with a leading quote mark if a spreadsheet might read it as a formula.</summary>
+    private static string Cell(string? value)
+    {
+        var text = value ?? string.Empty;
+        if (text.Length > 0 && "=+-@\t\r".Contains(text[0]))
+        {
+            text = "'" + text;
+        }
+
+        return "\"" + text.Replace("\"", "\"\"") + "\"";
+    }
+
+    private static bool TryParseOptionalCents(string? text, out long? cents)
+    {
+        cents = null;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return true;
+        }
+
+        var cleaned = text.Trim().TrimStart('$').Replace(",", string.Empty);
+        if (!decimal.TryParse(cleaned, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var amount))
+        {
+            return false;
+        }
+
+        var scaled = amount * 100m;
+        if (scaled <= 0 || scaled != decimal.Truncate(scaled) || scaled > long.MaxValue)
+        {
+            return false;
+        }
+
+        cents = (long)scaled;
+        return true;
+    }
+
+    private static string Plain(long cents) => (cents / 100m).ToString("0.00", CultureInfo.InvariantCulture);
+
+    private string Money(long cents) => (settings?.Currency ?? "USD") == "USD"
+        ? (cents / 100m).ToString("C2", CultureInfo.GetCultureInfo("en-US"))
+        : $"{Plain(cents)} {settings!.Currency}";
+}

@@ -383,6 +383,42 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                     b.ToTable("BusinessMembers", (string)null);
                 });
 
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.BusinessPaymentSettings", b =>
+                {
+                    b.Property<Guid>("BusinessId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("AllowSavedCards")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("DefaultExpiresInMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("ManagersOnly")
+                        .HasColumnType("bit");
+
+                    b.Property<long?>("MaxAmountCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("MinAmountCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("PaymentsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<Guid?>("UpdatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("BusinessId");
+
+                    b.ToTable("BusinessPaymentSettings", (string)null);
+                });
+
             modelBuilder.Entity("QRBusinessExchange.Core.Entities.BusinessRole", b =>
                 {
                     b.Property<Guid>("BusinessRoleId")
@@ -1571,6 +1607,18 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                     b.Navigation("Business");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.BusinessPaymentSettings", b =>
+                {
+                    b.HasOne("QRBusinessExchange.Core.Entities.Business", "Business")
+                        .WithOne()
+                        .HasForeignKey("QRBusinessExchange.Core.Entities.BusinessPaymentSettings", "BusinessId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_BusinessPaymentSettings_Businesses");
+
+                    b.Navigation("Business");
                 });
 
             modelBuilder.Entity("QRBusinessExchange.Core.Entities.BusinessRole", b =>
