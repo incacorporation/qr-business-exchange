@@ -1,0 +1,63 @@
+@page "/payments"
+@inject ApiService ApiService
+@inject PortalAuthService PortalAuth
+@inject NavigationManager Navigation
+
+@* The menu's "Take a payment": goes straight to the business's payment page when the user has one
+   business, otherwise lets them pick which business is taking the payment. *@
+
+<PageTitle>Take a payment - qrbound</PageTitle>
+
+<div class="page-wide" style="max-width: 40rem">
+    <h2 class="mb-1"><i class="bi bi-qr-code me-2"></i>Take a payment</h2>
+    <p class="text-muted mb-4">Choose the business that's taking the payment.</p>
+
+    @if (businesses == null)
+    {
+        <div class="text-center py-5"><span class="spinner-border text-primary"></span></div>
+    }
+    else if (businesses.Count == 0)
+    {
+        <div class="alert alert-light border">
+            You aren't part of a business yet. Create one, or ask a business's owner to add you, in
+            <a href="/businesses">Business Profile</a>.
+        </div>
+    }
+    else
+    {
+        <div class="list-group">
+            @foreach (var b in businesses)
+            {
+                <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                   href="@($"/businesses/{b.BusinessId}/payments")">
+                    <span>
+                        <span class="fw-semibold">@b.Name</span>
+                        <span class="small text-muted ms-1">@b.MyRole</span>
+                    </span>
+                    <i class="bi bi-chevron-right text-muted"></i>
+                </a>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<BusinessDto>? businesses;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await PortalAuth.HasSessionAsync())
+        {
+            Navigation.NavigateTo("/login?returnUrl=%2Fpayments");
+            return;
+        }
+
+        var all = await ApiService.GetAsync<List<BusinessDto>>("api/businesses") ?? new();
+        businesses = all.Where(b => b.IsActive).OrderBy(b => b.Name).ToList();
+
+        if (businesses.Count == 1)
+        {
+            Navigation.NavigateTo($"/businesses/{businesses[0].BusinessId}/payments", replace: true);
+        }
+    }
+}

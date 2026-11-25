@@ -7,14 +7,20 @@
 
 <h2>Pay a qrbound payment link</h2>
 <p>
-    A business creates a payment in qrbound (<b>Business → Take a payment</b>) and shows its QR code.
-    The code is a link like <code>https://www.qrbound.com/pay/{id}</code>. Paste that link, or just the ID,
-    to pay it here with the <code>QrboundPayLink</code> component.
+    To get a payment link, sign in to the qrbound site this sample talks to and choose
+    <b>Take a payment</b> in the menu (under Profiles). Enter an amount, press <b>Show QR code</b>,
+    then press <b>Copy link</b> under the code. The link is that site's address followed by
+    <code>/pay/{id}</code> (for a local qrbound, <code>https://localhost:7090/pay/{id}</code>).
+    Paste it here, or just the ID, to pay it with the <code>QrboundPayLink</code> component.
+</p>
+<p class="hint">
+    The business must have payments turned on in <b>Payment settings</b>, and the qrbound site must be
+    running the payments release.
 </p>
 
 <label for="link">Payment link or ID</label>
 <div class="row">
-    <input id="link" type="text" placeholder="https://www.qrbound.com/pay/…" @bind="link" @bind:event="oninput"
+    <input id="link" type="text" placeholder="Paste a link ending in /pay/{id}, or the ID" @bind="link" @bind:event="oninput"
            @onkeydown='e => { if (e.Key == "Enter") Open(); }' />
     <button class="button" @onclick="Open">Open</button>
 </div>
