@@ -25,6 +25,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\QRBusinessExchange.API\QRBusinessExchange.API.csproj" />
     <ProjectReference Include="..\..\src\QRBusinessExchange.Infrastructure\QRBusinessExchange.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Qrbound.Payments\Qrbound.Payments.csproj" />
   </ItemGroup>
 
 </Project>
