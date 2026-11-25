@@ -75,6 +75,9 @@ public class ApplicationDbContext : IdentityDbContext
     /// <summary>Business memberships</summary>
     public DbSet<BusinessMember> BusinessMembers { get; set; } = null!;
 
+    /// <summary>Named roles users hold in a business (several per business and user)</summary>
+    public DbSet<BusinessRole> BusinessRoles { get; set; } = null!;
+
     /// <summary>Applications registered for SSO</summary>
     public DbSet<SsoApplication> SsoApplications { get; set; } = null!;
 
@@ -184,6 +187,35 @@ public class ApplicationDbContext : IdentityDbContext
                 .HasDatabaseName("IX_BusinessMembers_UserId");
 
             entity.Property(e => e.BusinessMemberId).HasDefaultValueSql("NEWID()");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+        });
+
+        modelBuilder.Entity<BusinessRole>(entity =>
+        {
+            // The trigger rejects SuperAdmin for anyone but BusinessRoleNames.SuperAdminEmail.
+            entity.ToTable("BusinessRoles", tb => tb.HasTrigger("TR_BusinessRoles_SuperAdmin"));
+            entity.HasKey(e => e.BusinessRoleId);
+
+            entity.HasOne(e => e.Business)
+                .WithMany(b => b.Roles)
+                .HasForeignKey(e => e.BusinessId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_BusinessRoles_Businesses");
+
+            entity.HasOne(e => e.User)
+                .WithMany()
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("FK_BusinessRoles_Users");
+
+            entity.HasIndex(e => new { e.BusinessId, e.UserId, e.RoleName })
+                .IsUnique()
+                .HasDatabaseName("IX_BusinessRoles_Business_User_Role");
+
+            entity.HasIndex(e => e.UserId)
+                .HasDatabaseName("IX_BusinessRoles_UserId");
+
+            entity.Property(e => e.BusinessRoleId).HasDefaultValueSql("NEWID()");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
         });
 

@@ -42,6 +42,46 @@ public class Business
     public virtual User Owner { get; set; } = null!;
     public virtual ICollection<BusinessMember> Members { get; set; } = new List<BusinessMember>();
     public virtual ICollection<SsoApplication> Applications { get; set; } = new List<SsoApplication>();
+    public virtual ICollection<BusinessRole> Roles { get; set; } = new List<BusinessRole>();
+}
+
+/// <summary>
+/// Names of the roles kept in the BusinessRoles table.
+/// </summary>
+public static class BusinessRoleNames
+{
+    /// <summary>Given to the user who creates a business.</summary>
+    public const string Administrator = "Administrator";
+
+    /// <summary>Only <see cref="SuperAdminEmail"/> can hold this role (also enforced by a database trigger).</summary>
+    public const string SuperAdmin = "SuperAdmin";
+
+    public const string SuperAdminEmail = "gmacha@incacorporation.com";
+}
+
+/// <summary>
+/// A named role a user holds in a business. A business has many roles, and a user can hold
+/// several of them in the same business.
+/// </summary>
+public class BusinessRole
+{
+    [Key]
+    public Guid BusinessRoleId { get; set; } = Guid.NewGuid();
+
+    [Required]
+    public Guid BusinessId { get; set; }
+
+    [Required]
+    public Guid UserId { get; set; }
+
+    [Required]
+    [StringLength(50)]
+    public string RoleName { get; set; } = string.Empty;
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    public virtual Business Business { get; set; } = null!;
+    public virtual User User { get; set; } = null!;
 }
 
 /// <summary>

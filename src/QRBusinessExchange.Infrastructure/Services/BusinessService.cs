@@ -84,6 +84,14 @@ public class BusinessService
             CreatedAt = DateTime.UtcNow
         });
 
+        // The creator is the new business's Administrator.
+        business.Roles.Add(new BusinessRole
+        {
+            UserId = userId,
+            RoleName = BusinessRoleNames.Administrator,
+            CreatedAt = DateTime.UtcNow
+        });
+
         _db.Businesses.Add(business);
         await _db.SaveChangesAsync();
 

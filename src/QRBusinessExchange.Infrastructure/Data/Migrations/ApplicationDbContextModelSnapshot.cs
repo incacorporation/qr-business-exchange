@@ -383,6 +383,46 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                     b.ToTable("BusinessMembers", (string)null);
                 });
 
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.BusinessRole", b =>
+                {
+                    b.Property<Guid>("BusinessRoleId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<Guid>("BusinessId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("RoleName")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("BusinessRoleId");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("IX_BusinessRoles_UserId");
+
+                    b.HasIndex("BusinessId", "UserId", "RoleName")
+                        .IsUnique()
+                        .HasDatabaseName("IX_BusinessRoles_Business_User_Role");
+
+                    b.ToTable("BusinessRoles", null, t =>
+                        {
+                            t.HasTrigger("TR_BusinessRoles_SuperAdmin");
+                        });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
+                });
+
             modelBuilder.Entity("QRBusinessExchange.Core.Entities.Connection", b =>
                 {
                     b.Property<Guid>("ConnectionId")
@@ -1392,6 +1432,27 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.BusinessRole", b =>
+                {
+                    b.HasOne("QRBusinessExchange.Core.Entities.Business", "Business")
+                        .WithMany("Roles")
+                        .HasForeignKey("BusinessId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_BusinessRoles_Businesses");
+
+                    b.HasOne("QRBusinessExchange.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_BusinessRoles_Users");
+
+                    b.Navigation("Business");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("QRBusinessExchange.Core.Entities.Connection", b =>
                 {
                     b.HasOne("QRBusinessExchange.Core.Entities.User", "InitiatorUser")
@@ -1637,6 +1698,8 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                     b.Navigation("Applications");
 
                     b.Navigation("Members");
+
+                    b.Navigation("Roles");
                 });
 
             modelBuilder.Entity("QRBusinessExchange.Core.Entities.SsoApplication", b =>
