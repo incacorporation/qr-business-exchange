@@ -24,26 +24,43 @@ public class BusinessService
     // Businesses
     // -----------------------------------------------------------------------
 
+    /// <summary>
+    /// The businesses the user belongs to or is Administrator of; for a SuperAdmin, every business.
+    /// </summary>
     public async Task<List<BusinessDto>> GetMyBusinessesAsync(Guid userId)
     {
-        return await _db.BusinessMembers
-            .Where(m => m.UserId == userId)
-            .Select(m => new BusinessDto
+        var isSuperAdmin = await BusinessAccess.IsSuperAdminAsync(_db, userId);
+
+        var rows = await _db.Businesses
+            .Where(b => isSuperAdmin ||
+                        b.Members.Any(m => m.UserId == userId) ||
+                        b.Roles.Any(r => r.UserId == userId && r.RoleName == BusinessRoleNames.Administrator))
+            .Select(b => new
             {
-                BusinessId = m.Business.BusinessId,
-                Name = m.Business.Name,
-                Slug = m.Business.Slug,
-                Description = m.Business.Description,
-                WebsiteUrl = m.Business.WebsiteUrl,
-                LogoUrl = m.Business.LogoUrl,
-                IsActive = m.Business.IsActive,
-                MyRole = m.Role,
-                ApplicationCount = m.Business.Applications.Count,
-                MemberCount = m.Business.Members.Count,
-                CreatedAt = m.Business.CreatedAt
+                Dto = new BusinessDto
+                {
+                    BusinessId = b.BusinessId,
+                    Name = b.Name,
+                    Slug = b.Slug,
+                    Description = b.Description,
+                    WebsiteUrl = b.WebsiteUrl,
+                    LogoUrl = b.LogoUrl,
+                    IsActive = b.IsActive,
+                    ApplicationCount = b.Applications.Count,
+                    MemberCount = b.Members.Count,
+                    CreatedAt = b.CreatedAt
+                },
+                MemberRole = b.Members.Where(m => m.UserId == userId).Select(m => m.Role).FirstOrDefault(),
+                IsAdministrator = b.Roles.Any(r => r.UserId == userId && r.RoleName == BusinessRoleNames.Administrator)
             })
-            .OrderBy(b => b.Name)
             .ToListAsync();
+
+        foreach (var row in rows)
+        {
+            row.Dto.MyRole = BusinessAccess.Combine(row.MemberRole, row.IsAdministrator, isSuperAdmin) ?? string.Empty;
+        }
+
+        return rows.Select(r => r.Dto).OrderBy(b => b.Name).ToList();
     }
 
     public async Task<BusinessDto> GetBusinessAsync(Guid userId, Guid businessId)
@@ -117,7 +134,7 @@ public class BusinessService
     public async Task DeleteBusinessAsync(Guid userId, Guid businessId)
     {
         var role = await GetRoleAsync(userId, businessId) ?? throw SsoException.NotFound("Business");
-        if (role != BusinessRoles.Owner)
+        if (!BusinessRoles.HasOwnerRights(role))
         {
             throw SsoException.Forbidden("Only the owner can delete a business");
         }
@@ -163,7 +180,7 @@ public class BusinessService
             throw new SsoException("invalid_request", $"Role must be one of: {string.Join(", ", BusinessRoles.All)}");
         }
 
-        if (request.Role == BusinessRoles.Owner && actingRole != BusinessRoles.Owner)
+        if (request.Role == BusinessRoles.Owner && !BusinessRoles.HasOwnerRights(actingRole))
         {
             throw SsoException.Forbidden("Only an owner can grant the Owner role");
         }
@@ -177,7 +194,7 @@ public class BusinessService
             member = new BusinessMember { BusinessId = businessId, UserId = user.UserId, CreatedAt = DateTime.UtcNow };
             _db.BusinessMembers.Add(member);
         }
-        else if (member.Role == BusinessRoles.Owner && actingRole != BusinessRoles.Owner)
+        else if (member.Role == BusinessRoles.Owner && !BusinessRoles.HasOwnerRights(actingRole))
         {
             throw SsoException.Forbidden("Only an owner can change another owner's role");
         }
@@ -203,7 +220,7 @@ public class BusinessService
         var member = await _db.BusinessMembers.FirstOrDefaultAsync(m => m.BusinessId == businessId && m.UserId == memberUserId)
             ?? throw SsoException.NotFound("Member");
 
-        if (member.Role == BusinessRoles.Owner && actingRole != BusinessRoles.Owner)
+        if (member.Role == BusinessRoles.Owner && !BusinessRoles.HasOwnerRights(actingRole))
         {
             throw SsoException.Forbidden("Only an owner can remove an owner");
         }
@@ -305,11 +322,9 @@ public class BusinessService
     // Helpers
     // -----------------------------------------------------------------------
 
-    public async Task<string?> GetRoleAsync(Guid userId, Guid businessId) =>
-        await _db.BusinessMembers
-            .Where(m => m.BusinessId == businessId && m.UserId == userId)
-            .Select(m => m.Role)
-            .FirstOrDefaultAsync();
+    /// <summary>Effective role (see <see cref="BusinessAccess.GetRoleAsync"/>); null when the user has no access.</summary>
+    public Task<string?> GetRoleAsync(Guid userId, Guid businessId) =>
+        BusinessAccess.GetRoleAsync(_db, userId, businessId);
 
     private async Task<string> RequireMemberAsync(Guid userId, Guid businessId) =>
         await GetRoleAsync(userId, businessId) ?? throw SsoException.NotFound("Business");

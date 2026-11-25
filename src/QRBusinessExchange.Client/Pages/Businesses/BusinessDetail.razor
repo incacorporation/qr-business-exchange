@@ -26,7 +26,7 @@
                 <h2 class="mb-1">@business.Name</h2>
                 <p class="text-muted mb-0">@business.Slug · your role: <strong>@business.MyRole</strong></p>
             </div>
-            @if (business.MyRole == "Owner")
+            @if (HasOwnerRights)
             {
                 <button class="btn btn-outline-danger btn-sm" @onclick="DeleteBusinessAsync">Delete business</button>
             }
@@ -180,7 +180,7 @@
                             <select class="form-select" @bind="memberModel.Role">
                                 <option>Member</option>
                                 <option>Admin</option>
-                                @if (business.MyRole == "Owner") { <option>Owner</option> }
+                                @if (HasOwnerRights) { <option>Owner</option> }
                             </select>
                         </div>
                         <div class="col-md-3 d-grid"><button class="btn btn-outline-primary" @onclick="AddMemberAsync" disabled="@saving">Add / update</button></div>
@@ -250,7 +250,8 @@
     private bool saving;
     private string? error;
 
-    private bool CanManage => business?.MyRole is "Owner" or "Admin";
+    private bool CanManage => business?.MyRole is "Owner" or "Admin" or "SuperAdmin";
+    private bool HasOwnerRights => business?.MyRole is "Owner" or "SuperAdmin";
     private string PortalBase => Navigation.BaseUri.TrimEnd('/');
     private string ApiBase => (Configuration["ApiSettings:BaseUrl"] ?? "https://localhost:7059").TrimEnd('/');
     private string Issuer => Configuration["ApiSettings:Issuer"] ?? ApiBase;

@@ -447,11 +447,18 @@ public class SsoAccessService
 
         if (category.RequiresBusiness)
         {
-            dto.EligibleBusinesses = await _db.BusinessMembers
-                .Where(m => m.UserId == userId && m.Business.IsActive &&
-                            (m.Role == BusinessRoles.Owner || m.Role == BusinessRoles.Admin))
-                .OrderBy(m => m.Business.Name)
-                .Select(m => new SsoEligibleBusinessDto { BusinessId = m.BusinessId, Name = m.Business.Name, Role = m.Role })
+            var managed = BusinessAccess.ManagedBusinessIds(_db, userId);
+            dto.EligibleBusinesses = await _db.Businesses
+                .Where(b => b.IsActive && managed.Contains(b.BusinessId))
+                .OrderBy(b => b.Name)
+                .Select(b => new SsoEligibleBusinessDto
+                {
+                    BusinessId = b.BusinessId,
+                    Name = b.Name,
+                    Role = b.Members.Any(m => m.UserId == userId && m.Role == BusinessRoles.Owner)
+                        ? BusinessRoles.Owner
+                        : BusinessRoles.Admin
+                })
                 .ToListAsync();
         }
 
@@ -497,19 +504,18 @@ public class SsoAccessService
     }
 
     private async Task<Business?> GetManagedBusinessAsync(Guid userId, Guid businessId) =>
-        await _db.BusinessMembers
-            .Where(m => m.UserId == userId && m.BusinessId == businessId && m.Business.IsActive &&
-                        (m.Role == BusinessRoles.Owner || m.Role == BusinessRoles.Admin))
-            .Select(m => m.Business)
+        await _db.Businesses
+            .Where(b => b.BusinessId == businessId && b.IsActive &&
+                        BusinessAccess.ManagedBusinessIds(_db, userId).Contains(b.BusinessId))
             .FirstOrDefaultAsync();
 
     private async Task NotifyApproversAsync(SsoApplication app, SsoAppCategory category, User requester,
         Business? actingBusiness, string? note)
     {
-        var approvers = await _db.BusinessMembers
-            .Where(m => m.BusinessId == app.BusinessId &&
-                        (m.Role == BusinessRoles.Owner || m.Role == BusinessRoles.Admin) && m.User.IsActive)
-            .Select(m => new { m.User.Email, m.User.FirstName })
+        var managerIds = BusinessAccess.ManagerUserIds(_db, app.BusinessId);
+        var approvers = await _db.Users
+            .Where(u => u.IsActive && managerIds.Contains(u.UserId))
+            .Select(u => new { u.Email, u.FirstName })
             .ToListAsync();
 
         var reviewUrl = $"{_settings.PortalBaseUrl.TrimEnd('/')}/businesses/{app.BusinessId}/applications/{app.SsoApplicationId}/access";
@@ -551,10 +557,7 @@ public class SsoAccessService
         ?? throw SsoException.NotFound("Application");
 
     private async Task<string> RequireMemberAsync(Guid userId, Guid businessId) =>
-        await _db.BusinessMembers
-            .Where(m => m.BusinessId == businessId && m.UserId == userId)
-            .Select(m => m.Role)
-            .FirstOrDefaultAsync()
+        await BusinessAccess.GetRoleAsync(_db, userId, businessId)
         ?? throw SsoException.NotFound("Business");
 
     private async Task RequireManagerAsync(Guid userId, Guid businessId)

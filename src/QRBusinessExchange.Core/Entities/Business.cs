@@ -95,7 +95,13 @@ public static class BusinessRoles
 
     public static readonly string[] All = { Owner, Admin, Member };
 
-    public static bool CanManage(string? role) => role is Owner or Admin;
+    /// <summary>Effective role of a SuperAdmin: full access, like an owner, in every business.</summary>
+    public const string SuperAdmin = BusinessRoleNames.SuperAdmin;
+
+    public static bool CanManage(string? role) => role is Owner or Admin or SuperAdmin;
+
+    /// <summary>Owner-only actions: deleting the business and granting or removing the Owner role.</summary>
+    public static bool HasOwnerRights(string? role) => role is Owner or SuperAdmin;
 }
 
 /// <summary>

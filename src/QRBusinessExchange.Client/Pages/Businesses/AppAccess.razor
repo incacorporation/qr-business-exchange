@@ -249,7 +249,7 @@
     private bool saving;
     private string? error;
 
-    private bool CanManage => business?.MyRole is "Owner" or "Admin";
+    private bool CanManage => business?.MyRole is "Owner" or "Admin" or "SuperAdmin";
     private string AppPath => $"api/businesses/{BusinessId}/applications/{ApplicationId}";
 
     protected override async Task OnInitializedAsync()
