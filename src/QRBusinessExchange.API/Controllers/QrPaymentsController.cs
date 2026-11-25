@@ -110,4 +110,41 @@ public class PayController : ControllerBase
             return StatusCode(ex.StatusCode, new { error = ex.Message });
         }
     }
+
+    /// <summary>
+    /// [Signed in] Step 1 of paying with a saved card: passkey options bound to this payment, card and amount.
+    /// </summary>
+    [HttpPost("{id:guid}/saved-card/init")]
+    [Authorize]
+    [ProducesResponseType(typeof(QRBusinessExchange.Core.DTOs.PasskeyAuthenticationOptionsDto), StatusCodes.Status200OK)]
+    public Task<IActionResult> SavedCardInit(Guid id, [FromBody] QRBusinessExchange.Core.DTOs.SavedCardPayInitRequest request) =>
+        RunSignedIn(userId => _payments.BeginSavedCardPaymentAsync(userId, id, request.SavedCardId));
+
+    /// <summary>
+    /// [Signed in] Step 2: pays with the saved card once the passkey assertion (fingerprint / face) checks out.
+    /// A decline returns 200 with IsSuccess false.
+    /// </summary>
+    [HttpPost("{id:guid}/saved-card")]
+    [Authorize]
+    [ProducesResponseType(typeof(CardPaymentResult), StatusCodes.Status200OK)]
+    public Task<IActionResult> PaySavedCard(Guid id, [FromBody] QRBusinessExchange.Core.DTOs.SavedCardPayRequest request) =>
+        RunSignedIn(userId => _payments.PaySavedCardAsync(userId, id, request));
+
+    private async Task<IActionResult> RunSignedIn<T>(Func<Guid, Task<T>> action)
+    {
+        var userId = User.GetUserId();
+        if (userId == null)
+        {
+            return Unauthorized();
+        }
+
+        try
+        {
+            return Ok(await action(userId.Value));
+        }
+        catch (QrPaymentException ex)
+        {
+            return StatusCode(ex.StatusCode, new { error = ex.Message });
+        }
+    }
 }

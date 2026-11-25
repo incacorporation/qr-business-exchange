@@ -114,6 +114,8 @@ builder.Services.AddHttpClient<QRBusinessExchange.API.Services.ICardPointeServic
 // QR payments: staff show a QR code, anyone who scans it pays by card.
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<QRBusinessExchange.API.Services.QrPaymentService>();
+// Cards on file (CardPointe profiles) for fingerprint checkout.
+builder.Services.AddScoped<QRBusinessExchange.API.Services.SavedCardService>();
 
 // Password-reset links: signed and encrypted with Data Protection keys kept on the server.
 // In containers, persist the keys (PersistKeysToFileSystem on a volume) so links survive restarts.

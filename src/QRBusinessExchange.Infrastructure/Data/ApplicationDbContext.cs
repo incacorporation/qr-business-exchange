@@ -100,6 +100,9 @@ public class ApplicationDbContext : IdentityDbContext
     /// <summary>Card payments a business asks for with a QR code</summary>
     public DbSet<QrPaymentRequest> QrPaymentRequests { get; set; } = null!;
 
+    /// <summary>Cards users keep on file (in CardPointe) for fingerprint checkout</summary>
+    public DbSet<SavedCard> SavedCards { get; set; } = null!;
+
     /// <summary>
     /// Configures the database schema using Fluent API
     /// </summary>
@@ -162,6 +165,27 @@ public class ApplicationDbContext : IdentityDbContext
 
             entity.HasIndex(e => new { e.BusinessId, e.CreatedAt })
                 .HasDatabaseName("IX_QrPaymentRequests_Business_Created");
+
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+        });
+
+        modelBuilder.Entity<SavedCard>(entity =>
+        {
+            entity.ToTable("SavedCards");
+            entity.HasKey(e => e.SavedCardId);
+
+            entity.HasOne(e => e.User)
+                .WithMany()
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_SavedCards_Users");
+
+            entity.HasIndex(e => e.UserId)
+                .HasDatabaseName("IX_SavedCards_UserId");
+
+            entity.HasIndex(e => new { e.ProfileId, e.AccountId })
+                .IsUnique()
+                .HasDatabaseName("IX_SavedCards_Profile_Account");
 
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
         });

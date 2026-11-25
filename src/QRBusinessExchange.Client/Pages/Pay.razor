@@ -1,13 +1,216 @@
 @page "/pay/{PaymentId:guid}"
+@using System.Globalization
+@inject QrboundPaymentsClient Payments
+@inject ApiService ApiService
+@inject PortalAuthService PortalAuth
 
-@* Where a payment QR code leads. Anyone can pay here; no account or sign-in needed. *@
+@* Where a payment QR code leads. Anyone can pay by card here without an account. Signed-in
+   customers with a saved card and a passkey can instead confirm with their fingerprint or face. *@
 
 <PageTitle>Pay - qrbound</PageTitle>
 
 <div class="py-3 px-2">
-    <QrboundPayLink PaymentId="PaymentId" />
+    @if (ShowFingerprint)
+    {
+        <div class="fp-checkout mb-3">
+            <div class="fp-head">
+                <p class="fp-business">@info!.BusinessName</p>
+                <p class="fp-amount">@Money(info.AmountCents, info.Currency)</p>
+                @if (!string.IsNullOrEmpty(info.Description)) { <p class="fp-desc">@info.Description</p> }
+            </div>
+
+            <div class="fp-body">
+                <p class="fp-label">Pay with</p>
+                @foreach (var c in usableCards)
+                {
+                    <label class="fp-card @(c.Id == selectedCardId ? "fp-card-selected" : null)">
+                        <input type="radio" name="fp-card" checked="@(c.Id == selectedCardId)" disabled="@busy"
+                               @onchange="() => selectedCardId = c.Id" />
+                        <i class="bi bi-credit-card-2-front"></i>
+                        <span>@SavedCards.Brand(c.CardBrand) ending @c.Last4</span>
+                        <span class="fp-exp">@c.Expiry[..2]/@c.Expiry[2..]</span>
+                    </label>
+                }
+
+                @if (!string.IsNullOrEmpty(fpError))
+                {
+                    <div class="alert alert-warning small mt-3 mb-0" role="alert">@fpError</div>
+                }
+
+                <button type="button" class="fp-button" disabled="@busy" @onclick="PayWithFingerprintAsync">
+                    @if (busy)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2"></span><text>@busyText</text>
+                    }
+                    else
+                    {
+                        <i class="bi bi-fingerprint fp-icon"></i>
+                        <span>Pay @Money(info.AmountCents, info.Currency)</span>
+                    }
+                </button>
+                <p class="fp-hint">Please confirm the payment with your fingerprint or face.</p>
+            </div>
+        </div>
+
+        <button type="button" class="btn btn-link w-100 mb-2" @onclick="() => showCardForm = !showCardForm">
+            @(showCardForm ? "Hide card form" : "Pay with a different card instead")
+        </button>
+    }
+
+    @if (!ShowFingerprint || showCardForm)
+    {
+        <QrboundPayLink @key="payLinkKey" PaymentId="PaymentId" OnPaid="OnPaidByCard" />
+    }
+
+    @if (signedIn && info?.Status == QrPaymentStates.Open && usableCards.Count == 0 && cardsLoaded)
+    {
+        <p class="text-center small mt-3">
+            <a href="@($"/saved-cards?returnUrl={Uri.EscapeDataString($"/pay/{PaymentId}")}")">
+                <i class="bi bi-fingerprint"></i> Save a card to pay with your fingerprint
+            </a>
+        </p>
+    }
+    else if (!signedIn && info?.Status == QrPaymentStates.Open)
+    {
+        <p class="text-center small mt-3 text-muted">
+            Have a qrbound account with a saved card?
+            <a href="@($"/login?returnUrl={Uri.EscapeDataString($"/pay/{PaymentId}")}")">Sign in</a> to pay with your fingerprint.
+        </p>
+    }
 </div>
+
+<style>
+    .fp-checkout { max-width: 26rem; margin: 0 auto; border-radius: .75rem; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,.08); font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    .fp-head { background: #f5b82e; color: #fff; text-align: center; padding: 1rem; }
+    .fp-business { margin: 0; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+    .fp-amount { margin: .25rem 0 0; font-size: 2.25rem; font-weight: 700; color: #1d2939; }
+    .fp-desc { margin: .15rem 0 0; font-size: .875rem; color: #1d2939; opacity: .8; }
+    .fp-body { background: #d6ecfa; padding: 1.25rem; text-align: center; }
+    .fp-label { text-align: left; font-size: .8125rem; color: #475467; margin: 0 0 .4rem; }
+    .fp-card { display: flex; align-items: center; gap: .6rem; background: #fff; border: 2px solid transparent; border-radius: .5rem; padding: .6rem .75rem; margin-bottom: .5rem; cursor: pointer; text-align: left; }
+    .fp-card input { accent-color: #2e90fa; }
+    .fp-card-selected { border-color: #2e90fa; }
+    .fp-exp { margin-left: auto; color: #667085; font-size: .8125rem; }
+    .fp-button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .35rem; width: 9rem; height: 9rem; margin: 1.25rem auto .5rem; border-radius: 1rem; border: 2px solid #fff; background: #2e90fa; color: #fff; font-weight: 600; cursor: pointer; }
+    .fp-button:disabled { opacity: .7; cursor: progress; flex-direction: row; font-size: .875rem; }
+    .fp-icon { font-size: 3.5rem; line-height: 1; }
+    .fp-hint { margin: 0; font-size: .8125rem; color: #1d2939; text-transform: uppercase; letter-spacing: .04em; }
+</style>
 
 @code {
     [Parameter] public Guid PaymentId { get; set; }
+
+    private QrPaymentInfo? info;
+    private bool signedIn;
+    private bool cardsLoaded;
+    private List<SavedCardDto> usableCards = new();
+    private Guid selectedCardId;
+    private bool showCardForm;
+    private bool busy;
+    private string busyText = string.Empty;
+    private string? fpError;
+    private int payLinkKey;
+
+    private bool ShowFingerprint => info?.Status == QrPaymentStates.Open && usableCards.Count > 0;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        try
+        {
+            info = await Payments.GetQrPaymentAsync(PaymentId);
+        }
+        catch (HttpRequestException)
+        {
+            info = null; // QrboundPayLink shows the problem and a retry
+        }
+
+        signedIn = await PortalAuth.HasSessionAsync();
+        if (signedIn && info?.Status == QrPaymentStates.Open)
+        {
+            var cards = await ApiService.GetAsync<List<SavedCardDto>>("api/saved-cards") ?? new();
+            usableCards = cards.Where(c => !c.IsExpired).ToList();
+            selectedCardId = usableCards.FirstOrDefault()?.Id ?? Guid.Empty;
+            cardsLoaded = true;
+        }
+    }
+
+    private async Task PayWithFingerprintAsync()
+    {
+        busy = true;
+        fpError = null;
+        try
+        {
+            busyText = "Waiting for your fingerprint…";
+            var init = await ApiService.PostAsync($"api/pay/{PaymentId}/saved-card/init", new SavedCardPayInitRequest { SavedCardId = selectedCardId });
+            if (!init.IsSuccessStatusCode)
+            {
+                fpError = await ApiService.ReadErrorAsync(init, "Fingerprint checkout isn't available for this payment.");
+                return;
+            }
+
+            var options = await ApiService.ParseResponseAsync<PasskeyAuthenticationOptionsDto>(init)
+                ?? throw new InvalidOperationException("Invalid passkey options.");
+
+            AssertionResponseDto assertion;
+            try
+            {
+                assertion = await PortalAuth.AssertAsync(options);
+            }
+            catch (Exception)
+            {
+                fpError = "The fingerprint check was cancelled or didn't work. Nothing was charged.";
+                return;
+            }
+
+            busyText = "Paying…";
+            var pay = await ApiService.PostAsync($"api/pay/{PaymentId}/saved-card", new SavedCardPayRequest
+            {
+                SavedCardId = selectedCardId,
+                Challenge = options.Challenge,
+                Assertion = assertion
+            });
+
+            if (!pay.IsSuccessStatusCode)
+            {
+                fpError = await ApiService.ReadErrorAsync(pay, "The payment couldn't be made.");
+                await RefreshAsync();
+                return;
+            }
+
+            var result = await ApiService.ParseResponseAsync<CardPaymentResult>(pay);
+            if (result?.IsSuccess != true)
+            {
+                fpError = result?.ErrorMessage ?? "The card was declined.";
+            }
+
+            await RefreshAsync();
+        }
+        catch (HttpRequestException)
+        {
+            fpError = "We couldn't confirm the payment. Check before trying again.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private Task OnPaidByCard(CardPaymentResult _) => RefreshAsync();
+
+    /// <summary>Reloads the request; once it isn't Open, QrboundPayLink shows Paid (or why not).</summary>
+    private async Task RefreshAsync()
+    {
+        info = await Payments.GetQrPaymentAsync(PaymentId);
+        if (info?.Status != QrPaymentStates.Open)
+        {
+            showCardForm = false;
+            payLinkKey++;
+        }
+    }
+
+    private static string Money(long cents, string currency)
+    {
+        var amount = (cents / 100m).ToString("N2", CultureInfo.InvariantCulture);
+        return currency == "USD" ? "$" + amount : amount + " " + currency;
+    }
 }

@@ -391,7 +391,7 @@
         $"INV-{DateTime.UtcNow:yyMMdd}-{Random.Shared.Next(0, 1_000_000):D6}";
 
     /// <summary>The tokenizer gives YYYYMM; CardPointe's auth takes MMYY.</summary>
-    internal static string ExpiryAsMmYy(string expiry) =>
+    public static string ExpiryAsMmYy(string expiry) =>
         expiry.Length == 6 && expiry.All(char.IsAsciiDigit) ? expiry[4..6] + expiry[2..4] : expiry;
 
     /// <summary>Parses "12.5", "12.50" or "$1,234.56" into cents; more than two decimals is rejected.</summary>

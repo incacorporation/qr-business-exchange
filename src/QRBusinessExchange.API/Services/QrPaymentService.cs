@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Qrbound.Payments.Models;
+using QRBusinessExchange.Core.DTOs;
 using QRBusinessExchange.Core.Entities;
 using QRBusinessExchange.Infrastructure.Data;
 using QRBusinessExchange.Infrastructure.Services;
@@ -24,6 +25,8 @@ public sealed class QrPaymentService
 {
     private readonly ApplicationDbContext _db;
     private readonly ICardPointeService _cardPointe;
+    private readonly SavedCardService _savedCards;
+    private readonly WebAuthnService _webAuthn;
     private readonly CardPointeOptions _options;
     private readonly TimeProvider _clock;
     private readonly ILogger<QrPaymentService> _logger;
@@ -31,12 +34,16 @@ public sealed class QrPaymentService
     public QrPaymentService(
         ApplicationDbContext db,
         ICardPointeService cardPointe,
+        SavedCardService savedCards,
+        WebAuthnService webAuthn,
         IOptions<CardPointeOptions> options,
         TimeProvider clock,
         ILogger<QrPaymentService> logger)
     {
         _db = db;
         _cardPointe = cardPointe;
+        _savedCards = savedCards;
+        _webAuthn = webAuthn;
         _options = options.Value;
         _clock = clock;
         _logger = logger;
@@ -183,6 +190,114 @@ public sealed class QrPaymentService
     /// <summary>Charges the payer's card for the request's own amount.</summary>
     public async Task<CardPaymentResult> PayAsync(Guid id, QrPaymentPayRequest request)
     {
+        var payment = await LoadPayableAsync(id);
+        var email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim();
+
+        return await ClaimAndChargeAsync(payment, new CardPointeChargeRequest
+        {
+            Token = request.PaymentToken,
+            Expiry = request.Expiry,
+            AmountCents = payment.AmountCents,
+            Currency = payment.Currency,
+            OrderId = payment.InvoiceNumber,
+            CardholderName = request.CardholderName.Trim(),
+            Email = email
+        }, request.CardholderName.Trim(), email);
+    }
+
+    // Saved card + fingerprint ---------------------------------------------------
+
+    /// <summary>
+    /// The passkey challenge binds the payment, the card and the amount, so a fingerprint given for
+    /// one of them can't be used to approve another.
+    /// </summary>
+    public static string SavedCardPurpose(Guid paymentId, Guid savedCardId, long amountCents) =>
+        $"qr-pay:{paymentId:N}:{savedCardId:N}:{amountCents}";
+
+    /// <summary>
+    /// Step 1 of paying with a saved card: checks the request can be paid with this card and returns
+    /// the passkey options the phone needs to ask for the user's fingerprint (or face).
+    /// </summary>
+    public async Task<PasskeyAuthenticationOptionsDto> BeginSavedCardPaymentAsync(Guid userId, Guid paymentId, Guid savedCardId)
+    {
+        var payment = await LoadPayableAsync(paymentId);
+        var card = await _savedCards.GetUsableAsync(userId, savedCardId);
+        var user = await RequirePasskeyUserAsync(userId);
+
+        return await _webAuthn.GenerateAuthenticationOptionsAsync(
+            user.Email, SavedCardPurpose(payment.QrPaymentRequestId, card.SavedCardId, payment.AmountCents));
+    }
+
+    /// <summary>
+    /// Step 2: verifies the user's passkey assertion for exactly this payment, card and amount, then
+    /// charges the card on file.
+    /// </summary>
+    public async Task<CardPaymentResult> PaySavedCardAsync(Guid userId, Guid paymentId, SavedCardPayRequest request)
+    {
+        var payment = await LoadPayableAsync(paymentId);
+        var card = await _savedCards.GetUsableAsync(userId, request.SavedCardId);
+        var user = await RequirePasskeyUserAsync(userId);
+
+        Guid? signerId;
+        try
+        {
+            (_, signerId) = await _webAuthn.CompleteAuthenticationAsync(
+                request.Challenge, request.Assertion,
+                SavedCardPurpose(payment.QrPaymentRequestId, card.SavedCardId, payment.AmountCents));
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Fingerprint confirmation failed for QR payment {Invoice} by user {UserId}", payment.InvoiceNumber, userId);
+            throw new QrPaymentException(401, "Your fingerprint confirmation didn't go through. Please try again.");
+        }
+
+        if (signerId != userId)
+        {
+            _logger.LogWarning("QR payment {Invoice}: passkey of user {SignerId} used by user {UserId}", payment.InvoiceNumber, signerId, userId);
+            throw new QrPaymentException(401, "Confirm with a passkey from your own account.");
+        }
+
+        var email = string.IsNullOrWhiteSpace(request.Email) ? user.Email : request.Email.Trim();
+        var payerName = card.CardholderName ?? $"{user.FirstName} {user.LastName}".Trim();
+
+        var result = await ClaimAndChargeAsync(payment, new CardPointeChargeRequest
+        {
+            ProfileId = card.ProfileId,
+            AccountId = card.AccountId,
+            AmountCents = payment.AmountCents,
+            Currency = payment.Currency,
+            OrderId = payment.InvoiceNumber,
+            CardholderName = payerName,
+            Email = email
+        }, payerName, email);
+
+        if (result.IsSuccess)
+        {
+            card.LastUsedAt = Now;
+            await _db.SaveChangesAsync();
+        }
+
+        return result;
+    }
+
+    private async Task<User> RequirePasskeyUserAsync(Guid userId)
+    {
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.UserId == userId)
+            ?? throw new QrPaymentException(401, "Sign in again to pay with a saved card.");
+
+        if (!await _db.PasskeyCredentials.AnyAsync(c => c.UserId == userId))
+        {
+            throw new QrPaymentException(409, "Add a passkey to your account to pay with your fingerprint.");
+        }
+
+        return user;
+    }
+
+    // ---------------------------------------------------------------------------
+
+    /// <summary>Loads a request that can be paid right now, or says why it can't.</summary>
+    private async Task<QrPaymentRequest> LoadPayableAsync(Guid id)
+    {
         var payment = await _db.QrPaymentRequests
             .Include(p => p.Business)
             .FirstOrDefaultAsync(p => p.QrPaymentRequestId == id)
@@ -207,6 +322,15 @@ public sealed class QrPaymentService
             throw new QrPaymentException(409, "This business isn't taking payments right now.");
         }
 
+        return payment;
+    }
+
+    /// <summary>
+    /// Claims the request (Open → Processing), charges it once, and records the outcome.
+    /// </summary>
+    private async Task<CardPaymentResult> ClaimAndChargeAsync(
+        QrPaymentRequest payment, CardPointeChargeRequest charge, string payerName, string? payerEmail)
+    {
         // Claim it: if another payer got here first, the concurrency stamp no longer matches.
         payment.Status = QrPaymentStatus.Processing;
         try
@@ -222,16 +346,7 @@ public sealed class QrPaymentService
         try
         {
             // Not the request's token: once the charge is sent, record its outcome even if the payer leaves.
-            response = await _cardPointe.ChargeAsync(new CardPointeChargeRequest
-            {
-                Token = request.PaymentToken,
-                Expiry = request.Expiry,
-                AmountCents = payment.AmountCents,
-                Currency = payment.Currency,
-                OrderId = payment.InvoiceNumber,
-                CardholderName = request.CardholderName.Trim(),
-                Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim()
-            }, CancellationToken.None);
+            response = await _cardPointe.ChargeAsync(charge, CancellationToken.None);
         }
         catch (Exception ex)
         {
@@ -250,15 +365,15 @@ public sealed class QrPaymentService
             payment.PaidAt = Now;
             payment.TransactionId = response.TransactionId;
             payment.AuthorizationCode = response.AuthorizationCode;
-            payment.PayerName = request.CardholderName.Trim();
-            payment.PayerEmail = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim();
+            payment.PayerName = Truncate(payerName, 100);
+            payment.PayerEmail = payerEmail;
             payment.LastError = null;
         }
         else if (response.OutcomeUnknown)
         {
             payment.Status = QrPaymentStatus.NeedsReview;
-            payment.PayerName = request.CardholderName.Trim();
-            payment.PayerEmail = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim();
+            payment.PayerName = Truncate(payerName, 100);
+            payment.PayerEmail = payerEmail;
             payment.LastError = Truncate(response.ErrorMessage, 250);
         }
         else

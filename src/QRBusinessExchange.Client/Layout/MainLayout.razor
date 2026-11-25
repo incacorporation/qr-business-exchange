@@ -110,10 +110,15 @@
                         </div>
                     </NavGroup>
 
-                    <NavGroup Title="Account" Icon="bi-shield-lock-fill" Key="account" Paths="@(new[] { "settings", "register-device", "subscriptions" })">
+                    <NavGroup Title="Account" Icon="bi-shield-lock-fill" Key="account" Paths="@(new[] { "settings", "register-device", "saved-cards", "subscriptions" })">
                         <div class="nav-item px-3">
                             <NavLink href="settings" class="nav-link">
                                 <i class="bi bi-gear-fill"></i> Settings
+                            </NavLink>
+                        </div>
+                        <div class="nav-item px-3">
+                            <NavLink href="saved-cards" class="nav-link">
+                                <i class="bi bi-wallet2"></i> Saved cards
                             </NavLink>
                         </div>
                         <div class="nav-item px-3">

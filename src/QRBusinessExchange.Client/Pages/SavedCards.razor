@@ -1,0 +1,261 @@
+@page "/saved-cards"
+@inject ApiService ApiService
+@inject PortalAuthService PortalAuth
+@inject QrboundPaymentsClient Payments
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+@* Cards kept on file (in CardPointe) for fingerprint checkout: scan a payment QR code, pick a card,
+   confirm with your fingerprint or face. *@
+
+<PageTitle>Saved cards - qrbound</PageTitle>
+
+<div class="page-wide" style="max-width: 40rem">
+    @if (SafeReturnUrl != null)
+    {
+        <a href="@SafeReturnUrl" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> Back to your payment</a>
+    }
+
+    <h2 class="mt-2 mb-1"><i class="bi bi-wallet2 me-2"></i>Saved cards</h2>
+    <p class="text-muted mb-4">Pay a qrbound payment code with one of these cards by confirming with your fingerprint or face. The card is stored by CardPointe; we keep only its last four digits.</p>
+
+    @if (!string.IsNullOrEmpty(error))
+    {
+        <div class="alert alert-danger alert-dismissible">
+            @error
+            <button type="button" class="btn-close" @onclick="() => error = null"></button>
+        </div>
+    }
+
+    @if (cards == null)
+    {
+        <div class="text-center py-5"><span class="spinner-border text-primary"></span></div>
+    }
+    else
+    {
+        @if (hasPasskey == false)
+        {
+            <div class="alert alert-warning">
+                <i class="bi bi-fingerprint me-1"></i>
+                Fingerprint checkout needs a passkey on this account.
+                <a href="/register-device" class="alert-link">Add one</a>, then come back.
+            </div>
+        }
+
+        @if (cards.Count > 0)
+        {
+            <div class="list-group mb-4">
+                @foreach (var card in cards)
+                {
+                    <div class="list-group-item d-flex align-items-center gap-3">
+                        <i class="bi bi-credit-card-2-front fs-3 text-secondary"></i>
+                        <div class="flex-grow-1">
+                            <div class="fw-semibold">@Brand(card.CardBrand) ending @card.Last4</div>
+                            <div class="small text-muted">
+                                Expires @card.Expiry[..2]/@card.Expiry[2..]
+                                @if (!string.IsNullOrEmpty(card.CardholderName)) { <text> · @card.CardholderName</text> }
+                                @if (card.LastUsedAt != null) { <text> · last used @card.LastUsedAt.Value.ToLocalTime().ToString("MMM d")</text> }
+                            </div>
+                        </div>
+                        @if (card.IsExpired) { <span class="badge bg-secondary">Expired</span> }
+                        <button class="btn btn-outline-danger btn-sm" disabled="@busy" @onclick="() => RemoveAsync(card)">Remove</button>
+                    </div>
+                }
+            </div>
+        }
+
+        @if (cards.Count >= 5)
+        {
+            <p class="text-muted small">You can keep up to 5 cards. Remove one to add another.</p>
+        }
+        else if (!adding)
+        {
+            <button class="btn btn-success" @onclick="StartAdding"><i class="bi bi-plus-lg me-1"></i>Add a card</button>
+        }
+        else
+        {
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title">Add a card</h5>
+                    @if (config == null)
+                    {
+                        <div class="text-center py-3"><span class="spinner-border spinner-border-sm text-primary"></span></div>
+                    }
+                    else
+                    {
+                        <div class="mb-3">
+                            <label class="form-label" for="card-name">Name on card</label>
+                            <input id="card-name" class="form-control" autocomplete="cc-name" maxlength="100" @bind="cardholderName" @bind:event="oninput" disabled="@busy" />
+                        </div>
+                        <div class="border rounded p-3 mb-2 bg-light">
+                            <CardPointeTokenizer @key="tokenizerKey" TokenizerUrl="@config.TokenizerUrl" OnTokenized="OnTokenized" />
+                            @if (config.IsTestMode)
+                            {
+                                <p class="small text-muted mb-0"><strong>Test mode:</strong> use test card 4111 1111 1111 1111 with any future expiry.</p>
+                            }
+                        </div>
+                        @if (!string.IsNullOrEmpty(cardError))
+                        {
+                            <p class="small text-danger">@cardError</p>
+                        }
+                        <div class="form-check mb-3">
+                            <input id="card-consent" class="form-check-input" type="checkbox" @bind="consent" disabled="@busy" />
+                            <label class="form-check-label small" for="card-consent">
+                                Keep this card on file so I can pay qrbound payment codes with it after confirming with my fingerprint or face. I can remove it any time.
+                            </label>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-success" disabled="@(busy || !CanSave)" @onclick="SaveAsync">
+                                @if (busy) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                                Save card
+                            </button>
+                            <button class="btn btn-outline-secondary" disabled="@busy" @onclick="() => adding = false">Cancel</button>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "returnUrl")] public string? ReturnUrl { get; set; }
+
+    private List<SavedCardDto>? cards;
+    private bool? hasPasskey;
+    private PaymentConfig? config;
+    private TokenizationResult? card;
+    private string cardholderName = string.Empty;
+    private string? cardError;
+    private string? error;
+    private bool adding;
+    private bool consent;
+    private bool busy;
+    private int tokenizerKey;
+
+    private bool CanSave => card?.IsValid == true && !string.IsNullOrWhiteSpace(card.Expiry)
+                            && !string.IsNullOrWhiteSpace(cardholderName) && consent;
+
+    // Only paths on this site, like the login page's returnUrl.
+    private string? SafeReturnUrl =>
+        !string.IsNullOrEmpty(ReturnUrl) && ReturnUrl.StartsWith('/') && !ReturnUrl.StartsWith("//") && !ReturnUrl.StartsWith("/\\")
+            ? ReturnUrl
+            : null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await PortalAuth.HasSessionAsync())
+        {
+            Navigation.NavigateTo($"/login?returnUrl={Uri.EscapeDataString("/saved-cards" + (SafeReturnUrl != null ? "?returnUrl=" + Uri.EscapeDataString(SafeReturnUrl) : ""))}");
+            return;
+        }
+
+        var passkeys = await ApiService.GetAsync<PasskeyListDto>("api/passkey/list");
+        hasPasskey = passkeys?.Passkeys.Count > 0;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync() =>
+        cards = await ApiService.GetAsync<List<SavedCardDto>>("api/saved-cards") ?? new();
+
+    private async Task StartAdding()
+    {
+        adding = true;
+        card = null;
+        consent = false;
+        cardError = null;
+        tokenizerKey++;
+        if (config == null)
+        {
+            try
+            {
+                config = await Payments.GetConfigAsync();
+            }
+            catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException)
+            {
+                error = "Card entry isn't available right now.";
+                adding = false;
+            }
+        }
+    }
+
+    private void OnTokenized(TokenizationResult result)
+    {
+        card = result;
+        cardError = result.IsValid ? null : "Check the card number and expiry.";
+    }
+
+    private async Task SaveAsync()
+    {
+        if (!CanSave)
+        {
+            return;
+        }
+
+        busy = true;
+        error = null;
+        try
+        {
+            var response = await ApiService.PostAsync("api/saved-cards", new SaveCardRequest
+            {
+                PaymentToken = card!.Token!,
+                Expiry = QrboundCardPayment.ExpiryAsMmYy(card.Expiry!),
+                CardholderName = cardholderName.Trim()
+            });
+
+            if (!response.IsSuccessStatusCode)
+            {
+                error = await ApiService.ReadErrorAsync(response, "The card couldn't be saved.");
+                return;
+            }
+
+            adding = false;
+            cardholderName = string.Empty;
+            await LoadAsync();
+
+            if (SafeReturnUrl != null)
+            {
+                Navigation.NavigateTo(SafeReturnUrl);
+            }
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task RemoveAsync(SavedCardDto saved)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Remove the {Brand(saved.CardBrand)} card ending {saved.Last4}?"))
+        {
+            return;
+        }
+
+        busy = true;
+        try
+        {
+            var response = await ApiService.DeleteAsync($"api/saved-cards/{saved.Id}");
+            if (!response.IsSuccessStatusCode)
+            {
+                error = await ApiService.ReadErrorAsync(response, "The card couldn't be removed.");
+                return;
+            }
+
+            await LoadAsync();
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    internal static string Brand(string? brand) => brand?.ToUpperInvariant() switch
+    {
+        "VISA" => "Visa",
+        "MC" or "MASTERCARD" => "Mastercard",
+        "AMEX" => "American Express",
+        "DISC" or "DISCOVER" => "Discover",
+        null or "" => "Card",
+        _ => brand
+    };
+}

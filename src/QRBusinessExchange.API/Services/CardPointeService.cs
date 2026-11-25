@@ -47,37 +47,24 @@ public sealed class CardPointeService : ICardPointeService
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (string.IsNullOrWhiteSpace(request.Token))
+        if (request.UsesProfile ? string.IsNullOrWhiteSpace(request.AccountId) : string.IsNullOrWhiteSpace(request.Token))
         {
-            return Failed("Error", "A card token is required.");
+            return Failed("Error", "A card token or a card on file is required.");
         }
 
-        if (_options.UseMockApi)
+        if (UseMock())
         {
-            if (!_hostEnvironment.IsProduction())
-            {
-                return MockApproval(request);
-            }
-
-            _logger.LogError("CardPointe:UseMockApi is set in Production and was ignored");
+            return MockApproval(request);
         }
 
-        if (!_options.HasCredentials)
+        if (!IsConfigured())
         {
-            _logger.LogError(
-                "CardPointe is not configured (MerchantId set: {HasMerchant}, ApiUsername set: {HasUser}, ApiPassword set: {HasPassword}, ApiUrl set: {HasUrl})",
-                !string.IsNullOrWhiteSpace(_options.MerchantId),
-                !string.IsNullOrWhiteSpace(_options.ApiUsername),
-                !string.IsNullOrWhiteSpace(_options.ApiPassword),
-                !string.IsNullOrWhiteSpace(_options.ApiUrl));
             return Failed("Error", "Card payments are not available right now.");
         }
 
         var body = new AuthRequest
         {
             MerchId = _options.MerchantId,
-            Account = request.Token,
-            Expiry = request.Expiry,
             Amount = request.AmountCents.ToString(System.Globalization.CultureInfo.InvariantCulture),
             Currency = request.Currency,
             OrderId = request.OrderId,
@@ -87,18 +74,25 @@ public sealed class CardPointeService : ICardPointeService
             EcomInd = "E"    // e-commerce transaction
         };
 
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _options.ApiUrl.TrimEnd('/') + "/auth")
+        if (request.UsesProfile)
         {
-            Content = JsonContent.Create(body)
-        };
-        httpRequest.Headers.Authorization = new AuthenticationHeaderValue(
-            "Basic",
-            Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_options.ApiUsername}:{_options.ApiPassword}")));
-        httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            // Card on file, used by the cardholder right now (customer-initiated, not a scheduled charge).
+            body.Profile = $"{request.ProfileId}/{request.AccountId}";
+            body.Cof = "C";
+            body.CofScheduled = "N";
+        }
+        else
+        {
+            body.Account = request.Token;
+            body.Expiry = request.Expiry;
+        }
+
+        using var httpRequest = NewRequest(HttpMethod.Post, "auth", body);
 
         _logger.LogInformation(
-            "CardPointe sale: order {OrderId}, {AmountCents} cents {Currency}, token {Token}",
-            request.OrderId, request.AmountCents, request.Currency, MaskToken(request.Token));
+            "CardPointe sale: order {OrderId}, {AmountCents} cents {Currency}, {Card}",
+            request.OrderId, request.AmountCents, request.Currency,
+            request.UsesProfile ? $"card on file {request.ProfileId}/{request.AccountId}" : $"token {MaskToken(request.Token!)}");
 
         try
         {
@@ -205,17 +199,194 @@ public sealed class CardPointeService : ICardPointeService
         };
     }
 
+    // Cards on file --------------------------------------------------------------
+
+    public async Task<CardPointeProfileResult> CreateProfileAsync(CardPointeProfileRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (string.IsNullOrWhiteSpace(request.Token) || string.IsNullOrWhiteSpace(request.Expiry))
+        {
+            return new CardPointeProfileResult { ErrorMessage = "A card token and expiry are required." };
+        }
+
+        if (UseMock())
+        {
+            var mockProfile = Random.Shared.NextInt64(10_000_000_000_000_000, 99_999_999_999_999_999).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            _logger.LogWarning("CardPointe mock saved card {Token} as profile {ProfileId} without calling the gateway", MaskToken(request.Token), mockProfile);
+            return new CardPointeProfileResult
+            {
+                IsSuccess = true,
+                ProfileId = mockProfile,
+                AccountId = "1",
+                Last4 = Last4(request.Token),
+                CardBrand = BrandFromToken(request.Token)
+            };
+        }
+
+        if (!IsConfigured())
+        {
+            return new CardPointeProfileResult { ErrorMessage = "Saving cards isn't available right now." };
+        }
+
+        var body = new ProfileRequest
+        {
+            MerchId = _options.MerchantId,
+            Account = request.Token,
+            Expiry = request.Expiry,
+            Name = request.CardholderName,
+            DefaultAcct = "Y"
+        };
+
+        using var httpRequest = NewRequest(HttpMethod.Put, "profile", body);
+        try
+        {
+            using var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+            var content = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogError("CardPointe returned HTTP {StatusCode} saving card {Token}", (int)response.StatusCode, MaskToken(request.Token));
+                return new CardPointeProfileResult { ErrorMessage = "The card couldn't be saved. Please try again." };
+            }
+
+            var profile = JsonSerializer.Deserialize<ProfileResponse>(content);
+            if (profile is null || profile.RespStat != "A" || string.IsNullOrWhiteSpace(profile.ProfileId) || string.IsNullOrWhiteSpace(profile.AcctId))
+            {
+                _logger.LogWarning("CardPointe didn't save card {Token}: respstat {RespStat}, {RespText}",
+                    MaskToken(request.Token), profile?.RespStat, profile?.RespText);
+                return new CardPointeProfileResult
+                {
+                    ErrorMessage = string.IsNullOrWhiteSpace(profile?.RespText) ? "The card couldn't be saved." : profile.RespText
+                };
+            }
+
+            var token = profile.Token ?? request.Token;
+            _logger.LogInformation("CardPointe saved card {Token} as profile {ProfileId}/{AcctId}", MaskToken(token), profile.ProfileId, profile.AcctId);
+            return new CardPointeProfileResult
+            {
+                IsSuccess = true,
+                ProfileId = profile.ProfileId,
+                AccountId = profile.AcctId,
+                Last4 = Last4(token),
+                CardBrand = string.IsNullOrWhiteSpace(profile.AcctType) ? BrandFromToken(token) : profile.AcctType
+            };
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            _logger.LogError(ex, "Saving card {Token} with CardPointe failed", MaskToken(request.Token));
+            return new CardPointeProfileResult { ErrorMessage = "The card couldn't be saved. Please try again." };
+        }
+    }
+
+    public async Task<bool> DeleteProfileAsync(string profileId, string accountId, CancellationToken cancellationToken = default)
+    {
+        if (UseMock())
+        {
+            _logger.LogWarning("CardPointe mock deleted profile {ProfileId}/{AcctId} without calling the gateway", profileId, accountId);
+            return true;
+        }
+
+        if (!IsConfigured())
+        {
+            return false;
+        }
+
+        var path = $"profile/{Uri.EscapeDataString(profileId)}/{Uri.EscapeDataString(accountId)}/{Uri.EscapeDataString(_options.MerchantId)}";
+        using var httpRequest = NewRequest(HttpMethod.Delete, path, null);
+        try
+        {
+            using var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+            var content = await response.Content.ReadAsStringAsync(cancellationToken);
+            var result = response.IsSuccessStatusCode ? JsonSerializer.Deserialize<ProfileResponse>(content) : null;
+            if (result?.RespStat == "A")
+            {
+                _logger.LogInformation("CardPointe deleted profile {ProfileId}/{AcctId}", profileId, accountId);
+                return true;
+            }
+
+            _logger.LogWarning("CardPointe didn't delete profile {ProfileId}/{AcctId}: HTTP {StatusCode}, {RespText}",
+                profileId, accountId, (int)response.StatusCode, result?.RespText);
+            return false;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            _logger.LogError(ex, "Deleting CardPointe profile {ProfileId}/{AcctId} failed", profileId, accountId);
+            return false;
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+
+    private bool UseMock()
+    {
+        if (!_options.UseMockApi)
+        {
+            return false;
+        }
+
+        if (!_hostEnvironment.IsProduction())
+        {
+            return true;
+        }
+
+        _logger.LogError("CardPointe:UseMockApi is set in Production and was ignored");
+        return false;
+    }
+
+    private bool IsConfigured()
+    {
+        if (_options.HasCredentials)
+        {
+            return true;
+        }
+
+        _logger.LogError(
+            "CardPointe is not configured (MerchantId set: {HasMerchant}, ApiUsername set: {HasUser}, ApiPassword set: {HasPassword}, ApiUrl set: {HasUrl})",
+            !string.IsNullOrWhiteSpace(_options.MerchantId),
+            !string.IsNullOrWhiteSpace(_options.ApiUsername),
+            !string.IsNullOrWhiteSpace(_options.ApiPassword),
+            !string.IsNullOrWhiteSpace(_options.ApiUrl));
+        return false;
+    }
+
+    /// <summary>A request to {ApiUrl}/{path} with Basic auth. Never logged: it carries the credentials.</summary>
+    private HttpRequestMessage NewRequest(HttpMethod method, string path, object? body)
+    {
+        var request = new HttpRequestMessage(method, _options.ApiUrl.TrimEnd('/') + "/" + path);
+        if (body is not null)
+        {
+            request.Content = JsonContent.Create(body, body.GetType());
+        }
+
+        request.Headers.Authorization = new AuthenticationHeaderValue(
+            "Basic",
+            Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_options.ApiUsername}:{_options.ApiPassword}")));
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        return request;
+    }
+
     private static CardPointeResponse Failed(string status, string message) =>
         new() { IsSuccess = false, StatusMessage = status, ErrorMessage = message };
 
     private static string MaskToken(string token) =>
         token.Length <= 4 ? "****" : "****" + token[^4..];
 
+    private static string Last4(string token) => token.Length >= 4 ? token[^4..] : token;
+
+    /// <summary>CardSecure tokens start with 9 and keep the card's second digit: 94 Visa, 95 Mastercard, 93 Amex, 96 Discover.</summary>
+    private static string? BrandFromToken(string token) =>
+        token.Length > 2 && token[0] == '9'
+            ? token[1] switch { '4' => "VISA", '5' => "MC", '3' => "AMEX", '6' => "DISC", _ => null }
+            : null;
+
     private sealed class AuthRequest
     {
         [JsonPropertyName("merchid")] public required string MerchId { get; init; }
-        [JsonPropertyName("account")] public required string Account { get; init; }
-        [JsonPropertyName("expiry")] public required string Expiry { get; init; }
+        [JsonPropertyName("account"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Account { get; set; }
+        [JsonPropertyName("expiry"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Expiry { get; set; }
+        [JsonPropertyName("profile"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Profile { get; set; }
+        [JsonPropertyName("cof"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Cof { get; set; }
+        [JsonPropertyName("cofscheduled"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? CofScheduled { get; set; }
         [JsonPropertyName("amount")] public required string Amount { get; init; }
         [JsonPropertyName("currency")] public required string Currency { get; init; }
         [JsonPropertyName("orderid")] public required string OrderId { get; init; }
@@ -223,6 +394,25 @@ public sealed class CardPointeService : ICardPointeService
         [JsonPropertyName("email"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Email { get; init; }
         [JsonPropertyName("capture")] public required string Capture { get; init; }
         [JsonPropertyName("ecomind")] public required string EcomInd { get; init; }
+    }
+
+    private sealed class ProfileRequest
+    {
+        [JsonPropertyName("merchid")] public required string MerchId { get; init; }
+        [JsonPropertyName("account")] public required string Account { get; init; }
+        [JsonPropertyName("expiry")] public required string Expiry { get; init; }
+        [JsonPropertyName("name"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Name { get; init; }
+        [JsonPropertyName("defaultacct")] public required string DefaultAcct { get; init; }
+    }
+
+    private sealed class ProfileResponse
+    {
+        [JsonPropertyName("respstat")] public string? RespStat { get; init; }
+        [JsonPropertyName("resptext")] public string? RespText { get; init; }
+        [JsonPropertyName("profileid")] public string? ProfileId { get; init; }
+        [JsonPropertyName("acctid")] public string? AcctId { get; init; }
+        [JsonPropertyName("token")] public string? Token { get; init; }
+        [JsonPropertyName("accttype")] public string? AcctType { get; init; }
     }
 
     private sealed class AuthResponse

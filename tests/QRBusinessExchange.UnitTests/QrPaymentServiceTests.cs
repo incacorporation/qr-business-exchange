@@ -14,9 +14,9 @@ namespace QRBusinessExchange.UnitTests;
 /// </summary>
 public class QrPaymentServiceTests
 {
-    private readonly string _dbName = Guid.NewGuid().ToString();
-    private readonly FakeCardPointe _gateway = new();
-    private readonly FakeClock _clock = new(new DateTimeOffset(2026, 11, 25, 12, 0, 0, TimeSpan.Zero));
+    private readonly PaymentTestRig _rig = new();
+    private FakeCardPointe _gateway => _rig.Gateway;
+    private FakeClock _clock => _rig.Clock;
     private readonly User _owner, _stranger;
     private readonly Business _shop;
 
@@ -155,13 +155,9 @@ public class QrPaymentServiceTests
     }
 
     // Each call gets its own DbContext over the same in-memory store, like separate HTTP requests.
-    private QrPaymentService Service() => new(
-        NewDb(), _gateway,
-        Options.Create(new CardPointeOptions { Currency = "USD", MinAmountCents = 100, MaxAmountCents = 1_000_000 }),
-        _clock, NullLogger<QrPaymentService>.Instance);
+    private QrPaymentService Service() => _rig.Payments();
 
-    private ApplicationDbContext NewDb() => new(new DbContextOptionsBuilder<ApplicationDbContext>()
-        .UseInMemoryDatabase(_dbName).Options);
+    private ApplicationDbContext NewDb() => _rig.NewDb();
 
     private static QrPaymentPayRequest Card() => new()
     {
@@ -171,34 +167,4 @@ public class QrPaymentServiceTests
         Email = "pat@example.test"
     };
 
-    private sealed class FakeCardPointe : ICardPointeService
-    {
-        public List<CardPointeChargeRequest> Charges { get; } = new();
-        public Func<CardPointeResponse>? Next { get; set; }
-        public Func<Task>? During { get; set; }
-
-        public async Task<CardPointeResponse> ChargeAsync(CardPointeChargeRequest request, CancellationToken cancellationToken = default)
-        {
-            Charges.Add(request);
-            if (During is { } during)
-            {
-                During = null;
-                await during();
-            }
-
-            return Next?.Invoke() ?? new CardPointeResponse
-            {
-                IsSuccess = true, StatusMessage = "Approved", TransactionId = "RETREF1", AuthorizationCode = "PPS123"
-            };
-        }
-
-        public PaymentConfig GetPublicConfig() => new();
-    }
-
-    private sealed class FakeClock(DateTimeOffset start) : TimeProvider
-    {
-        private DateTimeOffset _now = start;
-        public void Advance(TimeSpan by) => _now += by;
-        public override DateTimeOffset GetUtcNow() => _now;
-    }
 }

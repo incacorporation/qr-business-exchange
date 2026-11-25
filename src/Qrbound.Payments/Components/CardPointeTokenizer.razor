@@ -15,7 +15,7 @@ else
             class="qrbound-tokenizer @CssClass"
             src="@frameUrl"
             title="@Title"
-            style="height: @Height"
+            style="display: block; width: 100%; border: 0; height: @Height"
             scrolling="no"
             frameborder="0"></iframe>
 }
@@ -45,7 +45,7 @@ else
     // and expiry (checked against UAT), so a CVV typed there would never reach the charge.
 
     /// <summary>Height of the iframe; the default fits the card number and expiry fields.</summary>
-    [Parameter] public string Height { get; set; } = "9.5rem";
+    [Parameter] public string Height { get; set; } = "11rem";
 
     /// <summary>Accessible name of the iframe.</summary>
     [Parameter] public string Title { get; set; } = "Card details";

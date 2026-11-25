@@ -891,6 +891,63 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                     b.ToTable("QrPaymentRequests", (string)null);
                 });
 
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.SavedCard", b =>
+                {
+                    b.Property<Guid>("SavedCardId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AccountId")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("CardBrand")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("CardholderName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("Expiry")
+                        .IsRequired()
+                        .HasMaxLength(4)
+                        .HasColumnType("nvarchar(4)");
+
+                    b.Property<string>("Last4")
+                        .IsRequired()
+                        .HasMaxLength(4)
+                        .HasColumnType("nvarchar(4)");
+
+                    b.Property<DateTime?>("LastUsedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ProfileId")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("SavedCardId");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("IX_SavedCards_UserId");
+
+                    b.HasIndex("ProfileId", "AccountId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_SavedCards_Profile_Account");
+
+                    b.ToTable("SavedCards", (string)null);
+                });
+
             modelBuilder.Entity("QRBusinessExchange.Core.Entities.SsoAppAccess", b =>
                 {
                     b.Property<Guid>("SsoAppAccessId")
@@ -1668,6 +1725,18 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                         .HasConstraintName("FK_QrPaymentRequests_Businesses");
 
                     b.Navigation("Business");
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.SavedCard", b =>
+                {
+                    b.HasOne("QRBusinessExchange.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_SavedCards_Users");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("QRBusinessExchange.Core.Entities.SsoAppAccess", b =>
