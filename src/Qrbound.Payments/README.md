@@ -7,6 +7,53 @@ Your app sends only that token, the expiry and the amount to your server, and th
 charges the card with its CardPointe credentials. Card numbers never reach your code, and
 the gateway username and password never reach the browser.
 
+## Installing (private GitHub Packages feed)
+
+The package is published privately to the `incacorporation` GitHub Packages feed, next to
+Qrbound.SignIn. Add a `nuget.config` next to your solution:
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+    <add key="qrbound" value="https://nuget.pkg.github.com/incacorporation/index.json" />
+  </packageSources>
+  <packageSourceMapping>
+    <packageSource key="nuget.org"><package pattern="*" /></packageSource>
+    <packageSource key="qrbound"><package pattern="Qrbound.*" /></packageSource>
+  </packageSourceMapping>
+</configuration>
+```
+
+Give NuGet a GitHub token with `read:packages` (a classic personal access token, or in GitHub Actions
+`${{ secrets.GITHUB_TOKEN }}` with `packages: read`). Store it in your user-level NuGet config, never in
+the repository:
+
+```bash
+dotnet nuget add source https://nuget.pkg.github.com/incacorporation/index.json --name qrbound --username <github-user> --password <token>
+```
+
+Then add the package to your Blazor app (WebAssembly or Server, .NET 10):
+
+```bash
+dotnet add package Qrbound.Payments --version 0.1.0
+```
+
+## The server it talks to
+
+The package is the browser side only. Charging a card needs CardPointe credentials, so it happens
+on a server that exposes these endpoints (the qrbound API does; point `AddQrboundPayments` at it):
+
+| Endpoint | Used by | Sign-in |
+| --- | --- | --- |
+| `GET api/cardpointe/config` | every component (tokenizer URL, currency, limits) | no |
+| `POST api/cardpointe/process` | `QrboundCardPayment`, `ChargeAsync` | yes |
+| `GET api/pay/{id}` | `QrboundPayLink`, `GetQrPaymentAsync` | no |
+| `POST api/pay/{id}` | `QrboundPayLink`, `PayQrPaymentAsync` | no |
+
+The server must also allow your app's origin in its CORS settings.
+
 ## What's in it
 
 | Type | What it is |
@@ -15,7 +62,8 @@ the gateway username and password never reach the browser.
 | `CardPaymentRequest` | A charge: token, expiry (MMYY), cardholder name, amount in cents, invoice number. |
 | `CardPaymentResult` | The outcome: approved or not, retref, auth code, a message safe to show. |
 | `TokenizationResult` | What the hosted tokenizer posts back: token, expiry, validation error. |
-| `QrboundPaymentsClient` | Calls `GET api/cardpointe/config` and `POST api/cardpointe/process`. |
+| `QrboundPaymentsClient` | Calls the endpoints above. |
+| `QrboundCardPayment`, `CardPointeTokenizer`, `PaymentQrCode`, `QrboundPayLink` | The components, below. |
 
 ## Register
 
