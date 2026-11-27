@@ -13,7 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Apps outside this solution use: <PackageReference Include="Qrbound.Payments" Version="0.2.0" /> -->
+    <!-- Apps outside this solution use: <PackageReference Include="Qrbound.Payments" Version="0.3.0" /> -->
     <ProjectReference Include="..\..\src\Qrbound.Payments\Qrbound.Payments.csproj" />
   </ItemGroup>
 
