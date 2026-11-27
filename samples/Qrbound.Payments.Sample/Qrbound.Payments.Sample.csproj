@@ -14,7 +14,7 @@
 
   <ItemGroup>
     <!-- The published package, as any other app would use it (feed: see nuget.config). -->
-    <PackageReference Include="Qrbound.Payments" Version="0.3.1" />
+    <PackageReference Include="Qrbound.Payments" Version="0.3.2" />
   </ItemGroup>
 
 </Project>
