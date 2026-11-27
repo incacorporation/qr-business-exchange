@@ -390,9 +390,22 @@
     private static string NewInvoiceNumber() =>
         $"INV-{DateTime.UtcNow:yyMMdd}-{Random.Shared.Next(0, 1_000_000):D6}";
 
-    /// <summary>The tokenizer gives YYYYMM; CardPointe's auth takes MMYY.</summary>
-    public static string ExpiryAsMmYy(string expiry) =>
-        expiry.Length == 6 && expiry.All(char.IsAsciiDigit) ? expiry[4..6] + expiry[2..4] : expiry;
+    /// <summary>
+    /// CardPointe's auth takes MMYY. The tokenizer joins year and month without padding: YYYYMM for
+    /// October to December, but YYYYM for January to September (e.g. "20281" for January 2028).
+    /// Anything else is returned unchanged, for the server to reject.
+    /// </summary>
+    public static string ExpiryAsMmYy(string expiry)
+    {
+        var value = expiry.Trim();
+        if (value.Length is not (5 or 6) || !value.All(char.IsAsciiDigit))
+        {
+            return value;
+        }
+
+        var month = int.Parse(value[4..], CultureInfo.InvariantCulture);
+        return month is >= 1 and <= 12 ? $"{month:D2}{value[2..4]}" : value;
+    }
 
     /// <summary>Parses "12.5", "12.50" or "$1,234.56" into cents; more than two decimals is rejected.</summary>
     internal static bool TryParseCents(string? text, out long cents)

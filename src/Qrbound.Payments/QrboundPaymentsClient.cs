@@ -140,7 +140,11 @@ public sealed class QrboundPaymentsClient(HttpClient http)
         try
         {
             var body = await response.Content.ReadFromJsonAsync<ErrorBody>(cancellationToken);
-            return body?.Error ?? body?.Title;
+
+            // ASP.NET's validation answer only says "One or more validation errors occurred." in its
+            // title; the field's own message (e.g. "Expiry must be MMYY.") is in errors.
+            var fieldError = body?.Errors?.Values.SelectMany(m => m).FirstOrDefault(m => !string.IsNullOrWhiteSpace(m));
+            return body?.Error ?? fieldError ?? body?.Title;
         }
         catch (System.Text.Json.JsonException)
         {
@@ -148,7 +152,7 @@ public sealed class QrboundPaymentsClient(HttpClient http)
         }
     }
 
-    private sealed record ErrorBody(string? Error, string? Title);
+    private sealed record ErrorBody(string? Error, string? Title, Dictionary<string, string[]>? Errors);
 }
 
 /// <summary>The server refused a payment step; Message is safe to show to the customer.</summary>

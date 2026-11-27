@@ -9,7 +9,7 @@
     <!-- NuGet package -->
     <IsPackable>true</IsPackable>
     <PackageId>Qrbound.Payments</PackageId>
-    <Version>0.3.1</Version>
+    <Version>0.3.2</Version>
     <Authors>QRBound</Authors>
     <Description>Blazor components for qrbound card payments through CardPointe: a complete payment form, CardPointe's hosted card fields, a QR code and a pay-by-QR page, plus a typed client for the qrbound payment endpoints. Cards are tokenized by CardPointe's hosted iFrame, so card numbers never reach your code.</Description>
     <PackageTags>qrbound;payments;qr;blazor;cardpointe</PackageTags>

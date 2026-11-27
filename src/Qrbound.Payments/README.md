@@ -37,7 +37,7 @@ dotnet nuget add source https://nuget.pkg.github.com/incacorporation/index.json 
 Then add the package to your Blazor app (WebAssembly or Server, .NET 10):
 
 ```bash
-dotnet add package Qrbound.Payments --version 0.3.1
+dotnet add package Qrbound.Payments --version 0.3.2
 ```
 
 ## The server it talks to
