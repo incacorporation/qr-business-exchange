@@ -315,6 +315,102 @@ public sealed class CardPointeService : ICardPointeService
         }
     }
 
+    // Hosted Payment Page ------------------------------------------------------------
+
+    public Uri? GetHostedPageUrl(Uri apiBase)
+    {
+        if (Uri.TryCreate(_options.HostedPageUrl, UriKind.Absolute, out var url) && url.Scheme == Uri.UriSchemeHttps)
+        {
+            return url;
+        }
+
+        // Development only: the API's stand-in for the hosted page (see MockHostedPageController).
+        return string.IsNullOrWhiteSpace(_options.HostedPageUrl) && UseMock()
+            ? new Uri(apiBase, MockHostedPayments.PagePath)
+            : null;
+    }
+
+    public async Task<CardPointeInquiry> InquireByOrderIdAsync(string orderId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(orderId))
+        {
+            return new CardPointeInquiry();
+        }
+
+        if (UseMock())
+        {
+            return new CardPointeInquiry { Reached = true, Transactions = MockHostedPayments.For(orderId) };
+        }
+
+        if (!IsConfigured())
+        {
+            return new CardPointeInquiry();
+        }
+
+        // set=1 asks for every transaction with this order ID (the hosted page can take several tries).
+        var path = $"inquireByOrderid/{Uri.EscapeDataString(orderId)}/{Uri.EscapeDataString(_options.MerchantId)}/1";
+        using var httpRequest = NewRequest(HttpMethod.Get, path, null);
+        try
+        {
+            using var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+            var content = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogError("CardPointe inquiry for order {OrderId} returned HTTP {StatusCode}", orderId, (int)response.StatusCode);
+                return new CardPointeInquiry();
+            }
+
+            var transactions = ParseInquiry(content)
+                .Where(t => !string.IsNullOrWhiteSpace(t.RetRef))
+                .Select(t => new CardPointeTransaction
+                {
+                    RetRef = t.RetRef!,
+                    AuthCode = t.AuthCode,
+                    AmountCents = ParseAmountCents(t.Amount),
+                    RespStat = t.RespStat,
+                    SetlStat = t.SetlStat,
+                    Name = t.Name
+                })
+                .ToList();
+
+            _logger.LogInformation("CardPointe inquiry for order {OrderId}: {Count} transaction(s), {Approved} approved",
+                orderId, transactions.Count, transactions.Count(t => t.IsApproved));
+            return new CardPointeInquiry { Reached = true, Transactions = transactions };
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            _logger.LogError(ex, "CardPointe inquiry for order {OrderId} failed", orderId);
+            return new CardPointeInquiry();
+        }
+    }
+
+    /// <summary>The inquiry answers with one transaction or, with set=1, an array of them.</summary>
+    private static List<InquiryResponse> ParseInquiry(string content)
+    {
+        var trimmed = content.TrimStart();
+        if (trimmed.StartsWith('['))
+        {
+            return JsonSerializer.Deserialize<List<InquiryResponse>>(content) ?? [];
+        }
+
+        var single = JsonSerializer.Deserialize<InquiryResponse>(content);
+        return single is null ? [] : [single];
+    }
+
+    /// <summary>
+    /// CardPointe amounts with a decimal point are in dollars ("12.34"); without one they're in cents ("1234").
+    /// </summary>
+    public static long ParseAmountCents(string? amount)
+    {
+        if (string.IsNullOrWhiteSpace(amount) ||
+            !decimal.TryParse(amount, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var value))
+        {
+            return 0;
+        }
+
+        return amount.Contains('.') ? (long)Math.Round(value * 100m, MidpointRounding.AwayFromZero) : (long)value;
+    }
+
     // ---------------------------------------------------------------------------
 
     private bool UseMock()
@@ -413,6 +509,16 @@ public sealed class CardPointeService : ICardPointeService
         [JsonPropertyName("acctid")] public string? AcctId { get; init; }
         [JsonPropertyName("token")] public string? Token { get; init; }
         [JsonPropertyName("accttype")] public string? AcctType { get; init; }
+    }
+
+    private sealed class InquiryResponse
+    {
+        [JsonPropertyName("retref")] public string? RetRef { get; init; }
+        [JsonPropertyName("authcode")] public string? AuthCode { get; init; }
+        [JsonPropertyName("amount")] public string? Amount { get; init; }
+        [JsonPropertyName("respstat")] public string? RespStat { get; init; }
+        [JsonPropertyName("setlstat")] public string? SetlStat { get; init; }
+        [JsonPropertyName("name")] public string? Name { get; init; }
     }
 
     private sealed class AuthResponse

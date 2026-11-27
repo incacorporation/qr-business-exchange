@@ -29,6 +29,19 @@ public class BusinessPaymentSettings
     /// <summary>True: only Owners and Admins can take payments. False: any member can.</summary>
     public bool ManagersOnly { get; set; }
 
+    /// <summary>Whether customers can add a tip when they pay.</summary>
+    public bool TipsEnabled { get; set; }
+
+    /// <summary>Suggested tips in percent, comma-separated, e.g. "15,18,20" (at most 4).</summary>
+    [StringLength(50)]
+    public string TipPercentages { get; set; } = "15,18,20";
+
+    /// <summary>Whether customers can type their own tip amount.</summary>
+    public bool AllowCustomTip { get; set; } = true;
+
+    /// <summary>The largest tip accepted, in percent of the bill (1 to 100).</summary>
+    public int MaxTipPercent { get; set; } = 50;
+
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
     public Guid? UpdatedByUserId { get; set; }

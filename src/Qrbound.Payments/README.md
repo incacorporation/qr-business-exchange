@@ -51,6 +51,9 @@ on a server that exposes these endpoints (the qrbound API does; point `AddQrboun
 | `POST api/cardpointe/process` | `QrboundCardPayment`, `ChargeAsync` | yes |
 | `GET api/pay/{id}` | `QrboundPayLink`, `GetQrPaymentAsync` | no |
 | `POST api/pay/{id}` | `QrboundPayLink`, `PayQrPaymentAsync` | no |
+| `POST api/pay/{id}/quote` | `QuoteQrPaymentAsync` (lock a tip) | no |
+| `POST api/pay/{id}/hosted` | `StartHostedPaymentAsync` (Fiserv's hosted page) | no |
+| `POST api/pay/{id}/hosted/check` | `CheckHostedPaymentAsync` | no |
 
 The server must also allow your app's origin in its CORS settings.
 
@@ -165,7 +168,35 @@ account needed. The server charges the amount stored with the request, never one
 | Component | |
 | --- | --- |
 | `PaymentQrCode` | Draws a QR code as inline SVG (QRCoder, no JavaScript). `Value`, `Title`, `Size`. |
-| `QrboundPayLink` | The payer's page: the card form for the request's fixed amount, or why it can't be paid. `PaymentId`, `RequireEmail` (default false), `OnPaid`. |
+| `QrboundPayLink` | The payer's page: the card form for the request's fixed amount (or a `Quote`'s total), or why it can't be paid. `PaymentId`, `Quote`, `RequireEmail` (default false), `OnPaid`. |
+
+### Tips
+
+When the business takes tips (`QrPaymentInfo.TipsEnabled`, `TipPercentages`, `AllowCustomTip`,
+`MaxTipPercent`), lock the customer's choice first and pay that quote:
+
+```csharp
+var quote = await payments.QuoteQrPaymentAsync(paymentId, tipCents);   // e.g. QrPaymentInfo.TipFor(amount, 18)
+// then <QrboundPayLink PaymentId="paymentId" Quote="quote" />, or the hosted page below
+```
+
+The server checks the tip against the business's rules and charges exactly the quote's total. A
+newer quote replaces an older one, and a quote times out after 15 minutes.
+
+### Fiserv's Hosted Payment Page
+
+When the server has a CardPointe Hosted Payment Page (`QrPaymentInfo.HostedPageAvailable`), the
+customer can pay there instead, submitting the payment to Fiserv themselves:
+
+```csharp
+var start = await payments.StartHostedPaymentAsync(paymentId, quote.QuoteId);
+// show <a href="@start.Url" target="_blank">: the page opens with the total and invoice filled in
+var info = await payments.CheckHostedPaymentAsync(paymentId);           // poll until info.Status is Paid
+```
+
+The server marks the bill paid only after CardPointe reports the payment (from the hosted page's
+webhook, or when asked). Paying less than the bill there leaves it in `NeedsReview`; anything above
+the bill counts as tip.
 
 Safeguards on the server (`QrPaymentService`):
 

@@ -89,6 +89,37 @@
                             <label class="form-check-label" for="ps-saved">Accept saved cards with fingerprint confirmation</label>
                         </div>
 
+                        <h6 class="mt-2">Tips</h6>
+                        <div class="form-check form-switch mb-2">
+                            <input id="ps-tips" class="form-check-input" type="checkbox" role="switch" @bind="form.TipsEnabled" disabled="@ReadOnly" />
+                            <label class="form-check-label" for="ps-tips">Let customers add a tip</label>
+                        </div>
+                        @if (form.TipsEnabled)
+                        {
+                            <div class="row g-2 mb-2">
+                                <div class="col-7">
+                                    <label class="form-label small mb-1" for="ps-tip-pcts">Suggested tips (%)</label>
+                                    <input id="ps-tip-pcts" class="form-control" placeholder="15, 18, 20" @bind="form.TipPercentages" disabled="@ReadOnly" />
+                                </div>
+                                <div class="col-5">
+                                    <label class="form-label small mb-1" for="ps-tip-max">Largest tip (%)</label>
+                                    <input id="ps-tip-max" class="form-control" type="number" min="1" max="100" @bind="form.MaxTipPercent" disabled="@ReadOnly" />
+                                </div>
+                            </div>
+                            <div class="form-check mb-2">
+                                <input id="ps-tip-custom" class="form-check-input" type="checkbox" @bind="form.AllowCustomTip" disabled="@ReadOnly" />
+                                <label class="form-check-label" for="ps-tip-custom">Customers can type their own tip</label>
+                            </div>
+                            <div class="form-text mb-3">
+                                Customers choose the tip before paying, so it's part of the one charge: the fingerprint approves the total,
+                                and the secure card page is opened with the total filled in.
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="mb-3"></div>
+                        }
+
                         @if (!string.IsNullOrEmpty(saved))
                         {
                             <div class="alert alert-success py-2 small">@saved</div>
@@ -138,6 +169,15 @@
                                     <div class="col-6 col-md-3"><div class="border rounded p-2"><div class="fs-5 fw-bold">@report.OpenCount</div><div class="small text-muted">waiting</div></div></div>
                                     <div class="col-6 col-md-3"><div class="border rounded p-2"><div class="fs-5 fw-bold">@(report.ExpiredCount + report.CancelledCount + report.LockedCount)</div><div class="small text-muted">not paid</div></div></div>
                                 </div>
+                                @if (report.PaidCount > 0)
+                                {
+                                    <p class="small text-muted mb-3">
+                                        Bills @Money(report.BillTotalCents) + tips @Money(report.TipTotalCents).
+                                        Paid with a fingerprint: @report.PaidBySavedCardCount ·
+                                        on the secure card page: @report.PaidOnHostedPageCount ·
+                                        by card here: @report.PaidByCardCount
+                                    </p>
+                                }
                                 @if (report.NeedsReviewCount > 0)
                                 {
                                     <div class="alert alert-warning small py-2">
@@ -153,13 +193,14 @@
                                 else
                                 {
                                     <table class="table table-sm mb-0">
-                                        <thead><tr><th>Day (UTC)</th><th class="text-end">Payments</th><th class="text-end">Received</th></tr></thead>
+                                        <thead><tr><th>Day (UTC)</th><th class="text-end">Payments</th><th class="text-end">Tips</th><th class="text-end">Received</th></tr></thead>
                                         <tbody>
                                             @foreach (var d in report.Days.OrderByDescending(d => d.Date))
                                             {
                                                 <tr>
                                                     <td>@d.Date.ToString("ddd, MMM d")</td>
                                                     <td class="text-end">@d.PaidCount</td>
+                                                    <td class="text-end">@Money(d.TipTotalCents)</td>
                                                     <td class="text-end">@Money(d.PaidTotalCents)</td>
                                                 </tr>
                                             }
@@ -228,7 +269,11 @@
             MaxAmountCents = dto.MaxAmountCents,
             DefaultExpiresInMinutes = dto.DefaultExpiresInMinutes,
             AllowSavedCards = dto.AllowSavedCards,
-            ManagersOnly = dto.ManagersOnly
+            ManagersOnly = dto.ManagersOnly,
+            TipsEnabled = dto.TipsEnabled,
+            TipPercentages = dto.TipPercentages,
+            AllowCustomTip = dto.AllowCustomTip,
+            MaxTipPercent = dto.MaxTipPercent
         };
         minText = dto.MinAmountCents is { } min ? Plain(min) : string.Empty;
         maxText = dto.MaxAmountCents is { } max ? Plain(max) : string.Empty;
@@ -294,15 +339,17 @@
             var payments = await ApiService.GetAsync<List<QrPaymentDetails>>(
                 $"{Api}/qr-payments?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}&take=5000") ?? new();
 
-            var csv = new StringBuilder("Created (UTC),Invoice,Description,Amount,Currency,Status,Paid (UTC),Payer,Payer email,CardPointe reference,Failed attempts\r\n");
+            var csv = new StringBuilder("Created (UTC),Invoice,Description,Bill,Tip,Charged,Currency,Status,Paid with,Paid (UTC),Payer,Payer email,CardPointe reference,Extra charge to refund,Failed attempts,Note\r\n");
             foreach (var p in payments.OrderBy(p => p.CreatedAt))
             {
                 csv.AppendJoin(',',
                     Cell(p.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)),
-                    Cell(p.InvoiceNumber), Cell(p.Description), Plain(p.AmountCents), Cell(p.Currency), Cell(p.Status),
+                    Cell(p.InvoiceNumber), Cell(p.Description), Plain(p.AmountCents), Plain(p.TipCents),
+                    p.PaidAmountCents is { } charged ? Plain(charged) : string.Empty,
+                    Cell(p.Currency), Cell(p.Status), Cell(MethodText(p.PaymentMethod)),
                     Cell(p.PaidAt?.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)),
-                    Cell(p.PayerName), Cell(p.PayerEmail), Cell(p.TransactionId),
-                    p.FailedAttempts.ToString(CultureInfo.InvariantCulture)).Append("\r\n");
+                    Cell(p.PayerName), Cell(p.PayerEmail), Cell(p.TransactionId), Cell(p.ExtraTransactionId),
+                    p.FailedAttempts.ToString(CultureInfo.InvariantCulture), Cell(p.LastError)).Append("\r\n");
             }
 
             var slug = business?.Slug ?? "business";
@@ -313,6 +360,14 @@
             downloading = false;
         }
     }
+
+    internal static string MethodText(string? method) => method switch
+    {
+        QrPaymentMethods.SavedCard => "Saved card (fingerprint)",
+        QrPaymentMethods.HostedPage => "Secure card page (Fiserv)",
+        QrPaymentMethods.Card => "Card",
+        _ => string.Empty
+    };
 
     /// <summary>A CSV cell, quoted, and with a leading quote mark if a spreadsheet might read it as a formula.</summary>
     private static string Cell(string? value)

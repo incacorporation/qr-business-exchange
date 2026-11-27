@@ -64,6 +64,33 @@ public class QrPaymentRequest
     [StringLength(250)]
     public string? LastError { get; set; }
 
+    /// <summary>The tip paid, in cents (0 until paid, or when there was none).</summary>
+    public long TipCents { get; set; }
+
+    /// <summary>What was charged (bill plus tip), in cents, once paid.</summary>
+    public long? PaidAmountCents { get; set; }
+
+    /// <summary>How it was paid: Card, SavedCard or HostedPage.</summary>
+    [StringLength(20)]
+    public string? PaymentMethod { get; set; }
+
+    /// <summary>
+    /// The customer's current quote: the tip they chose, locked until <see cref="QuoteExpiresAt"/>.
+    /// Every way of paying must name this quote and is charged exactly the bill plus this tip.
+    /// </summary>
+    public Guid? QuoteId { get; set; }
+
+    public long? QuoteTipCents { get; set; }
+
+    public DateTime? QuoteExpiresAt { get; set; }
+
+    /// <summary>When the customer was last sent to Fiserv's hosted payment page for this bill.</summary>
+    public DateTime? HostedStartedAt { get; set; }
+
+    /// <summary>A second approved charge for this bill (CardPointe retref) that staff must refund.</summary>
+    [StringLength(30)]
+    public string? ExtraTransactionId { get; set; }
+
     /// <summary>Changes on every update, so two payers can't both claim the request.</summary>
     [ConcurrencyCheck]
     public Guid ConcurrencyStamp { get; set; } = Guid.NewGuid();

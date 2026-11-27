@@ -120,6 +120,30 @@ internal sealed class FakeCardPointe : ICardPointeService
     }
 
     public PaymentConfig GetPublicConfig() => new();
+
+    /// <summary>What CardPointe reports per order ID (e.g. payments on the hosted page).</summary>
+    public Dictionary<string, List<CardPointeTransaction>> Orders { get; } = new();
+
+    public bool Reachable { get; set; } = true;
+
+    public Uri? HostedPage { get; set; } = new("https://test.securepayments.cardpointe.com/pay");
+
+    public void PaidOnHostedPage(string invoice, long amountCents, string retRef = "HPP1", string respStat = "A")
+    {
+        if (!Orders.TryGetValue(invoice, out var list))
+        {
+            Orders[invoice] = list = new List<CardPointeTransaction>();
+        }
+
+        list.Add(new CardPointeTransaction { RetRef = retRef, AuthCode = "HPPAUTH", AmountCents = amountCents, RespStat = respStat, Name = "Hana Host" });
+    }
+
+    public Task<CardPointeInquiry> InquireByOrderIdAsync(string orderId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Reachable
+            ? new CardPointeInquiry { Reached = true, Transactions = Orders.TryGetValue(orderId, out var list) ? list.ToList() : [] }
+            : new CardPointeInquiry());
+
+    public Uri? GetHostedPageUrl(Uri apiBase) => HostedPage;
 }
 
 internal sealed class FakeClock(DateTimeOffset start) : TimeProvider

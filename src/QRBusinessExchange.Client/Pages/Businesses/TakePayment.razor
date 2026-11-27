@@ -118,11 +118,20 @@
                             @if (current.Status == QrPaymentStates.Paid)
                             {
                                 <div class="alert alert-success my-3" role="status">
-                                    <div class="fs-4"><i class="bi bi-check-circle-fill me-2"></i>Paid</div>
+                                    <div class="fs-4"><i class="bi bi-check-circle-fill me-2"></i>Paid @Money(current.PaidAmountCents ?? current.AmountCents)</div>
+                                    @if (current.TipCents > 0)
+                                    {
+                                        <div class="small">Bill @Money(current.AmountCents) + tip @Money(current.TipCents)</div>
+                                    }
                                     <div class="small">
                                         @if (!string.IsNullOrEmpty(current.PayerName)) { <text>by @current.PayerName · </text> }
+                                        @if (MethodText(current.PaymentMethod) is { } how) { <text>@how · </text> }
                                         ref @current.TransactionId
                                     </div>
+                                    @if (!string.IsNullOrEmpty(current.LastError))
+                                    {
+                                        <div class="small text-warning-emphasis mt-1">@current.LastError</div>
+                                    }
                                 </div>
                             }
                             else if (current.Status is QrPaymentStates.Open or QrPaymentStates.Processing)
@@ -144,6 +153,10 @@
                                     {
                                         <br /><span class="text-danger">@current.FailedAttempts declined @(current.FailedAttempts == 1 ? "attempt" : "attempts"): @current.LastError</span>
                                     }
+                                    @if (current.HostedStartedAt != null && current.Status == QrPaymentStates.Open)
+                                    {
+                                        <br /><span class="text-primary">The customer opened Fiserv's secure card page. This updates when they've paid.</span>
+                                    }
                                 </p>
                                 <div class="d-flex gap-2 justify-content-center">
                                     <button class="btn btn-outline-secondary btn-sm" @onclick="() => CopyAsync(PayUrl(current.Id))">
@@ -160,6 +173,10 @@
                                 <div class="alert @(current.Status == QrPaymentStates.NeedsReview ? "alert-warning" : "alert-secondary") my-3" role="status">
                                     <div class="fw-semibold">@StatusText(current.Status)</div>
                                     <div class="small">@StatusHelp(current)</div>
+                                    @if (current.Status == QrPaymentStates.NeedsReview || (current.Status == QrPaymentStates.Expired && current.HostedStartedAt != null))
+                                    {
+                                        <button class="btn btn-outline-primary btn-sm mt-2" @onclick="() => CheckGatewayAsync(current.Id)">Check with CardPointe</button>
+                                    }
                                 </div>
                             }
 
@@ -196,10 +213,18 @@
                                         {
                                             <tr>
                                                 <td class="small text-nowrap">@p.CreatedAt.ToLocalTime().ToString("MMM d, h:mm tt")</td>
-                                                <td class="text-end text-nowrap">@Money(p.AmountCents)</td>
+                                                <td class="text-end text-nowrap">
+                                                    @Money(p.PaidAmountCents ?? p.AmountCents)
+                                                    @if (p.TipCents > 0) { <div class="small text-muted">incl. tip @Money(p.TipCents)</div> }
+                                                </td>
                                                 <td class="small">
                                                     @(p.Description ?? "—")
                                                     @if (!string.IsNullOrEmpty(p.PayerName)) { <div class="text-muted">@p.PayerName</div> }
+                                                    @if (MethodText(p.PaymentMethod) is { } how && p.Status == QrPaymentStates.Paid) { <div class="text-muted">@how</div> }
+                                                    @if (!string.IsNullOrEmpty(p.ExtraTransactionId))
+                                                    {
+                                                        <div class="text-danger">Refund extra charge @p.ExtraTransactionId in CardPointe</div>
+                                                    }
                                                 </td>
                                                 <td><span class="badge @StatusBadge(p.Status)">@StatusText(p.Status)</span></td>
                                                 <td class="text-end text-nowrap">
@@ -210,6 +235,10 @@
                                                     @if (p.Status is QrPaymentStates.Open or QrPaymentStates.Locked && CanCancel)
                                                     {
                                                         <button class="btn btn-link btn-sm text-danger" @onclick="() => CancelAsync(p.Id)">Cancel</button>
+                                                    }
+                                                    @if (p.Status == QrPaymentStates.NeedsReview || (p.Status == QrPaymentStates.Expired && p.HostedStartedAt != null))
+                                                    {
+                                                        <button class="btn btn-outline-primary btn-sm" title="Ask CardPointe whether this bill was paid" @onclick="() => CheckGatewayAsync(p.Id)">Check</button>
                                                     }
                                                     @if (p.Status == QrPaymentStates.NeedsReview && paySettings?.CanEdit == true)
                                                     {
@@ -338,6 +367,7 @@
     private async Task PollAsync(CancellationToken token)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        var ticks = 0;
         try
         {
             while (await timer.WaitForNextTickAsync(token))
@@ -347,7 +377,20 @@
                     return;
                 }
 
-                var latest = await ApiService.GetAsync<QrPaymentDetails>($"{Api}/{current.Id}");
+                // When the customer is paying on Fiserv's hosted page, also ask CardPointe now and then,
+                // in case the hosted page's webhook doesn't reach qrbound.
+                ticks++;
+                QrPaymentDetails? latest;
+                if (current.HostedStartedAt != null && ticks % 8 == 0)
+                {
+                    var checkResponse = await ApiService.PostAsync<object?>($"{Api}/{current.Id}/check-gateway", null);
+                    latest = checkResponse.IsSuccessStatusCode ? await ApiService.ParseResponseAsync<QrPaymentDetails>(checkResponse) : null;
+                }
+                else
+                {
+                    latest = await ApiService.GetAsync<QrPaymentDetails>($"{Api}/{current.Id}");
+                }
+
                 if (token.IsCancellationRequested || latest == null || current?.Id != latest.Id)
                 {
                     continue;
@@ -393,6 +436,22 @@
         var response = await ApiService.PostAsync($"{Api}/{id}/resolve", new ResolveQrPaymentRequest { Paid = paid });
         await AfterActionAsync(response, "The payment couldn't be updated.");
     }
+
+    /// <summary>Asks CardPointe about the bill's order and records any approved payment it has.</summary>
+    private async Task CheckGatewayAsync(Guid id)
+    {
+        error = null;
+        var response = await ApiService.PostAsync<object?>($"{Api}/{id}/check-gateway", null);
+        await AfterActionAsync(response, "CardPointe couldn't be checked. Try again.");
+    }
+
+    private static string? MethodText(string? method) => method switch
+    {
+        Qrbound.Payments.Models.QrPaymentMethods.SavedCard => "saved card + fingerprint",
+        Qrbound.Payments.Models.QrPaymentMethods.HostedPage => "Fiserv secure card page",
+        Qrbound.Payments.Models.QrPaymentMethods.Card => "card",
+        _ => null
+    };
 
     private async Task AfterActionAsync(HttpResponseMessage response, string fallback)
     {
@@ -457,7 +516,8 @@
 
     private static string StatusHelp(QrPaymentDetails p) => p.Status switch
     {
-        QrPaymentStates.NeedsReview => $"CardPointe didn't answer in time, so we don't know if {p.PayerName ?? "the customer"} was charged. Look up {p.InvoiceNumber} in CardPointe, then mark it in Recent payments.",
+        QrPaymentStates.NeedsReview when !string.IsNullOrEmpty(p.TransactionId) && !string.IsNullOrEmpty(p.LastError) => p.LastError!,
+        QrPaymentStates.NeedsReview => $"CardPointe didn't answer in time, so we don't know if {p.PayerName ?? "the customer"} was charged. Press Check with CardPointe, or look up {p.InvoiceNumber} in CardPointe, then mark it in Recent payments.",
         QrPaymentStates.Locked => "The card was declined too many times. Start a new payment.",
         QrPaymentStates.Expired => "Nobody paid before the QR code expired. Start a new payment.",
         QrPaymentStates.Cancelled => "This payment was cancelled.",

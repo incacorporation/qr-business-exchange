@@ -48,6 +48,21 @@ public sealed class CardPointeOptions
     /// </summary>
     public bool UseMockApi { get; set; }
 
+    /// <summary>
+    /// The merchant's CardPointe Hosted Payment Page, e.g. https://&lt;site&gt;.securepayments.cardpointe.com/pay.
+    /// Customers are sent there with ?total=…&amp;invoice=… filled in. Empty: cards are paid in CardPointe's
+    /// card fields on qrbound's pay page instead.
+    /// </summary>
+    public string HostedPageUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Secret the hosted page's webhook must send as ?key=… (set the webhook URL in the HPP Admin's
+    /// Connect tab to https://&lt;api&gt;/api/pay/hosted/webhook?key=&lt;this&gt;). Secret: user-secrets or
+    /// CardPointe__HostedPageWebhookKey only. A webhook is never trusted on its own: each one makes
+    /// qrbound look the order up with CardPointe.
+    /// </summary>
+    public string HostedPageWebhookKey { get; set; } = string.Empty;
+
     public bool IsProduction => string.Equals(Environment, "production", StringComparison.OrdinalIgnoreCase);
 
     public bool HasCredentials =>

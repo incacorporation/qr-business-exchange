@@ -21,8 +21,49 @@ public interface ICardPointeService
     /// <summary>Removes a card on file from CardPointe. Returns false if CardPointe didn't confirm.</summary>
     Task<bool> DeleteProfileAsync(string profileId, string accountId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Looks up every transaction CardPointe has for an order ID (our invoice number), e.g. one paid on
+    /// the Hosted Payment Page. Never throws for gateway problems: Reached is false instead.
+    /// </summary>
+    Task<CardPointeInquiry> InquireByOrderIdAsync(string orderId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The Hosted Payment Page to send customers to, or null when there is none. In development with
+    /// the mock gateway this is the API's own stand-in page under <paramref name="apiBase"/>.
+    /// </summary>
+    Uri? GetHostedPageUrl(Uri apiBase);
+
     /// <summary>Settings the browser needs for the card form. Holds no secrets.</summary>
     PaymentConfig GetPublicConfig();
+}
+
+/// <summary>What CardPointe has for one order ID.</summary>
+public sealed class CardPointeInquiry
+{
+    /// <summary>False when CardPointe couldn't be asked (not configured, down, unreadable answer).</summary>
+    public bool Reached { get; init; }
+
+    public IReadOnlyList<CardPointeTransaction> Transactions { get; init; } = [];
+}
+
+/// <summary>One transaction from an inquiry.</summary>
+public sealed class CardPointeTransaction
+{
+    public required string RetRef { get; init; }
+    public string? AuthCode { get; init; }
+
+    /// <summary>Amount in cents.</summary>
+    public long AmountCents { get; init; }
+
+    /// <summary>A = approved, B = retry, C = declined.</summary>
+    public string? RespStat { get; init; }
+
+    /// <summary>Settlement status, e.g. "Authorized", "Queued for Capture", "Accepted", "Voided".</summary>
+    public string? SetlStat { get; init; }
+
+    public string? Name { get; init; }
+
+    public bool IsApproved => RespStat == "A" && !string.Equals(SetlStat, "Voided", StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>

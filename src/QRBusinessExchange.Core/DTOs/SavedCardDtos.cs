@@ -38,6 +38,9 @@ public class SaveCardRequest
 public class SavedCardPayInitRequest
 {
     public Guid SavedCardId { get; set; }
+
+    /// <summary>The quote (bill plus tip) the fingerprint approves. Null approves the bill with no tip.</summary>
+    public Guid? QuoteId { get; set; }
 }
 
 /// <summary>Pay a QR payment request with a saved card, confirmed by the user's passkey (fingerprint / face).</summary>
@@ -55,4 +58,7 @@ public class SavedCardPayRequest
     /// <summary>Optional receipt email.</summary>
     [EmailAddress, StringLength(254)]
     public string? Email { get; set; }
+
+    /// <summary>The same quote as the init call.</summary>
+    public Guid? QuoteId { get; set; }
 }

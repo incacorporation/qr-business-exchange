@@ -17,9 +17,63 @@ public sealed record EffectivePaymentSettings(
     bool AllowSavedCards,
     bool ManagersOnly)
 {
+    public bool TipsEnabled { get; init; }
+
+    /// <summary>Suggested tips in percent, smallest first.</summary>
+    public IReadOnlyList<int> TipPercentages { get; init; } = DefaultTipPercentages;
+
+    public bool AllowCustomTip { get; init; } = true;
+
+    /// <summary>The largest tip, in percent of the bill.</summary>
+    public int MaxTipPercent { get; init; } = 50;
+
+    public static readonly IReadOnlyList<int> DefaultTipPercentages = [15, 18, 20];
+
     /// <summary>Whether someone with this role in the business may take payments.</summary>
     public bool CanTakePayments(string? role) =>
         role != null && (!ManagersOnly || BusinessRoles.CanManage(role));
+
+    /// <summary>The largest tip accepted on a bill, in cents.</summary>
+    public long MaxTipCents(long amountCents) => TipsEnabled ? QrPaymentInfo.TipFor(amountCents, MaxTipPercent) : 0;
+
+    /// <summary>Whether the customer may add this tip to this bill.</summary>
+    public bool IsAllowedTip(long amountCents, long tipCents)
+    {
+        if (tipCents == 0)
+        {
+            return true;
+        }
+
+        if (!TipsEnabled || tipCents < 0 || tipCents > MaxTipCents(amountCents))
+        {
+            return false;
+        }
+
+        return AllowCustomTip || TipPercentages.Any(p => QrPaymentInfo.TipFor(amountCents, p) == tipCents);
+    }
+
+    /// <summary>Reads "15,18,20": whole percentages from 1 to 100, at most four, smallest first.</summary>
+    public static IReadOnlyList<int>? ParseTipPercentages(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return [];
+        }
+
+        var values = new List<int>();
+        foreach (var part in text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!int.TryParse(part.TrimEnd('%'), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var p) || p is < 1 or > 100)
+            {
+                return null;
+            }
+
+            values.Add(p);
+        }
+
+        var distinct = values.Distinct().Order().ToList();
+        return distinct.Count > 4 ? null : distinct;
+    }
 }
 
 /// <summary>
@@ -62,7 +116,13 @@ public sealed class BusinessPaymentSettingsService
             Math.Min(_platform.MaxAmountCents, s.MaxAmountCents ?? long.MaxValue),
             Math.Clamp(s.DefaultExpiresInMinutes, 5, 1440),
             s.AllowSavedCards,
-            s.ManagersOnly);
+            s.ManagersOnly)
+        {
+            TipsEnabled = s.TipsEnabled,
+            TipPercentages = EffectivePaymentSettings.ParseTipPercentages(s.TipPercentages) ?? EffectivePaymentSettings.DefaultTipPercentages,
+            AllowCustomTip = s.AllowCustomTip,
+            MaxTipPercent = Math.Clamp(s.MaxTipPercent, 1, 100)
+        };
     }
 
     public async Task<BusinessPaymentSettingsDto> GetAsync(Guid userId, Guid businessId)
@@ -96,6 +156,24 @@ public sealed class BusinessPaymentSettingsService
             throw new QrPaymentException(400, "QR codes must work for 5 minutes to 24 hours.");
         }
 
+        var tipPercentages = EffectivePaymentSettings.ParseTipPercentages(request.TipPercentages)
+            ?? throw new QrPaymentException(400, "Suggested tips must be up to four whole percentages from 1 to 100, like 15, 18, 20.");
+
+        if (request.MaxTipPercent is < 1 or > 100)
+        {
+            throw new QrPaymentException(400, "The largest tip must be between 1% and 100% of the bill.");
+        }
+
+        if (tipPercentages.Any(p => p > request.MaxTipPercent))
+        {
+            throw new QrPaymentException(400, "A suggested tip can't be more than the largest tip allowed.");
+        }
+
+        if (request.TipsEnabled && tipPercentages.Count == 0 && !request.AllowCustomTip)
+        {
+            throw new QrPaymentException(400, "With tips on, suggest at least one tip or let customers type their own.");
+        }
+
         var settings = await _db.BusinessPaymentSettings.FirstOrDefaultAsync(x => x.BusinessId == businessId);
         if (settings == null)
         {
@@ -109,14 +187,19 @@ public sealed class BusinessPaymentSettingsService
         settings.DefaultExpiresInMinutes = request.DefaultExpiresInMinutes;
         settings.AllowSavedCards = request.AllowSavedCards;
         settings.ManagersOnly = request.ManagersOnly;
+        settings.TipsEnabled = request.TipsEnabled;
+        settings.TipPercentages = string.Join(",", tipPercentages);
+        settings.AllowCustomTip = request.AllowCustomTip;
+        settings.MaxTipPercent = request.MaxTipPercent;
         settings.UpdatedAt = Now;
         settings.UpdatedByUserId = userId;
         await _db.SaveChangesAsync();
 
         _logger.LogInformation(
-            "Business {BusinessId} payment settings changed by {UserId}: enabled {Enabled}, limits {Min}-{Max}, expiry {Expiry} min, saved cards {Saved}, managers only {ManagersOnly}",
+            "Business {BusinessId} payment settings changed by {UserId}: enabled {Enabled}, limits {Min}-{Max}, expiry {Expiry} min, saved cards {Saved}, managers only {ManagersOnly}, tips {Tips} ({TipPercentages}, custom {CustomTip}, max {MaxTip}%)",
             businessId, userId, settings.PaymentsEnabled, settings.MinAmountCents, settings.MaxAmountCents,
-            settings.DefaultExpiresInMinutes, settings.AllowSavedCards, settings.ManagersOnly);
+            settings.DefaultExpiresInMinutes, settings.AllowSavedCards, settings.ManagersOnly,
+            settings.TipsEnabled, settings.TipPercentages, settings.AllowCustomTip, settings.MaxTipPercent);
 
         return ToDto(businessId, settings, await GetEffectiveAsync(businessId), role);
     }
@@ -140,7 +223,7 @@ public sealed class BusinessPaymentSettingsService
 
         var payments = await _db.QrPaymentRequests.AsNoTracking()
             .Where(p => p.BusinessId == businessId && p.CreatedAt >= first && p.CreatedAt < last.AddDays(1))
-            .Select(p => new { p.Status, p.AmountCents, p.ExpiresAt, p.PaidAt, p.CreatedAt })
+            .Select(p => new { p.Status, p.AmountCents, p.TipCents, p.PaidAmountCents, p.PaymentMethod, p.ExpiresAt, p.PaidAt, p.CreatedAt })
             .ToListAsync();
 
         string StateOf(string status, DateTime expiresAt) =>
@@ -153,7 +236,12 @@ public sealed class BusinessPaymentSettingsService
             To = last,
             Currency = _platform.Currency,
             PaidCount = paid.Count,
-            PaidTotalCents = paid.Sum(p => p.AmountCents),
+            BillTotalCents = paid.Sum(p => p.AmountCents),
+            TipTotalCents = paid.Sum(p => p.TipCents),
+            PaidTotalCents = paid.Sum(p => p.PaidAmountCents ?? p.AmountCents),
+            PaidByCardCount = paid.Count(p => p.PaymentMethod == QrPaymentMethods.Card),
+            PaidBySavedCardCount = paid.Count(p => p.PaymentMethod == QrPaymentMethods.SavedCard),
+            PaidOnHostedPageCount = paid.Count(p => p.PaymentMethod == QrPaymentMethods.HostedPage),
             OpenCount = payments.Count(p => StateOf(p.Status, p.ExpiresAt) is QrPaymentStatus.Open or QrPaymentStatus.Processing),
             ExpiredCount = payments.Count(p => StateOf(p.Status, p.ExpiresAt) == QrPaymentStates.Expired),
             CancelledCount = payments.Count(p => p.Status == QrPaymentStatus.Cancelled),
@@ -162,7 +250,13 @@ public sealed class BusinessPaymentSettingsService
             Days = paid
                 .GroupBy(p => (p.PaidAt ?? p.CreatedAt).Date)
                 .OrderBy(g => g.Key)
-                .Select(g => new QrPaymentReportDayDto { Date = g.Key, PaidCount = g.Count(), PaidTotalCents = g.Sum(p => p.AmountCents) })
+                .Select(g => new QrPaymentReportDayDto
+                {
+                    Date = g.Key,
+                    PaidCount = g.Count(),
+                    TipTotalCents = g.Sum(p => p.TipCents),
+                    PaidTotalCents = g.Sum(p => p.PaidAmountCents ?? p.AmountCents)
+                })
                 .ToList()
         };
     }
@@ -200,6 +294,10 @@ public sealed class BusinessPaymentSettingsService
         Currency = _platform.Currency,
         CanEdit = BusinessRoles.CanManage(role),
         CanTakePayments = effective.PaymentsEnabled && effective.CanTakePayments(role),
+        TipsEnabled = effective.TipsEnabled,
+        TipPercentages = string.Join(", ", effective.TipPercentages),
+        AllowCustomTip = effective.AllowCustomTip,
+        MaxTipPercent = effective.MaxTipPercent,
         UpdatedAt = s?.UpdatedAt
     };
 

@@ -388,6 +388,9 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                     b.Property<Guid>("BusinessId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<bool>("AllowCustomTip")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("AllowSavedCards")
                         .HasColumnType("bit");
 
@@ -400,10 +403,21 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                     b.Property<long?>("MaxAmountCents")
                         .HasColumnType("bigint");
 
+                    b.Property<int>("MaxTipPercent")
+                        .HasColumnType("int");
+
                     b.Property<long?>("MinAmountCents")
                         .HasColumnType("bigint");
 
                     b.Property<bool>("PaymentsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("TipPercentages")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<bool>("TipsEnabled")
                         .HasColumnType("bit");
 
                     b.Property<DateTime>("UpdatedAt")
@@ -883,8 +897,15 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                     b.Property<DateTime>("ExpiresAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("ExtraTransactionId")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
                     b.Property<int>("FailedAttempts")
                         .HasColumnType("int");
+
+                    b.Property<DateTime?>("HostedStartedAt")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("InvoiceNumber")
                         .IsRequired()
@@ -894,6 +915,9 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                     b.Property<string>("LastError")
                         .HasMaxLength(250)
                         .HasColumnType("nvarchar(250)");
+
+                    b.Property<long?>("PaidAmountCents")
+                        .HasColumnType("bigint");
 
                     b.Property<DateTime?>("PaidAt")
                         .HasColumnType("datetime2");
@@ -906,10 +930,26 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<string>("PaymentMethod")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime?>("QuoteExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("QuoteId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long?>("QuoteTipCents")
+                        .HasColumnType("bigint");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
+
+                    b.Property<long>("TipCents")
+                        .HasColumnType("bigint");
 
                     b.Property<string>("TransactionId")
                         .HasMaxLength(30)

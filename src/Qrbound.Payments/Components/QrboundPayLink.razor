@@ -25,12 +25,12 @@
         <QrboundCardPayment @key="info.Id"
                             Title="@($"Pay {info.BusinessName}")"
                             Subtitle="Card details are entered on CardPointe's secure form"
-                            AmountCents="info.AmountCents"
+                            AmountCents="ChargeCents"
                             InvoiceNumber="@info.InvoiceNumber"
-                            Description="@(info.Description ?? $"Payment to {info.BusinessName}")"
+                            Description="@Describe(info)"
                             RequireEmail="RequireEmail"
                             ShowClearButton="false"
-                            ButtonText="@($"Pay {FormatAmount(info.AmountCents, info.Currency)}")"
+                            ButtonText="@($"Pay {FormatAmount(ChargeCents, info.Currency)}")"
                             ChargeHandler="ChargeAsync"
                             OnCompleted="OnCompletedAsync" />
     }
@@ -38,7 +38,11 @@
     {
         <div class="qrbound-paylink-box @(info.Status == QrPaymentStates.Paid ? "qrbound-paylink-paid" : null)" role="status">
             <p class="qrbound-paylink-business">@info.BusinessName</p>
-            <p class="qrbound-paylink-amount">@FormatAmount(info.AmountCents, info.Currency)</p>
+            <p class="qrbound-paylink-amount">@FormatAmount(info.PaidAmountCents ?? info.AmountCents, info.Currency)</p>
+            @if (info.TipCents > 0)
+            {
+                <p class="qrbound-paylink-hint">Bill @FormatAmount(info.AmountCents, info.Currency) + tip @FormatAmount(info.TipCents, info.Currency)</p>
+            }
             @if (!string.IsNullOrEmpty(info.Description))
             {
                 <p class="qrbound-paylink-hint">@info.Description</p>
@@ -69,6 +73,22 @@
     [Parameter] public EventCallback<CardPaymentResult> OnPaid { get; set; }
 
     [Parameter] public string? CssClass { get; set; }
+
+    /// <summary>
+    /// A quote from <see cref="QrboundPaymentsClient.QuoteQrPaymentAsync"/> (bill plus tip). The card
+    /// is charged its total. Null charges the bill alone.
+    /// </summary>
+    [Parameter] public QrPaymentQuote? Quote { get; set; }
+
+    private long ChargeCents => Quote is { } q && q.PaymentId == info?.Id ? q.TotalCents : info?.AmountCents ?? 0;
+
+    private string Describe(QrPaymentInfo p)
+    {
+        var what = p.Description ?? $"Payment to {p.BusinessName}";
+        return Quote is { TipCents: > 0 } q && q.PaymentId == p.Id
+            ? $"{what} (bill {FormatAmount(p.AmountCents, p.Currency)} + tip {FormatAmount(q.TipCents, p.Currency)})"
+            : what;
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -101,7 +121,8 @@
             PaymentToken = request.PaymentToken,
             Expiry = request.Expiry,
             CardholderName = request.CardholderName,
-            Email = request.Email
+            Email = request.Email,
+            QuoteId = Quote is { } q && q.PaymentId == PaymentId ? q.QuoteId : null
         });
 
     private async Task OnCompletedAsync(CardPaymentResult result)
