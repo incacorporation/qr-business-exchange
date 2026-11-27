@@ -4,43 +4,37 @@ using QRBusinessExchange.Web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
-
-// Configure HttpClient for API calls
-var apiBaseUrl = builder.Configuration["ApiSettings:BaseUrl"] ?? "https://localhost:5001";
-builder.Services.AddScoped(sp => new HttpClient 
-{ 
-    BaseAddress = new Uri(apiBaseUrl) 
-});
-
-// Add authentication services
-builder.Services.AddAuthorizationCore();
-builder.Services.AddCascadingAuthenticationState();
-
-// Register custom services
-builder.Services.AddScoped<ApiService>();
-builder.Services.AddScoped<IndexedDBService>();
-builder.Services.AddScoped<StateService>();
-builder.Services.AddScoped<AuthenticationStateProvider, CustomAuthStateProvider>();
+// Add services for hosting Blazor WebAssembly
+builder.Services.AddControllersWithViews();
+builder.Services.AddRazorPages();
 
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
-if (!app.Environment.IsDevelopment())
+if (app.Environment.IsDevelopment())
 {
-    app.UseExceptionHandler("/Error", createScopeForErrors: true);
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
+    app.UseWebAssemblyDebugging();
+}
+else
+{
+    app.UseExceptionHandler("/Error");
     app.UseHsts();
 }
 
 app.UseHttpsRedirection();
 
-app.UseStaticFiles();
-app.UseAntiforgery();
+// Serve WebAssembly framework files FIRST (from Client project)
+app.UseBlazorFrameworkFiles();
 
-app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
+// Then serve static files (Client wwwroot takes precedence)
+app.UseStaticFiles();
+
+app.UseRouting();
+
+app.MapRazorPages();
+app.MapControllers();
+
+// Fallback to index.html for client-side routing
+app.MapFallbackToFile("index.html");
 
 app.Run();

@@ -21,8 +21,17 @@ public class LoginResponse
 {
     public string Token { get; set; } = string.Empty;
     public Guid UserId { get; set; }
-    public QRBusinessExchange.Core.DTOs.UserProfileDto User { get; set; } = new();
-    public QRBusinessExchange.Core.DTOs.SubscriptionDto Subscription { get; set; } = new();
+    public Core.DTOs.UserProfileDto User { get; set; } = new();
+    public Core.DTOs.SubscriptionDto Subscription { get; set; } = new();
+}
+
+public class AuthResponse
+{
+	public string AccessToken { get; set; } = string.Empty;
+	public string RefreshToken { get; set; } = string.Empty;
+	public DateTime ExpiresAt { get; set; }
+	public Core.DTOs.UserProfileDto User { get; set; } = new();
+	public Core.DTOs.SubscriptionDto Subscription { get; set; } = new();
 }
 
 public class Advertisement

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using QRBusinessExchange.API.DTOs;
 using QRBusinessExchange.Core.Interfaces;
+using QRBusinessExchange.Infrastructure.Services;
 
 namespace QRBusinessExchange.API.Controllers;
 
@@ -15,10 +16,12 @@ public class UserController : ControllerBase
 {
     private readonly IUserRepository _userRepository;
     private readonly ILogger<UserController> _logger;
+    private readonly ProfileImageService _images;
 
-    public UserController(IUserRepository userRepository, ILogger<UserController> logger)
+    public UserController(IUserRepository userRepository, ILogger<UserController> logger, ProfileImageService images)
     {
         _userRepository = userRepository;
+        _images = images;
         _logger = logger;
     }
 
@@ -39,8 +42,63 @@ public class UserController : ControllerBase
             return NotFound(new { error = "User not found" });
         }
 
-        return Ok(MapToUserDto(user));
+        return Ok(MapToOwnProfile(user));
     }
+
+    /// <summary>The signed-in user's text-message consent (the Settings checkbox).</summary>
+    [HttpGet("sms-consent")]
+    [ProducesResponseType(typeof(Core.DTOs.SmsConsentDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetSmsConsent()
+    {
+        var user = await _userRepository.GetByIdAsync(GetCurrentUserId());
+        return user == null ? NotFound(new { error = "User not found" }) : Ok(ToSmsConsent(user));
+    }
+
+    /// <summary>
+    /// Opts in to, or out of, account and security text messages. Opting in records the number, time and IP
+    /// address as proof of consent and needs a phone number on the profile; opting out keeps that record but
+    /// stops all texts.
+    /// </summary>
+    [HttpPut("sms-consent")]
+    [ProducesResponseType(typeof(Core.DTOs.SmsConsentDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> SetSmsConsent([FromBody] Core.DTOs.SetSmsConsentRequest request)
+    {
+        var user = await _userRepository.GetByIdAsync(GetCurrentUserId());
+        if (user == null)
+        {
+            return NotFound(new { error = "User not found" });
+        }
+
+        if (request.OptIn)
+        {
+            var phone = user.PhoneNumber?.Trim();
+            if (string.IsNullOrEmpty(phone))
+            {
+                return BadRequest(new { error = "Add your mobile number to your profile first, then turn on text messages." });
+            }
+
+            user.SmsOptIn = true;
+            user.SmsOptInAt = DateTime.UtcNow;
+            user.SmsOptInPhone = phone;
+            user.SmsOptInIp = HttpContext.Connection.RemoteIpAddress?.ToString();
+        }
+        else
+        {
+            user.SmsOptIn = false;
+        }
+
+        user.UpdatedAt = DateTime.UtcNow;
+        await _userRepository.UpdateAsync(user);
+        return Ok(ToSmsConsent(user));
+    }
+
+    private static Core.DTOs.SmsConsentDto ToSmsConsent(Core.Entities.User user) => new()
+    {
+        OptIn = user.SmsOptIn,
+        OptInAt = user.SmsOptIn ? user.SmsOptInAt : null,
+        PhoneNumber = string.IsNullOrWhiteSpace(user.PhoneNumber) ? null : user.PhoneNumber
+    };
 
     /// <summary>
     /// Update current user profile
@@ -71,7 +129,15 @@ public class UserController : ControllerBase
             user.CompanyName = request.CompanyName;
         
         if (request.PhoneNumber != null)
+        {
             user.PhoneNumber = request.PhoneNumber;
+
+            // Text-message consent was given for one number; a new number hasn't agreed to texts.
+            if (user.SmsOptIn && !string.Equals(user.PhoneNumber.Trim(), user.SmsOptInPhone, StringComparison.Ordinal))
+            {
+                user.SmsOptIn = false;
+            }
+        }
         
         if (request.Bio != null)
             user.Bio = request.Bio;
@@ -82,10 +148,46 @@ public class UserController : ControllerBase
         if (request.ServicePricing.HasValue)
             user.ServicePricing = request.ServicePricing;
 
+        if (request.ProfileImageUrl != null)
+        {
+            var imageUrl = request.ProfileImageUrl.Trim();
+            if (imageUrl.Length == 0)
+            {
+                user.ProfileImageUrl = null;
+            }
+            else if (imageUrl == user.ProfileImageUrl)
+            {
+                // Unchanged (e.g. an uploaded picture's /images/profiles/... path): keep it.
+            }
+            else if (imageUrl.Length > 500)
+            {
+                return BadRequest(new { error = "The profile image URL is too long (500 characters at most)." });
+            }
+            else if (Uri.TryCreate(imageUrl, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp))
+            {
+                user.ProfileImageUrl = imageUrl;
+            }
+            else
+            {
+                return BadRequest(new { error = "The profile image URL must be a web address starting with https://" });
+            }
+        }
+
+        if (request.Visibility is { } show)
+        {
+            user.ShowEmail = show.ShowEmail ?? user.ShowEmail;
+            user.ShowCompanyName = show.ShowCompanyName ?? user.ShowCompanyName;
+            user.ShowPhoneNumber = show.ShowPhoneNumber ?? user.ShowPhoneNumber;
+            user.ShowBio = show.ShowBio ?? user.ShowBio;
+            user.ShowSkills = show.ShowSkills ?? user.ShowSkills;
+            user.ShowServicePricing = show.ShowServicePricing ?? user.ShowServicePricing;
+            user.ShowProfileImage = show.ShowProfileImage ?? user.ShowProfileImage;
+        }
+
         user.UpdatedAt = DateTime.UtcNow;
         
         var updatedUser = await _userRepository.UpdateAsync(user);
-        return Ok(MapToUserDto(updatedUser));
+        return Ok(MapToOwnProfile(updatedUser));
     }
 
     /// <summary>
@@ -106,87 +208,104 @@ public class UserController : ControllerBase
             return NotFound(new { error = "User not found" });
         }
 
-        return Ok(MapToUserDto(user));
+        return Ok(MapToPublicProfile(user));
     }
 
     /// <summary>
-    /// Upload profile image
+    /// Upload a profile picture (personal photo or business logo): JPG, JPEG, PNG or GIF, up to 5 MB.
+    /// The file's bytes decide its type, not its name. Replaces any earlier picture.
     /// </summary>
-    /// <param name="file">Image file</param>
-    /// <returns>Updated user profile with new image URL</returns>
     [HttpPost("profile-image")]
+    [RequestSizeLimit(ProfileImageService.MaxBytes + 1024 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = ProfileImageService.MaxBytes + 1024 * 1024)]
     [ProducesResponseType(typeof(UserDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> UploadProfileImage(IFormFile file)
+    public async Task<IActionResult> UploadProfileImage(IFormFile? file)
     {
         if (file == null || file.Length == 0)
         {
-            return BadRequest(new { error = "No file uploaded" });
+            return BadRequest(new { error = "Choose a picture to upload." });
         }
-
-        if (file.Length > 5 * 1024 * 1024) // 5MB limit
+        if (file.Length > ProfileImageService.MaxBytes)
         {
-            return BadRequest(new { error = "File size exceeds 5MB limit" });
-        }
-
-        var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif" };
-        var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
-        
-        if (!allowedExtensions.Contains(extension))
-        {
-            return BadRequest(new { error = "Invalid file type. Only JPG, PNG, and GIF are allowed" });
+            return BadRequest(new { error = "The picture is larger than 5 MB. Choose a smaller one." });
         }
 
         var userId = GetCurrentUserId();
+        using var buffer = new MemoryStream();
+        await file.CopyToAsync(buffer);
+
+        try
+        {
+            await _images.SaveAsync(userId, buffer.ToArray(), version => ImageUrl(userId, version));
+        }
+        catch (SsoException ex)
+        {
+            return StatusCode(ex.StatusCode, new { error = ex.Message });
+        }
+
         var user = await _userRepository.GetByIdAsync(userId);
-        
-        if (user == null)
+        return user == null ? NotFound(new { error = "User not found" }) : Ok(MapToOwnProfile(user));
+    }
+
+    /// <summary>Remove your profile picture.</summary>
+    [HttpDelete("profile-image")]
+    [ProducesResponseType(typeof(UserDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> RemoveProfileImage()
+    {
+        var userId = GetCurrentUserId();
+        await _images.RemoveAsync(userId);
+        var user = await _userRepository.GetByIdAsync(userId);
+        return user == null ? NotFound(new { error = "User not found" }) : Ok(MapToOwnProfile(user));
+    }
+
+    /// <summary>Your own picture, even when it's hidden from your card (for the Edit Profile preview).</summary>
+    [HttpGet("profile-image")]
+    public async Task<IActionResult> GetOwnProfileImage()
+    {
+        var image = await _images.GetOwnAsync(GetCurrentUserId());
+        if (image is not { } found)
         {
-            return NotFound(new { error = "User not found" });
+            return NotFound();
         }
 
-        // In a real implementation, upload to cloud storage (e.g., Azure Blob, AWS S3)
-        // For now, just set a placeholder URL
-        var fileName = $"{userId}_{DateTime.UtcNow.Ticks}{extension}";
-        user.ProfileImageUrl = $"/images/profiles/{fileName}";
-        user.UpdatedAt = DateTime.UtcNow;
-
-        var updatedUser = await _userRepository.UpdateAsync(user);
-        return Ok(MapToUserDto(updatedUser));
+        Response.Headers.CacheControl = "private, no-cache";
+        return ImageFile(found.ContentType, found.Data);
     }
 
     /// <summary>
-    /// Update user location
+    /// Someone's picture, as linked from their business card and contact entries. Not found when they
+    /// have none or untick "Show on my card".
     /// </summary>
-    /// <param name="request">Location coordinates</param>
-    /// <returns>Success message</returns>
-    [HttpPut("location")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> UpdateLocation([FromBody] UpdateLocationRequest request)
+    [HttpGet("{id:guid}/image")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetProfileImage(Guid id)
     {
-        var userId = GetCurrentUserId();
-        
-        // In a real implementation, update UserLocation table
-        // For now, just return success
-        return Ok(new { message = "Location updated successfully" });
+        var image = await _images.GetPublicAsync(id);
+        if (image is not { } found)
+        {
+            return NotFound();
+        }
+
+        // Addresses carry a version (?v=), so a new upload is a new address; a day keeps hiding it timely.
+        Response.Headers.CacheControl = "public, max-age=86400";
+        return ImageFile(found.ContentType, found.Data);
     }
 
-    /// <summary>
-    /// Update ping me status
-    /// </summary>
-    /// <param name="enabled">Enable or disable ping me</param>
-    /// <returns>Success message</returns>
-    [HttpPut("ping-status")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    public async Task<IActionResult> UpdatePingStatus([FromQuery] bool enabled)
+    private FileContentResult ImageFile(string contentType, byte[] data)
     {
-        var userId = GetCurrentUserId();
-        
-        // In a real implementation, update UserLocation.PingMeEnabled
-        // For now, just return success
-        return Ok(new { message = $"Ping Me {(enabled ? "enabled" : "disabled")} successfully" });
+        // Never let a browser treat the bytes as anything but the image type checked on upload.
+        Response.Headers.XContentTypeOptions = "nosniff";
+        Response.Headers.ContentSecurityPolicy = "default-src 'none'; sandbox";
+        return File(data, contentType);
     }
+
+    /// <summary>Absolute address of the user's picture on this API (the web app runs on another host).</summary>
+    private string ImageUrl(Guid userId, DateTime version) =>
+        $"{Request.Scheme}://{Request.Host}{Request.PathBase}/api/user/{userId}/image?v={version.Ticks}";
+
+
+    // Location and Ping Me live in LocationController (api/location/...).
 
     private Guid GetCurrentUserId()
     {
@@ -206,6 +325,38 @@ public class UserController : ControllerBase
         }
 
         throw new UnauthorizedAccessException("User ID not found in token");
+    }
+
+    /// <summary>The signed-in user's own profile: the public fields plus the role (not shown on public profiles).</summary>
+    private static UserDto MapToOwnProfile(QRBusinessExchange.Core.Entities.User user)
+    {
+        var dto = MapToUserDto(user);
+        dto.Role = user.Role;
+        dto.Visibility = new ProfileVisibilityDto
+        {
+            ShowEmail = user.ShowEmail,
+            ShowCompanyName = user.ShowCompanyName,
+            ShowPhoneNumber = user.ShowPhoneNumber,
+            ShowBio = user.ShowBio,
+            ShowSkills = user.ShowSkills,
+            ShowServicePricing = user.ShowServicePricing,
+            ShowProfileImage = user.ShowProfileImage
+        };
+        return dto;
+    }
+
+    /// <summary>What anyone opening the user's business card sees: the name plus the fields they chose to show.</summary>
+    private static UserDto MapToPublicProfile(QRBusinessExchange.Core.Entities.User user)
+    {
+        var dto = MapToUserDto(user);
+        if (!user.ShowEmail) dto.Email = string.Empty;
+        if (!user.ShowCompanyName) dto.CompanyName = null;
+        if (!user.ShowPhoneNumber) dto.PhoneNumber = null;
+        if (!user.ShowBio) dto.Bio = null;
+        if (!user.ShowSkills) dto.Skills = null;
+        if (!user.ShowServicePricing) dto.ServicePricing = null;
+        if (!user.ShowProfileImage) dto.ProfileImageUrl = null;
+        return dto;
     }
 
     private static UserDto MapToUserDto(QRBusinessExchange.Core.Entities.User user)

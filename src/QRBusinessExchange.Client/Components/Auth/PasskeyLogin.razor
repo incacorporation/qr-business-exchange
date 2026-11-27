@@ -1,0 +1,255 @@
+@using QRBusinessExchange.Client.Services
+@using QRBusinessExchange.Core.DTOs
+@inject WebAuthnService WebAuthnService
+@inject ApiService ApiService
+@inject IJSRuntime JSRuntime
+
+<div class="passkey-section @(IsVisible ? "visible" : "")">
+    @if (isSupported && isPlatformAuthAvailable)
+    {
+        @if (hasPasskeys)
+        {
+            <button type="button" 
+                    class="btn btn-lg btn-outline-primary w-100 passkey-btn" 
+                    @onclick="HandlePasskeyLogin"
+                    disabled="@isAuthenticating">
+                @if (isAuthenticating)
+                {
+                    <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                    <span>Authenticating with Passkey...</span>
+                }
+                else
+                {
+                    <i class="bi bi-fingerprint me-2"></i>
+                    <span>Sign in with Passkey</span>
+                }
+            </button>
+        }
+        
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert alert-danger mt-3" role="alert">
+                <i class="bi bi-exclamation-triangle me-2"></i>@errorMessage
+            </div>
+        }
+        
+        @if (showSuccess)
+        {
+            <div class="alert alert-success mt-3" role="alert">
+                <i class="bi bi-check-circle me-2"></i>Successfully authenticated with passkey!
+            </div>
+        }
+    }
+    else if (!isSupported)
+    {
+        <div class="alert alert-info small" role="alert">
+            <i class="bi bi-info-circle me-2"></i>
+            Passkeys are not supported in your current browser.
+        </div>
+    }
+    else if (!isPlatformAuthAvailable)
+    {
+        <div class="alert alert-info small" role="alert">
+            <i class="bi bi-info-circle me-2"></i>
+            Passkey authentication is not available on this device.
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public string? Email { get; set; }
+
+    [Parameter]
+    public EventCallback<AuthResponse> OnSuccess { get; set; }
+
+    [Parameter]
+    public bool IsVisible { get; set; } = true;
+
+    private sealed class HasPasskeysResponse
+    {
+        public bool HasPasskeys { get; set; }
+    }
+
+    private bool isSupported = false;
+    private bool isPlatformAuthAvailable = false;
+    private bool hasPasskeys = false;
+    private bool isAuthenticating = false;
+    private bool showSuccess = false;
+    private string errorMessage = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CheckPasskeySupport();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!string.IsNullOrEmpty(Email))
+        {
+            await CheckUserHasPasskeys();
+        }
+    }
+
+    private async Task CheckPasskeySupport()
+    {
+        try
+        {
+            isSupported = await WebAuthnService.IsSupportedAsync();
+            if (isSupported)
+            {
+                isPlatformAuthAvailable = await WebAuthnService.IsPlatformAuthenticatorAvailableAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error checking passkey support: {ex.Message}");
+        }
+    }
+
+    private async Task CheckUserHasPasskeys()
+    {
+        if (string.IsNullOrEmpty(Email))
+        {
+            hasPasskeys = false;
+            return;
+        }
+
+        try
+        {
+            var response = await ApiService.GetAsync<HasPasskeysResponse>($"api/passkey/has-passkeys?email={Uri.EscapeDataString(Email)}");
+            hasPasskeys = response?.HasPasskeys == true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error checking user passkeys: {ex.Message}");
+            hasPasskeys = false;
+        }
+    }
+
+    private async Task HandlePasskeyLogin()
+    {
+        isAuthenticating = true;
+        errorMessage = string.Empty;
+        showSuccess = false;
+        StateHasChanged();
+
+        try
+        {
+            // Step 1: Get authentication options from server
+            var initRequest = new PasskeyAuthenticationInitRequest { Email = Email };
+            var response = await ApiService.PostAsync("api/passkey/authenticate/init", initRequest);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new Exception("Failed to initiate passkey authentication");
+            }
+
+            var options = await ApiService.ParseResponseAsync<PasskeyAuthenticationOptionsDto>(response);
+
+            if (options == null)
+            {
+                throw new Exception("Invalid authentication options");
+            }
+
+            // Step 2: Authenticate with passkey
+            var assertion = await WebAuthnService.AuthenticatePasskeyAsync(options);
+
+            if (assertion == null)
+            {
+                throw new Exception("Passkey authentication was cancelled or failed");
+            }
+
+            // Step 3: Complete authentication on server
+            var completeRequest = new PasskeyAuthenticationCompleteRequest
+            {
+                Challenge = options.Challenge,
+                Assertion = new AssertionResponseDto
+                {
+                    Id = assertion.Id,
+                    RawId = assertion.RawId,
+                    Type = assertion.Type,
+                    Response = new AssertionDataDto
+                    {
+                        ClientDataJSON = assertion.Response.ClientDataJSON,
+                        AuthenticatorData = assertion.Response.AuthenticatorData,
+                        Signature = assertion.Response.Signature,
+                        UserHandle = assertion.Response.UserHandle
+                    }
+                }
+            };
+
+            var authResponse = await ApiService.PostAsync("api/passkey/authenticate/complete", completeRequest);
+
+            if (!authResponse.IsSuccessStatusCode)
+            {
+                var error = await authResponse.Content.ReadAsStringAsync();
+                throw new Exception($"Authentication failed: {error}");
+            }
+
+            var authResult = await ApiService.ParseResponseAsync<AuthResponse>(authResponse);
+
+            if (authResult != null)
+            {
+                showSuccess = true;
+                StateHasChanged();
+                await Task.Delay(500);
+
+                // Notify parent component
+                await OnSuccess.InvokeAsync(authResult);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Passkey authentication error: {ex.Message}");
+            errorMessage = ex.Message.Contains("cancelled") || ex.Message.Contains("aborted")
+                ? "Passkey authentication was cancelled"
+                : "Failed to authenticate with passkey. Please try again or use password.";
+        }
+        finally
+        {
+            isAuthenticating = false;
+            StateHasChanged();
+        }
+    }
+}
+
+<style>
+    /* Hidden = takes no space (opacity alone left an invisible block, i.e. a big gap under the email field) */
+    .passkey-section {
+        display: none;
+    }
+
+    .passkey-section.visible {
+        display: block;
+        animation: passkey-fade-in 0.3s ease-in-out;
+    }
+
+    @@keyframes passkey-fade-in {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+
+    .passkey-btn {
+        border: 2px dashed var(--bs-primary);
+        font-weight: 600;
+        transition: all 0.2s ease;
+    }
+
+    .passkey-btn:hover:not(:disabled) {
+        border-style: solid;
+        background-color: var(--bs-primary);
+        color: white;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+
+    .passkey-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .passkey-btn i {
+        font-size: 1.2em;
+    }
+</style>

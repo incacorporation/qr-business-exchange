@@ -1,0 +1,101 @@
+@page "/admin/commissions"
+@layout AdminLayout
+@rendermode InteractiveServer
+@inject NetworkService Network
+@inject CompensationSettings Plan
+
+<SeoHead Title="Commissions" Description="Commissions." NoIndex="true" />
+<h1>Commissions</h1>
+
+<div class="toolbar">
+    <label>Period
+        <select @bind="_period" @bind:after="PreviewAsync">
+            @foreach (var p in _periods) { <option value="@p">@p</option> }
+        </select>
+    </label>
+    <button class="btn" disabled="@_running" @onclick="RunAsync">@(_runs.Any(r => r.Period == _period) ? "Re-run and save" : "Run and save")</button>
+    @if (_message is not null) { <span class="muted" role="status">@_message</span> }
+</div>
+
+@if (_preview is not null)
+{
+    <div class="tiles">
+        <div class="tile"><span>Revenue</span><strong>@_preview.Revenue.ToString("C0")</strong></div>
+        <div class="tile"><span>Retail commissions</span><strong>@_preview.RetailTotal.ToString("C0")</strong></div>
+        <div class="tile"><span>Overrides</span><strong>@_preview.OverrideTotal.ToString("C0")</strong>
+            <small>@(_preview.OverrideScale < 1 ? $"Scaled to {_preview.OverrideScale:0.0%} to respect the cap" : "Unscaled")</small></div>
+        <div class="tile"><span>Payout ratio</span><strong>@_preview.PayoutRatio.ToString("0.0%")</strong><small>Cap @Plan.PayoutCap.ToString("0%")</small></div>
+    </div>
+
+    <section class="panel">
+        <h2>Per member (preview)</h2>
+        <table class="table">
+            <thead><tr><th>Member</th><th>Rank</th><th>Customer vol.</th><th>Personal vol.</th><th>Qualifying</th><th>Team vol.</th><th>Retail</th><th>Overrides</th><th>Total</th></tr></thead>
+            <tbody>
+                @foreach (var m in _preview.Members.Values.Where(m => m.Total > 0 || m.PersonalVolume > 0).OrderByDescending(m => m.Total))
+                {
+                    <tr class="@(m.Active ? "" : "inactive")">
+                        <td>@_names.GetValueOrDefault(m.MemberId)</td><td>@m.Rank</td>
+                        <td>@m.CustomerVolume.ToString("N0")</td><td>@m.PersonalVolume.ToString("N0")</td>
+                        <td>@m.QualifyingVolume.ToString("N0")</td><td>@m.GroupVolume.ToString("N0")</td>
+                        <td>@m.Retail.ToString("C2")</td><td>@m.Overrides.ToString("C2")</td><td><strong>@m.Total.ToString("C2")</strong></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+}
+
+<section class="panel">
+    <h2>Saved runs</h2>
+    @if (_runs.Count == 0)
+    {
+        <p class="muted">No runs yet. Saved runs feed the public income disclosure.</p>
+    }
+    else
+    {
+        <table class="table">
+            <thead><tr><th>Period</th><th>Revenue</th><th>Payout</th><th>Ratio</th><th>Override scale</th><th>Run at (UTC)</th></tr></thead>
+            <tbody>
+                @foreach (var r in _runs)
+                {
+                    <tr><td>@r.Period</td><td>@r.Revenue.ToString("C0")</td><td>@r.TotalPayout.ToString("C0")</td>
+                        <td>@((r.Revenue == 0 ? 0 : r.TotalPayout / r.Revenue).ToString("0.0%"))</td>
+                        <td>@r.OverrideScale.ToString("0.0%")</td><td>@r.CreatedUtc.ToString("yyyy-MM-dd HH:mm")</td></tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+@code {
+    private readonly List<string> _periods = Enumerable.Range(0, 6).Select(i => NetworkService.PeriodOf(DateTime.UtcNow.AddMonths(-i))).ToList();
+    private string _period = NetworkService.PeriodOf(DateTime.UtcNow.AddMonths(-1));
+    private PlanResult? _preview;
+    private List<CommissionRun> _runs = [];
+    private Dictionary<int, string> _names = [];
+    private bool _running;
+    private string? _message;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _names = (await Network.GetMembersAsync()).ToDictionary(m => m.Id, m => m.Name);
+        _runs = await Network.GetRunsAsync();
+        await PreviewAsync();
+    }
+
+    private async Task PreviewAsync()
+    {
+        _message = null;
+        _preview = await Network.PreviewAsync(_period);
+    }
+
+    private async Task RunAsync()
+    {
+        _running = true;
+        var run = await Network.RunCommissionsAsync(_period);
+        _runs = await Network.GetRunsAsync();
+        _message = $"Saved {_period}: {run.TotalPayout:C0} to {run.Lines.Select(l => l.MemberId).Distinct().Count()} members.";
+        _running = false;
+    }
+}

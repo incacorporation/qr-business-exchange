@@ -1,0 +1,243 @@
+@page "/user/{userId}"
+@using QRBusinessExchange.Core.DTOs
+@using QRBusinessExchange.Client.Services
+@inject ApiService ApiService
+@inject PortalAuthService PortalAuth
+@inject StateService StateService
+
+<PageTitle>@userProfile?.FirstName @userProfile?.LastName - qrbound</PageTitle>
+
+<div class="container mt-4">
+    @if (isLoading)
+    {
+        <div class="text-center p-5">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    }
+    else if (userProfile == null)
+    {
+        <div class="alert alert-warning text-center">
+            <h4>User Not Found</h4>
+            <p>The user profile you're looking for doesn't exist.</p>
+        </div>
+    }
+    else
+    {
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="card shadow">
+                    <div class="card-body p-4">
+                        <div class="text-center mb-4">
+                            @if (!string.IsNullOrEmpty(userProfile.ProfileImageUrl))
+                            {
+                                <img src="@userProfile.ProfileImageUrl" alt="Profile" class="rounded-circle mb-3" 
+                                     style="width: 150px; height: 150px; object-fit: cover;" />
+                            }
+                            else
+                            {
+                                <div class="bg-primary text-white rounded-circle d-inline-flex align-items-center justify-content-center mb-3"
+                                     style="width: 150px; height: 150px; font-size: 3rem;">
+                                    @userProfile.FirstName[0]@userProfile.LastName[0]
+                                </div>
+                            }
+                            <h2>@userProfile.FirstName @userProfile.LastName</h2>
+                            @if (!string.IsNullOrEmpty(userProfile.CompanyName))
+                            {
+                                <p class="text-muted">@userProfile.CompanyName</p>
+                            }
+                        </div>
+
+                        @* Only the fields this person chose to show on their business card arrive here. *@
+                        @if (!string.IsNullOrEmpty(userProfile.Email) || !string.IsNullOrEmpty(userProfile.PhoneNumber))
+                        {
+                            <div class="mb-3">
+                                <h5>Contact Information</h5>
+                                @if (!string.IsNullOrEmpty(userProfile.Email))
+                                {
+                                    <p><strong>Email:</strong> <a href="mailto:@userProfile.Email">@userProfile.Email</a></p>
+                                }
+                                @if (!string.IsNullOrEmpty(userProfile.PhoneNumber))
+                                {
+                                    <p><strong>Phone:</strong> <a href="tel:@userProfile.PhoneNumber">@userProfile.PhoneNumber</a></p>
+                                }
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrEmpty(userProfile.Bio))
+                        {
+                            <div class="mb-3">
+                                <h5>About</h5>
+                                <p>@userProfile.Bio</p>
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrEmpty(userProfile.Skills))
+                        {
+                            <div class="mb-3">
+                                <h5>Skills</h5>
+                                <div class="d-flex flex-wrap gap-2">
+                                    @foreach (var skill in GetSkillsList(userProfile.Skills))
+                                    {
+                                        <span class="badge bg-primary">@skill</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        @if (userProfile.ServicePricing.HasValue && userProfile.ServicePricing > 0)
+                        {
+                            <div class="mb-3">
+                                <h5>Service Pricing</h5>
+                                <p class="h4 text-success">$@userProfile.ServicePricing.Value.ToString("N2")/hour</p>
+                            </div>
+                        }
+
+                        @if (!isOwnCard)
+                        {
+                            <div class="text-center mt-4">
+                                @if (!signedIn)
+                                {
+                                    <a class="btn btn-primary btn-lg" href="@($"/login?returnUrl={Uri.EscapeDataString($"/user/{UserId}")}")">
+                                        <i class="bi bi-person-plus me-1"></i> Log in to add to your contacts
+                                    </a>
+                                }
+                                else if (isContact)
+                                {
+                                    <p class="text-success fw-semibold mb-2"><i class="bi bi-check-circle-fill me-1"></i> In your contacts</p>
+                                    <a class="btn btn-outline-primary" href="/contacts">Open Contacts</a>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-primary btn-lg" @onclick="AddToContactsAsync" disabled="@adding">
+                                        @if (adding)
+                                        {
+                                            <span class="spinner-border spinner-border-sm me-2"></span>
+                                        }
+                                        <i class="bi bi-person-plus me-1"></i> Add to contacts
+                                    </button>
+                                }
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrEmpty(contactError))
+                        {
+                            <div class="alert alert-danger mt-3 text-center">@contactError</div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public string UserId { get; set; } = string.Empty;
+
+    private UserProfileDto? userProfile;
+    private bool isLoading = true;
+
+    // "Add to contacts" (a scanned business card opens this page)
+    private bool signedIn;
+    private bool isOwnCard;
+    private bool isContact;
+    private bool adding;
+    private string? contactError;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        contactError = null;
+        await LoadUserProfile();
+        await LoadContactStateAsync();
+    }
+
+    private async Task LoadUserProfile()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            userProfile = await ApiService.GetAsync<UserProfileDto>($"api/user/{Uri.EscapeDataString(UserId)}/public");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading user profile: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadContactStateAsync()
+    {
+        signedIn = await PortalAuth.GetSessionStateAsync() == PortalSessionState.Active;
+        isOwnCard = signedIn && Guid.TryParse(UserId, out var id) && id == StateService.CurrentUser?.UserId;
+        isContact = false;
+        if (!signedIn || isOwnCard || userProfile == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var response = await ApiService.GetResponseAsync($"api/contacts/{UserId}");
+            if (response.IsSuccessStatusCode)
+            {
+                isContact = (await ApiService.ParseResponseAsync<ContactStatus>(response))?.IsContact == true;
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            // Not knowing just means the Add button shows; adding twice is harmless.
+        }
+    }
+
+    private async Task AddToContactsAsync()
+    {
+        if (!Guid.TryParse(UserId, out var id))
+        {
+            return;
+        }
+
+        adding = true;
+        contactError = null;
+        try
+        {
+            var response = await ApiService.PostAsync("api/contacts", new AddContactRequest { UserId = id });
+            if (response.IsSuccessStatusCode)
+            {
+                isContact = true;
+            }
+            else
+            {
+                contactError = await ApiService.ReadErrorAsync(response, "The contact couldn't be added. Please try again.");
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            contactError = PortalAuthService.ConnectionProblem;
+        }
+        finally
+        {
+            adding = false;
+        }
+    }
+
+    private sealed class ContactStatus
+    {
+        public bool IsContact { get; set; }
+    }
+
+    private List<string> GetSkillsList(string skills)
+    {
+        if (string.IsNullOrEmpty(skills)) return new List<string>();
+        return skills.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(s => s.Trim())
+                    .ToList();
+    }
+}

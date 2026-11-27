@@ -1,6 +1,8 @@
 using System.Net;
-using System.Net.Mail;
+
+
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using QRBusinessExchange.Core.Interfaces;
 using QRBusinessExchange.Infrastructure.Configuration;
@@ -16,20 +18,25 @@ public class EmailService : IEmailService
     private readonly EmailSettings _emailSettings;
     private readonly ApplicationDbContext _context;
     private readonly string _baseUrl;
+    private readonly ILogger<EmailService> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="EmailService"/> class
     /// </summary>
     /// <param name="emailSettings">Email configuration settings</param>
     /// <param name="context">The application database context</param>
+    /// <param name="logger">Logger instance for diagnostics</param>
     /// <param name="baseUrl">The base URL for verification links (e.g., "https://qrbusinessexchange.com")</param>
-    public EmailService(IOptions<EmailSettings> emailSettings, ApplicationDbContext context, string baseUrl = "https://qrbusinessexchange.com")
+    public EmailService(IOptions<EmailSettings> emailSettings, ApplicationDbContext context, ILogger<EmailService> logger, string baseUrl = "https://qrbusinessexchange.com")
     {
         _emailSettings = emailSettings?.Value ?? throw new ArgumentNullException(nameof(emailSettings));
         _context = context ?? throw new ArgumentNullException(nameof(context));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _baseUrl = baseUrl ?? throw new ArgumentNullException(nameof(baseUrl));
 
-        ValidateSettings();
+        // Don't validate on construction - validate when actually sending email
+        // This allows the app to start even if SMTP is not configured
+        // ValidateSettings();
     }
 
     /// <inheritdoc/>
@@ -53,7 +60,9 @@ public class EmailService : IEmailService
                 throw new InvalidOperationException($"User with ID {userId} not found");
             }
 
-            var verificationUrl = $"{_baseUrl}/verify-email?token={verificationToken}&userId={userId}";
+            // Token in the fragment: the portal page reads it in the browser, so it never appears in a
+            // request line, server log or Referer header (same as password-reset links).
+            var verificationUrl = $"{_baseUrl.TrimEnd('/')}/verify-email#token={Uri.EscapeDataString(verificationToken)}";
 
             var subject = "Verify Your Email - QR Business Exchange";
             var body = $@"
@@ -164,6 +173,126 @@ public class EmailService : IEmailService
         }
     }
 
+    /// <inheritdoc/>
+    public Task<bool> SendPasswordResetEmailAsync(string email, string firstName, string resetUrl, TimeSpan validFor)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            throw new ArgumentException("Email cannot be null or empty", nameof(email));
+        }
+
+        var url = WebUtility.HtmlEncode(resetUrl);
+        var minutes = (int)Math.Round(validFor.TotalMinutes);
+        var body = BrandedEmail(
+            $"Hi {WebUtility.HtmlEncode(firstName)},",
+            $@"<p>We received a request to reset the password for your qrbound account.</p>
+               <p style='text-align:center;margin:28px 0;'>
+                   <a href='{url}' style='display:inline-block;padding:12px 28px;background:#0B5CFF;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold;'>Choose a new password</a>
+               </p>
+               <p>This link works once and expires in {minutes} minutes.</p>
+               <p>If you didn't ask to reset your password, you can ignore this email; your password won't change.</p>
+               <p style='font-size:12px;color:#666;word-break:break-all;'>If the button doesn't work, copy this link into your browser:<br>{url}</p>");
+
+        return SendEmailAsync(email, "Reset your qrbound password", body);
+    }
+
+    /// <inheritdoc/>
+    public Task<bool> SendPasswordChangedEmailAsync(string email, string firstName, string forgotPasswordUrl)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            throw new ArgumentException("Email cannot be null or empty", nameof(email));
+        }
+
+        var body = BrandedEmail(
+            $"Hi {WebUtility.HtmlEncode(firstName)},",
+            $@"<p>The password for your qrbound account was just changed.</p>
+               <p>If this was you, there's nothing else to do.</p>
+               <p><strong>If it wasn't you,</strong> reset your password right away at
+                  <a href='{WebUtility.HtmlEncode(forgotPasswordUrl)}'>{WebUtility.HtmlEncode(forgotPasswordUrl)}</a>
+                  and check the passkeys on your account in Settings.</p>");
+
+        return SendEmailAsync(email, "Your qrbound password was changed", body);
+    }
+
+    /// <inheritdoc/>
+    public Task<bool> SendSsoAccessRequestedEmailAsync(string email, string firstName, string requesterName,
+        string requesterEmail, string applicationName, string categoryName, string? actingBusinessName,
+        string? note, string reviewUrl)
+    {
+        var e = (string? s) => WebUtility.HtmlEncode(s ?? string.Empty);
+        var asBusiness = actingBusinessName == null ? "" : $" for <strong>{e(actingBusinessName)}</strong>";
+        var noteHtml = string.IsNullOrWhiteSpace(note)
+            ? ""
+            : $"<blockquote style='margin:16px 0;padding:8px 16px;border-left:4px solid #0B5CFF;color:#444;'>{e(note)}</blockquote>";
+
+        var body = BrandedEmail(
+            $"Hi {e(firstName)},",
+            $@"<p><strong>{e(requesterName)}</strong> ({e(requesterEmail)}) asked to use <strong>{e(applicationName)}</strong>
+                  as <strong>{e(categoryName)}</strong>{asBusiness}.</p>
+               {noteHtml}
+               <p style='text-align:center;margin:28px 0;'>
+                   <a href='{e(reviewUrl)}' style='display:inline-block;padding:12px 28px;background:#0B5CFF;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold;'>Review the request</a>
+               </p>
+               <p>They can't sign in as {e(categoryName)} until you or another administrator approves it.</p>");
+
+        return SendEmailAsync(email, $"{applicationName}: {requesterName} asks to sign in as {categoryName}", body);
+    }
+
+    /// <inheritdoc/>
+    public Task<bool> SendSsoAccessDecisionEmailAsync(string email, string firstName, string applicationName,
+        string categoryName, string status, string? note, string? applicationUrl)
+    {
+        var e = (string? s) => WebUtility.HtmlEncode(s ?? string.Empty);
+        var noteHtml = string.IsNullOrWhiteSpace(note) ? "" : $"<p>Message from {e(applicationName)}: <em>{e(note)}</em></p>";
+
+        var (subject, text) = status switch
+        {
+            "Approved" => ($"You can now sign in to {applicationName}",
+                $"<p>Your request to use <strong>{e(applicationName)}</strong> as <strong>{e(categoryName)}</strong> was approved. You can sign in now with qrbound.</p>" +
+                (applicationUrl == null ? "" :
+                    $@"<p style='text-align:center;margin:28px 0;'><a href='{e(applicationUrl)}' style='display:inline-block;padding:12px 28px;background:#0B5CFF;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold;'>Open {e(applicationName)}</a></p>")),
+            "Revoked" => ($"Your access to {applicationName} was removed",
+                $"<p>Your access to <strong>{e(applicationName)}</strong> as <strong>{e(categoryName)}</strong> was removed by its administrators.</p>"),
+            _ => ($"Your request for {applicationName} was declined",
+                $"<p>Your request to use <strong>{e(applicationName)}</strong> as <strong>{e(categoryName)}</strong> was declined.</p>")
+        };
+
+        return SendEmailAsync(email, subject, BrandedEmail($"Hi {e(firstName)},", text + noteHtml));
+    }
+
+    /// <summary>Wraps content in the qrbound email layout (royal-blue header).</summary>
+    private static string BrandedEmail(string greeting, string contentHtml) => $@"
+        <html>
+        <body style='margin:0;padding:0;background:#f3f5fb;font-family:Arial,sans-serif;line-height:1.6;color:#1e2537;'>
+            <div style='max-width:560px;margin:0 auto;padding:24px;'>
+                <div style='background:#1F43AD;color:#ffffff;padding:20px;text-align:center;border-radius:10px 10px 0 0;font-size:24px;font-weight:bold;'>qrbound</div>
+                <div style='background:#ffffff;padding:28px;border-radius:0 0 10px 10px;'>
+                    <p>{greeting}</p>
+                    {contentHtml}
+                </div>
+                <p style='text-align:center;font-size:12px;color:#7a8296;'>&copy; {DateTime.UtcNow.Year} qrbound</p>
+            </div>
+        </body>
+        </html>";
+
+    /// <inheritdoc/>
+    public async Task<string?> SendTestEmailAsync(string to)
+    {
+        try
+        {
+            await SendCoreAsync(to, "qrbound test email",
+                BrandedEmail("Hello,", $"<p>This is a test from the qrbound API, sent {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC. If you can read it, email sending works.</p>"));
+            _logger.LogInformation("Test email sent to {Email}", to);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Test email to {Email} failed", to);
+            return ex.Message;
+        }
+    }
+
     /// <summary>
     /// Sends an email using SMTP
     /// </summary>
@@ -175,39 +304,78 @@ public class EmailService : IEmailService
     {
         try
         {
-            using var smtpClient = new SmtpClient(_emailSettings.SmtpHost, _emailSettings.SmtpPort)
-            {
-                Credentials = new NetworkCredential(_emailSettings.SmtpUser, _emailSettings.SmtpPassword),
-                EnableSsl = true,
-                Timeout = 30000 // 30 seconds
-            };
-
-            var mailMessage = new MailMessage
-            {
-                From = new MailAddress(_emailSettings.FromEmail, _emailSettings.FromName),
-                Subject = subject,
-                Body = body,
-                IsBodyHtml = true
-            };
-
-            mailMessage.To.Add(to);
-
-            await smtpClient.SendMailAsync(mailMessage);
+            await SendCoreAsync(to, subject, body);
             return true;
-        }
-        catch (SmtpException ex)
-        {
-            // Log the error but don't throw - return false to indicate failure
-            Console.Error.WriteLine($"SMTP error sending email to {to}: {ex.Message}");
-            return false;
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Error sending email to {to}: {ex.Message}");
+            // Log the error but don't throw - return false to indicate failure
+            _logger.LogError(ex, "Error sending email to {Email}: {Reason}", to, ex.Message);
             return false;
         }
     }
 
+    /// <summary>
+    /// Connects, signs in and sends with MailKit. Each stage that fails throws an exception whose message
+    /// says which stage it was and what the mail server answered, so a wrong password ("sign-in failed")
+    /// can't be mistaken for the server refusing this computer ("refused the recipient").
+    /// </summary>
+    private async Task SendCoreAsync(string to, string subject, string body)
+    {
+        ValidateSettings();
+
+        var message = new MimeKit.MimeMessage();
+        message.From.Add(new MimeKit.MailboxAddress(_emailSettings.FromName, _emailSettings.FromEmail));
+        message.To.Add(MimeKit.MailboxAddress.Parse(to));
+        message.Subject = subject;
+        message.Body = new MimeKit.TextPart(MimeKit.Text.TextFormat.Html) { Text = body };
+
+        using var client = new MailKit.Net.Smtp.SmtpClient { Timeout = 30000 };
+
+        try
+        {
+            await client.ConnectAsync(_emailSettings.SmtpHost, _emailSettings.SmtpPort,
+                _emailSettings.SmtpPort == 465 ? MailKit.Security.SecureSocketOptions.SslOnConnect : MailKit.Security.SecureSocketOptions.StartTls);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                $"Couldn't connect to {_emailSettings.SmtpHost}:{_emailSettings.SmtpPort}: {ex.Message}", ex);
+        }
+
+        try
+        {
+            await client.AuthenticateAsync(_emailSettings.SmtpUser, _emailSettings.SmtpPassword);
+        }
+        catch (MailKit.Security.AuthenticationException ex)
+        {
+            throw new InvalidOperationException(
+                $"Sign-in failed for {_emailSettings.SmtpUser}: the mail server rejected the password ({ex.Message}).", ex);
+        }
+
+        try
+        {
+            await client.SendAsync(new MailKit.SendRequest(message));
+        }
+        catch (MailKit.Net.Smtp.SmtpCommandException ex)
+        {
+            var stage = ex.ErrorCode switch
+            {
+                MailKit.Net.Smtp.SmtpErrorCode.SenderNotAccepted => "refused the sender",
+                MailKit.Net.Smtp.SmtpErrorCode.RecipientNotAccepted => "refused the recipient",
+                _ => "refused the message"
+            };
+            throw new InvalidOperationException(
+                $"Signed in as {_emailSettings.SmtpUser}, but the mail server {stage}: {(int)ex.StatusCode} {ex.Message}", ex);
+        }
+        finally
+        {
+            if (client.IsConnected)
+            {
+                await client.DisconnectAsync(true);
+            }
+        }
+    }
     /// <summary>
     /// Validates email settings configuration
     /// </summary>

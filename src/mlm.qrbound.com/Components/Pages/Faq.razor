@@ -1,0 +1,41 @@
+@page "/faq"
+
+<SeoHead Title="FAQ — QR Business Cards and Membership"
+         Description="Answers about QRBound NFC/QR business cards, digital profiles, pricing and how independent members are paid."
+         Path="/faq" JsonLd="_jsonLd" />
+
+<section class="wrap narrow">
+    <h1>Frequently asked questions</h1>
+    @foreach (var (q, a) in Items)
+    {
+        <details class="faq">
+            <summary>@q</summary>
+            <p>@a</p>
+        </details>
+    }
+</section>
+
+@code {
+    private static readonly (string Q, string A)[] Items =
+    [
+        ("How does an NFC + QR business card work?", "Tap the card on a phone or scan its QR code and your live digital profile opens. No app is needed."),
+        ("What happens when my details change?", "Edit your profile online. Every card you've handed out points to the updated profile, so there's nothing to reprint."),
+        ("Can I capture leads with it?", "Yes. Visitors can save your contact and leave their own details, which arrive in your lead list."),
+        ("Do I have to join to buy?", "No. Anyone can buy as a customer, and customers are never asked to recruit."),
+        ("How are members paid?", "From product sales to customers: a retail commission on your own customers and small overrides on customers of members you introduced. Recruiting alone pays nothing."),
+        ("How much do members earn?", "Most earn little or nothing. Our income disclosure shows median and average earnings by rank."),
+        ("Is there a fee to join?", "No. There is no joining fee, no required starter kit and no monthly minimum."),
+    ];
+
+    private readonly object _jsonLd = new Dictionary<string, object>
+    {
+        ["@context"] = "https://schema.org",
+        ["@type"] = "FAQPage",
+        ["mainEntity"] = Items.Select(i => new Dictionary<string, object>
+        {
+            ["@type"] = "Question",
+            ["name"] = i.Q,
+            ["acceptedAnswer"] = new Dictionary<string, object> { ["@type"] = "Answer", ["text"] = i.A },
+        }).ToList(),
+    };
+}

@@ -1,0 +1,20 @@
+.qrbound-paylink { max-width: 26rem; margin: 0 auto; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.qrbound-paylink-box {
+    text-align: center; background: #fff; border: 1px solid #dee2e6; border-radius: .5rem;
+    padding: 2rem 1.25rem; box-shadow: 0 1px 3px rgba(0, 0, 0, .06);
+}
+.qrbound-paylink-paid { background: #d1e7dd; border-color: #a3cfbb; color: #0a3622; }
+.qrbound-paylink-business { font-size: 1.125rem; font-weight: 600; margin: 0; }
+.qrbound-paylink-amount { font-size: 2.25rem; font-weight: 700; margin: .25rem 0; }
+.qrbound-paylink-lead { font-weight: 600; margin: 1rem 0 .25rem; }
+.qrbound-paylink-hint { color: #6c757d; font-size: .875rem; margin: 0; }
+.qrbound-paylink-paid .qrbound-paylink-hint { color: #0a3622; }
+.qrbound-paylink-button {
+    margin-top: 1rem; padding: .45rem 1rem; font: inherit; background: #fff;
+    border: 1px solid #343a40; border-radius: .375rem; cursor: pointer;
+}
+.qrbound-paylink-spinner {
+    display: inline-block; width: 2.5rem; height: 2.5rem; border-radius: 50%;
+    border: .25rem solid #28a745; border-right-color: transparent; animation: qrbound-paylink-spin .75s linear infinite;
+}
+@keyframes qrbound-paylink-spin { to { transform: rotate(360deg); } }

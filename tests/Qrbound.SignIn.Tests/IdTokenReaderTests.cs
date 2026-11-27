@@ -1,0 +1,109 @@
+namespace Qrbound.SignIn.Tests;
+
+public class IdTokenReaderTests
+{
+    private readonly TestTokens _tokens = new();
+    private static readonly TimeSpan Skew = TimeSpan.FromMinutes(1);
+
+    private static QrboundUser Read(string token, string? nonce = "n-1") =>
+        QrboundIdTokenReader.Read(token, TestTokens.Issuer, TestTokens.ClientId, nonce, DateTimeOffset.UtcNow, Skew);
+
+    [Fact]
+    public void Reads_user_from_a_valid_id_token()
+    {
+        var user = Read(_tokens.Create());
+
+        Assert.Equal("11111111-2222-3333-4444-555555555555", user.Subject);
+        Assert.Equal("user@example.test", user.Email);
+        Assert.True(user.EmailVerified);
+        Assert.Equal("Test User", user.Name);
+        Assert.Equal("qr", user.AuthMethod);
+        Assert.Equal("Admin", user.BusinessRole);
+        Assert.Equal("acme", user.BusinessSlug);
+        Assert.Equal(Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), user.BusinessId);
+        Assert.True(user.ExpiresAt > DateTimeOffset.UtcNow);
+        Assert.Contains(user.Claims, c => c.Type == "email_verified" && c.Value == "true");
+
+        var principal = user.ToPrincipal();
+        Assert.True(principal.Identity!.IsAuthenticated);
+        Assert.Equal("Test User", principal.Identity.Name);
+        Assert.True(principal.IsInRole("Admin"));
+    }
+
+    [Fact]
+    public void Issuer_with_trailing_slash_is_equivalent()
+    {
+        var user = QrboundIdTokenReader.Read(_tokens.Create(), TestTokens.Issuer + "/", TestTokens.ClientId, "n-1",
+            DateTimeOffset.UtcNow, Skew);
+        Assert.Equal("user@example.test", user.Email);
+    }
+
+    [Fact]
+    public void Wrong_issuer_is_rejected() =>
+        Assert.Throws<QrboundTokenException>(() => Read(_tokens.Create(issuer: "https://evil.test")));
+
+    [Fact]
+    public void Token_for_another_app_is_rejected() =>
+        Assert.Throws<QrboundTokenException>(() => Read(_tokens.Create(audience: "other_app")));
+
+    [Fact]
+    public void Expired_token_is_rejected() =>
+        Assert.Throws<QrboundTokenException>(() => Read(_tokens.Create(expires: DateTime.UtcNow.AddMinutes(-5))));
+
+    [Fact]
+    public void Nonce_mismatch_is_rejected() =>
+        Assert.Throws<QrboundTokenException>(() => Read(_tokens.Create(nonce: "someone-else")));
+
+    [Fact]
+    public void Missing_nonce_is_rejected_when_one_was_sent() =>
+        Assert.Throws<QrboundTokenException>(() => Read(_tokens.Create(nonce: null)));
+
+    [Fact]
+    public void Access_token_is_not_accepted_as_id_token() =>
+        Assert.Throws<QrboundTokenException>(() => Read(_tokens.Create(tokenUse: "access")));
+
+    [Fact]
+    public void Categories_and_the_acting_business_become_properties_and_roles()
+    {
+        var user = Read(_tokens.Create(extra: new Dictionary<string, object>
+        {
+            ["category"] = new[] { "business", "client" },
+            ["org_id"] = "99999999-8888-7777-6666-555555555555",
+            ["org_slug"] = "johns-tacos",
+            ["org_name"] = "John's Tacos"
+        }));
+
+        Assert.Equal(new[] { "business", "client" }, user.Categories);
+        Assert.True(user.HasCategory("business"));
+        Assert.Equal(new QrboundOrganization(Guid.Parse("99999999-8888-7777-6666-555555555555"), "johns-tacos", "John's Tacos"), user.Organization);
+
+        var principal = user.ToPrincipal();
+        Assert.True(principal.IsInRole("business"));
+        Assert.True(principal.IsInRole("client"));
+        Assert.True(principal.IsInRole("Admin")); // business_role still a role
+        Assert.False(principal.IsInRole("vip"));
+    }
+
+    [Fact]
+    public void A_single_category_arrives_as_a_string()
+    {
+        var user = Read(_tokens.Create(extra: new Dictionary<string, object> { ["category"] = "client" }));
+        Assert.Equal(new[] { "client" }, user.Categories);
+        Assert.Null(user.Organization);
+    }
+
+    [Fact]
+    public void Role_claims_in_a_token_are_ignored()
+    {
+        var user = Read(_tokens.Create(extra: new Dictionary<string, object> { ["role"] = "superadmin" }));
+        Assert.False(user.ToPrincipal().IsInRole("superadmin"));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("not-a-jwt")]
+    [InlineData("a.b")]
+    [InlineData("a.%%%.c")]
+    public void Malformed_tokens_are_rejected(string token) =>
+        Assert.Throws<QrboundTokenException>(() => Read(token));
+}

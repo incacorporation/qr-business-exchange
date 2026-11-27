@@ -1,0 +1,358 @@
+/* ==========================================
+   Authentication pages (Layout/AuthLayout.razor)
+   Royal-blue screen, logo on top, white fields, bright blue buttons,
+   yellow text links. Used by login, register, email verification,
+   sign-out, SSO consent and the phone QR pages.
+   ========================================== */
+.auth-shell {
+    --auth-bg: var(--primary-color, #1F43AD);   /* same blue as the logo image background */
+    --auth-btn: #0B5CFF;
+    --auth-btn-hover: #0049D6;
+    --auth-link: #FFFF00;
+    --auth-muted: rgba(255, 255, 255, 0.78);
+    --auth-line: rgba(255, 255, 255, 0.22);
+    --auth-error: #FFD3D3;
+
+    min-height: 100vh;
+    min-height: 100dvh;
+    background: var(--auth-bg);
+    color: #fff;
+    display: flex;
+    justify-content: center;
+    padding: 2.5rem 1rem 3rem;
+}
+
+.auth-main {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+/* The logo PNG has a blue frame the same colour as the page; negative margins trim it visually. */
+.auth-logo {
+    display: block;
+    width: 300px;
+    max-width: 82vw;
+    margin: -1.5rem auto 1.75rem;
+}
+
+    .auth-logo img {
+        display: block;
+        width: 100%;
+        height: auto;
+    }
+
+    .auth-logo:focus-visible {
+        outline: 2px solid var(--auth-link);
+        outline-offset: 4px;
+        border-radius: 8px;
+    }
+
+/* Content widths: the sign-in form matches the design (348px fields); other pages are wider. */
+.auth-narrow { width: 100%; max-width: 21.75rem; }
+.auth-medium { width: 100%; max-width: 30rem; }
+.auth-wide   { width: 100%; max-width: 46rem; }
+
+.auth-shell .auth-title {
+    color: #fff;
+    font-weight: 700;
+    font-size: 1.35rem;
+    text-align: center;
+    margin-bottom: 0.35rem;
+}
+
+.auth-subtitle {
+    color: var(--auth-muted);
+    text-align: center;
+    font-size: 0.925rem;
+    margin-bottom: 1.5rem;
+}
+
+/* White input fields */
+.auth-shell .auth-input,
+.auth-shell .auth-input.form-control {
+    height: 3.625rem;
+    padding: 0.75rem 1rem;
+    font-size: 1rem;
+    color: var(--ink-900, #0B1638);
+    background: #fff;
+    border: 1px solid #D5DBEA;
+    border-radius: 0.375rem;
+    box-shadow: none;
+}
+
+    .auth-shell .auth-input::placeholder {
+        color: #8A93A8;
+    }
+
+    .auth-shell .auth-input:focus {
+        border-color: #fff;
+        box-shadow: 0 0 0 3px rgba(255, 255, 0, 0.65);
+    }
+
+    .auth-shell .auth-input:disabled {
+        background: #EEF1F7;
+    }
+
+.auth-field {
+    margin-bottom: 1rem;
+}
+
+/* Validation text must stay readable on blue */
+.auth-shell .validation-message {
+    color: var(--auth-error) !important;
+    font-size: 0.85rem;
+    margin-top: 0.3rem;
+}
+
+.auth-shell .auth-input.invalid {
+    border-color: #FF8A8A;
+}
+
+/* "Remember me" */
+.auth-check {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    margin: 0.25rem 0 1.5rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #fff;
+}
+
+    .auth-check input {
+        width: 0.9rem;
+        height: 0.9rem;
+        margin: 0;
+        accent-color: var(--auth-btn);
+    }
+
+/* Bright blue full-width buttons, slightly wider than the fields as in the design */
+.auth-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: calc(100% + 1.25rem);
+    margin-inline: -0.625rem;
+    min-height: 3.125rem;
+    padding: 0.6rem 1rem;
+    border: 0;
+    border-radius: 0.5rem;
+    background: var(--auth-btn);
+    color: #fff;
+    font-weight: 700;
+    font-size: 1rem;
+    text-decoration: none;
+    transition: background-color 0.15s ease;
+}
+
+    .auth-btn:hover,
+    .auth-btn:focus-visible {
+        background: var(--auth-btn-hover);
+        color: #fff;
+    }
+
+    .auth-btn:focus-visible {
+        outline: 2px solid var(--auth-link);
+        outline-offset: 2px;
+    }
+
+    .auth-btn:disabled {
+        opacity: 0.65;
+        cursor: not-allowed;
+    }
+
+/* In wider layouts the buttons simply fill their column */
+.auth-medium .auth-btn,
+.auth-wide .auth-btn,
+.auth-panel .auth-btn {
+    width: 100%;
+    margin-inline: 0;
+}
+
+.auth-or {
+    text-align: center;
+    color: var(--auth-muted);
+    font-size: 0.9rem;
+    margin: 0.6rem 0;
+}
+
+.auth-divider {
+    border: 0;
+    border-top: 1px solid var(--auth-line);
+    margin: 1rem -0.625rem;
+    opacity: 1;
+}
+
+/* Yellow text links */
+.auth-links {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.55rem;
+    font-size: 0.875rem;
+}
+
+.auth-shell .auth-links a,
+.auth-shell a.auth-link,
+.auth-link-btn {
+    color: var(--auth-link);
+    text-decoration: none;
+}
+
+    .auth-shell .auth-links a:hover,
+    .auth-shell a.auth-link:hover,
+    .auth-link-btn:hover {
+        color: var(--auth-link);
+        text-decoration: underline;
+    }
+
+.auth-link-btn {
+    background: none;
+    border: 0;
+    padding: 0;
+    font: inherit;
+    cursor: pointer;
+}
+
+.auth-shell .auth-text-muted {
+    color: var(--auth-muted);
+}
+
+/* Messages on the blue background */
+.auth-shell .auth-alert {
+    border: 0;
+    border-radius: 0.5rem;
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+}
+
+/* White panel for richer content (QR codes, consent, phone link) */
+.auth-panel {
+    background: #fff;
+    color: var(--text-color, #1E2537);
+    border-radius: 0.75rem;
+    padding: 1.5rem;
+    box-shadow: 0 18px 40px -18px rgba(5, 15, 50, 0.55);
+}
+
+/* Pages that keep their Bootstrap card get the same panel look */
+.auth-shell .card {
+    border: 0;
+    border-radius: 0.75rem;
+    box-shadow: 0 18px 40px -18px rgba(5, 15, 50, 0.55) !important;
+}
+
+    .auth-panel h1, .auth-panel h2, .auth-panel h3, .auth-panel h4, .auth-panel h5, .auth-panel h6,
+    .auth-shell .card h1, .auth-shell .card h2, .auth-shell .card h3,
+    .auth-shell .card h4, .auth-shell .card h5, .auth-shell .card h6 {
+        color: var(--ink-900, #0B1638);
+    }
+
+/* Registration step indicator */
+.auth-steps {
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-bottom: 1.25rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+    .auth-steps span {
+        padding: 0.3rem 0.75rem;
+        border-radius: 999px;
+        border: 1px solid var(--auth-line);
+        color: var(--auth-muted);
+    }
+
+        .auth-steps span.active {
+            background: #fff;
+            color: var(--auth-bg);
+            border-color: #fff;
+        }
+
+        .auth-steps span.done {
+            color: #fff;
+            border-color: rgba(255, 255, 255, 0.55);
+        }
+
+/* Large choice tiles (registration: "Use my phone's camera" / "Use this device") */
+.auth-choice {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    width: 100%;
+    padding: 1rem 1.1rem;
+    margin-bottom: 0.75rem;
+    text-align: left;
+    background: #fff;
+    color: var(--ink-900, #0B1638);
+    border: 2px solid transparent;
+    border-radius: 0.75rem;
+    transition: border-color 0.15s ease;
+}
+
+    .auth-choice:hover,
+    .auth-choice:focus-visible {
+        border-color: var(--auth-link);
+        outline: none;
+    }
+
+    .auth-choice:disabled {
+        opacity: 0.7;
+    }
+
+    .auth-choice > .bi,
+    .auth-choice > .spinner-border {
+        flex: none;
+        font-size: 2rem;
+        color: var(--auth-bg);
+    }
+
+    .auth-choice small {
+        display: block;
+        color: #5B6479;
+    }
+
+@media (max-width: 575.98px) {
+    .auth-shell {
+        padding-top: 1.5rem;
+    }
+
+    .auth-logo {
+        width: 240px;
+        margin-bottom: 1.25rem;
+    }
+
+    .auth-btn {
+        width: 100%;
+        margin-inline: 0;
+    }
+
+    .auth-divider {
+        margin-inline: 0;
+    }
+}
+
+/* Optional text-message consent on the sign-up form */
+.sms-consent {
+    text-align: left;
+}
+
+.sms-consent .form-check-label {
+    color: var(--auth-muted);
+    font-size: 0.82rem;
+    line-height: 1.4;
+}
+
+.sms-consent a {
+    color: var(--auth-link);
+}
+
+.sms-consent .sms-consent-lead {
+    color: #fff;
+}

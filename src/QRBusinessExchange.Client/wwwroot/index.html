@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>qrbound</title>
+    <base href="/" />
+    
+    <!-- PWA Meta Tags -->
+    <meta name="description" content="Connect, network, and grow your business with QR code-based professional networking" />
+    <meta name="theme-color" content="#1F43AD" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="qrbound" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="manifest.json" />
+    
+    <!-- Apple Touch Icons -->
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="icon-192.svg" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    
+    <!-- Fonts: Inter (UI text) + Plus Jakarta Sans (headings) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" />
+
+    <!-- Bootstrap 5.3.3 CSS (Latest) -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    
+    <!-- Bootstrap Icons (Latest) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" 
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous" />
+    
+    <!-- Custom App CSS -->
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="stylesheet" href="css/auth.css" />
+    <link rel="stylesheet" href="css/splash.css" />
+
+    <!-- Component-scoped styles (*.razor.css), bundled by the build -->
+    <link rel="stylesheet" href="QRBusinessExchange.Client.styles.css" />
+</head>
+
+<body>
+    <div id="app">
+        <!-- Pre-load splash; Components/SplashScreen.razor takes over with identical markup once Blazor starts. -->
+        <div class="splash splash--static" role="status" aria-live="polite">
+            <img class="splash-logo" src="images/qrbound-logo.png" alt="qrbound - Let's get QR Bound" />
+            <span class="visually-hidden">Loading qrbound…</span>
+        </div>
+    </div>
+    <script>
+        // The logo splash is for the first start in this tab only (App.razor sets this key).
+        // Reloads after that get a small spinner instead.
+        try {
+            if (sessionStorage.getItem('qrbound.started')) {
+                document.getElementById('app').innerHTML =
+                    '<div class="app-loading" role="status"><div class="spinner-border text-primary"></div>' +
+                    '<span class="visually-hidden">Loading qrbound…</span></div>';
+            }
+        } catch (e) { /* storage blocked: keep the splash */ }
+    </script>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="" class="reload">Reload</a>
+        <a class="dismiss">🗙</a>
+    </div>
+
+    <!-- Bootstrap 5.3.3 Bundle JS (Latest - includes Popper) -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" 
+            integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+    
+    <!-- External Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" 
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" 
+            integrity="sha512-CNgIRecGo7nphbeZ04Sc13ka07paqdeTu0WR1IM4kNcpmBAUSHSQX0FslNhTDadL4O5SAGapGt4FodqL8My0mA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    
+    <!-- Custom Interop Scripts -->
+    <script src="js/indexeddb-interop.js"></script>
+    <script src="js/chart-interop.js"></script>
+    <script src="js/leaflet-interop.js"></script>
+    <script src="js/qrcode-interop.js"></script>
+    <script src="js/geolocation-interop.js"></script>
+    <script src="js/webauthn-interop.js"></script>
+    <script src="js/qrscanner-interop.js"></script>
+    <script src="js/app-visibility.js"></script>
+    <script src="js/image-tools.js"></script>
+    <script src="js/file-download.js"></script>
+    
+    <!-- PWA Service Worker -->
+    <script src="js/pwa-service.js"></script>
+    
+    <script src="_framework/blazor.webassembly.js"></script>
+</body>
+
+</html>
+

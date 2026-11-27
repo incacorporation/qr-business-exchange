@@ -17,10 +17,208 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "8.0.11")
+                .HasAnnotation("ProductVersion", "10.0.2")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
+
+            modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("ConcurrencyStamp")
+                        .IsConcurrencyToken()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("NormalizedName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NormalizedName")
+                        .IsUnique()
+                        .HasDatabaseName("RoleNameIndex")
+                        .HasFilter("[NormalizedName] IS NOT NULL");
+
+                    b.ToTable("AspNetRoles", (string)null);
+                });
+
+            modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ClaimType")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ClaimValue")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RoleId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RoleId");
+
+                    b.ToTable("AspNetRoleClaims", (string)null);
+                });
+
+            modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUser", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int>("AccessFailedCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ConcurrencyStamp")
+                        .IsConcurrencyToken()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<bool>("EmailConfirmed")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("LockoutEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset?>("LockoutEnd")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("NormalizedEmail")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("NormalizedUserName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("PasswordHash")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PhoneNumber")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("PhoneNumberConfirmed")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("SecurityStamp")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("TwoFactorEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("UserName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NormalizedEmail")
+                        .HasDatabaseName("EmailIndex");
+
+                    b.HasIndex("NormalizedUserName")
+                        .IsUnique()
+                        .HasDatabaseName("UserNameIndex")
+                        .HasFilter("[NormalizedUserName] IS NOT NULL");
+
+                    b.ToTable("AspNetUsers", (string)null);
+                });
+
+            modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserClaim<string>", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ClaimType")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ClaimValue")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("AspNetUserClaims", (string)null);
+                });
+
+            modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserLogin<string>", b =>
+                {
+                    b.Property<string>("LoginProvider")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("ProviderKey")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("ProviderDisplayName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("LoginProvider", "ProviderKey");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("AspNetUserLogins", (string)null);
+                });
+
+            modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserRole<string>", b =>
+                {
+                    b.Property<string>("UserId")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("RoleId")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("UserId", "RoleId");
+
+                    b.HasIndex("RoleId");
+
+                    b.ToTable("AspNetUserRoles", (string)null);
+                });
+
+            modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserToken<string>", b =>
+                {
+                    b.Property<string>("UserId")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("LoginProvider")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Value")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("UserId", "LoginProvider", "Name");
+
+                    b.ToTable("AspNetUserTokens", (string)null);
+                });
 
             modelBuilder.Entity("QRBusinessExchange.Core.Entities.Advertisement", b =>
                 {
@@ -92,6 +290,189 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                     b.ToTable("Advertisements", (string)null);
                 });
 
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.Business", b =>
+                {
+                    b.Property<Guid>("BusinessId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<string>("LogoUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("WebsiteUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.HasKey("BusinessId");
+
+                    b.HasIndex("OwnerUserId");
+
+                    b.HasIndex("Slug")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Businesses_Slug");
+
+                    b.ToTable("Businesses", (string)null);
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.BusinessMember", b =>
+                {
+                    b.Property<Guid>("BusinessMemberId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<Guid>("BusinessId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("BusinessMemberId");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("IX_BusinessMembers_UserId");
+
+                    b.HasIndex("BusinessId", "UserId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_BusinessMembers_Business_User");
+
+                    b.ToTable("BusinessMembers", (string)null);
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.BusinessPaymentSettings", b =>
+                {
+                    b.Property<Guid>("BusinessId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("AllowCustomTip")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("AllowSavedCards")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("DefaultExpiresInMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("ManagersOnly")
+                        .HasColumnType("bit");
+
+                    b.Property<long?>("MaxAmountCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("MaxTipPercent")
+                        .HasColumnType("int");
+
+                    b.Property<long?>("MinAmountCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("PaymentsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("TipPercentages")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<bool>("TipsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<Guid?>("UpdatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("BusinessId");
+
+                    b.ToTable("BusinessPaymentSettings", (string)null);
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.BusinessRole", b =>
+                {
+                    b.Property<Guid>("BusinessRoleId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<Guid>("BusinessId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("RoleName")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("BusinessRoleId");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("IX_BusinessRoles_UserId");
+
+                    b.HasIndex("BusinessId", "UserId", "RoleName")
+                        .IsUnique()
+                        .HasDatabaseName("IX_BusinessRoles_Business_User_Role");
+
+                    b.ToTable("BusinessRoles", null, t =>
+                        {
+                            t.HasTrigger("TR_BusinessRoles_SuperAdmin");
+                        });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
+                });
+
             modelBuilder.Entity("QRBusinessExchange.Core.Entities.Connection", b =>
                 {
                     b.Property<Guid>("ConnectionId")
@@ -146,6 +527,33 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                         .HasDatabaseName("IX_Connections_Users_Status");
 
                     b.ToTable("Connections", (string)null);
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.Contact", b =>
+                {
+                    b.Property<Guid>("ContactId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("AddedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("ContactUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("ContactId");
+
+                    b.HasIndex("ContactUserId")
+                        .HasDatabaseName("IX_Contacts_ContactUserId");
+
+                    b.HasIndex("OwnerUserId", "ContactUserId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Contacts_Owner_Contact");
+
+                    b.ToTable("Contacts", (string)null);
                 });
 
             modelBuilder.Entity("QRBusinessExchange.Core.Entities.EmailVerification", b =>
@@ -321,6 +729,28 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                     b.ToTable("Payments", (string)null);
                 });
 
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.ProfileImage", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<byte[]>("Data")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("UserId");
+
+                    b.ToTable("ProfileImages", (string)null);
+                });
+
             modelBuilder.Entity("QRBusinessExchange.Core.Entities.QRCode", b =>
                 {
                     b.Property<Guid>("QRCodeId")
@@ -359,6 +789,483 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                         .HasDatabaseName("IX_QRCodes_UserId");
 
                     b.ToTable("QRCodes", (string)null);
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.QrLoginSession", b =>
+                {
+                    b.Property<Guid>("QrLoginSessionId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ApprovedUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PollSecretHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("RequestedCategory")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("RequesterIp")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("RequesterUserAgent")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<DateTime?>("ScannedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("SsoApplicationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Status")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("VerificationCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.HasKey("QrLoginSessionId");
+
+                    b.HasIndex("ApprovedUserId");
+
+                    b.HasIndex("ExpiresAt")
+                        .HasDatabaseName("IX_QrLoginSessions_ExpiresAt");
+
+                    b.HasIndex("SsoApplicationId");
+
+                    b.ToTable("QrLoginSessions", (string)null);
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.QrPaymentRequest", b =>
+                {
+                    b.Property<Guid>("QrPaymentRequestId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("AmountCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("AuthorizationCode")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid>("BusinessId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ConcurrencyStamp")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ExtraTransactionId")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<int>("FailedAttempts")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("HostedStartedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("InvoiceNumber")
+                        .IsRequired()
+                        .HasMaxLength(19)
+                        .HasColumnType("nvarchar(19)");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.Property<long?>("PaidAmountCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("PaidAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PayerEmail")
+                        .HasMaxLength(254)
+                        .HasColumnType("nvarchar(254)");
+
+                    b.Property<string>("PayerName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("PaymentMethod")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime?>("QuoteExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("QuoteId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long?>("QuoteTipCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<long>("TipCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("TransactionId")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.HasKey("QrPaymentRequestId");
+
+                    b.HasIndex("InvoiceNumber")
+                        .IsUnique()
+                        .HasDatabaseName("IX_QrPaymentRequests_InvoiceNumber");
+
+                    b.HasIndex("BusinessId", "CreatedAt")
+                        .HasDatabaseName("IX_QrPaymentRequests_Business_Created");
+
+                    b.ToTable("QrPaymentRequests", (string)null);
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.SavedCard", b =>
+                {
+                    b.Property<Guid>("SavedCardId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AccountId")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("CardBrand")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("CardholderName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("Expiry")
+                        .IsRequired()
+                        .HasMaxLength(4)
+                        .HasColumnType("nvarchar(4)");
+
+                    b.Property<string>("Last4")
+                        .IsRequired()
+                        .HasMaxLength(4)
+                        .HasColumnType("nvarchar(4)");
+
+                    b.Property<DateTime?>("LastUsedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ProfileId")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("SavedCardId");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("IX_SavedCards_UserId");
+
+                    b.HasIndex("ProfileId", "AccountId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_SavedCards_Profile_Account");
+
+                    b.ToTable("SavedCards", (string)null);
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.SsoAppAccess", b =>
+                {
+                    b.Property<Guid>("SsoAppAccessId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<Guid?>("BusinessId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("DecidedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("DecidedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("DecisionNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("RequestNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime>("RequestedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<Guid>("SsoAppCategoryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SsoApplicationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Status")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("SsoAppAccessId");
+
+                    b.HasIndex("BusinessId");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("IX_SsoAppAccess_UserId");
+
+                    b.HasIndex("SsoAppCategoryId", "UserId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_SsoAppAccess_Category_User");
+
+                    b.HasIndex("SsoApplicationId", "Status")
+                        .HasDatabaseName("IX_SsoAppAccess_Application_Status");
+
+                    b.ToTable("SsoAppAccess", (string)null);
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.SsoAppCategory", b =>
+                {
+                    b.Property<Guid>("SsoAppCategoryId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("RequiresApproval")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("RequiresBusiness")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("SsoApplicationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("SsoAppCategoryId");
+
+                    b.HasIndex("SsoApplicationId", "Key")
+                        .IsUnique()
+                        .HasDatabaseName("IX_SsoAppCategories_Application_Key");
+
+                    b.ToTable("SsoAppCategories", (string)null);
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.SsoApplication", b =>
+                {
+                    b.Property<Guid>("SsoApplicationId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<Guid>("BusinessId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ClientId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ClientSecretHash")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("RedirectUris")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("RequireApprovedCategory")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("RequireMembership")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("TokenLifetimeMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.HasKey("SsoApplicationId");
+
+                    b.HasIndex("BusinessId")
+                        .HasDatabaseName("IX_SsoApplications_BusinessId");
+
+                    b.HasIndex("ClientId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_SsoApplications_ClientId");
+
+                    b.ToTable("SsoApplications", (string)null);
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.SsoAuthorizationCode", b =>
+                {
+                    b.Property<Guid>("SsoAuthorizationCodeId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<string>("AuthMethod")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime>("AuthTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CodeChallenge")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("CodeChallengeMethod")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("CodeHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTime?>("ConsumedAt")
+                        .IsConcurrencyToken()
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Nonce")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("RedirectUri")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<Guid>("SsoApplicationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("SsoAuthorizationCodeId");
+
+                    b.HasIndex("CodeHash")
+                        .IsUnique()
+                        .HasDatabaseName("IX_SsoAuthorizationCodes_CodeHash");
+
+                    b.HasIndex("ExpiresAt")
+                        .HasDatabaseName("IX_SsoAuthorizationCodes_ExpiresAt");
+
+                    b.HasIndex("SsoApplicationId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("SsoAuthorizationCodes", (string)null);
                 });
 
             modelBuilder.Entity("QRBusinessExchange.Core.Entities.Subscription", b =>
@@ -535,11 +1442,51 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
                     b.Property<decimal?>("ServicePricing")
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<bool>("ShowBio")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("ShowCompanyName")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("ShowEmail")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("ShowPhoneNumber")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("ShowProfileImage")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("ShowServicePricing")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("ShowSkills")
+                        .HasColumnType("bit");
+
                     b.Property<string>("Skills")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("SmsOptIn")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("SmsOptInAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("SmsOptInIp")
+                        .HasMaxLength(45)
+                        .HasColumnType("nvarchar(45)");
+
+                    b.Property<string>("SmsOptInPhone")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
 
                     b.Property<DateTime>("UpdatedAt")
                         .ValueGeneratedOnAdd()
@@ -581,8 +1528,8 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                         .HasColumnType("decimal(10, 8)");
 
                     b.Property<decimal>("Longitude")
-                        .HasPrecision(10, 8)
-                        .HasColumnType("decimal(10, 8)");
+                        .HasPrecision(11, 8)
+                        .HasColumnType("decimal(11, 8)");
 
                     b.Property<bool>("PingMeEnabled")
                         .ValueGeneratedOnAdd()
@@ -593,9 +1540,6 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("LocationId");
-
-                    b.HasIndex("GeographyPoint")
-                        .HasDatabaseName("IX_UserLocations_GeographyPoint");
 
                     b.HasIndex("LastUpdated")
                         .HasDatabaseName("IX_UserLocations_LastUpdated");
@@ -609,6 +1553,57 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                     b.ToTable("UserLocations", (string)null);
                 });
 
+            modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
+                {
+                    b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole", null)
+                        .WithMany()
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserClaim<string>", b =>
+                {
+                    b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserLogin<string>", b =>
+                {
+                    b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserRole<string>", b =>
+                {
+                    b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole", null)
+                        .WithMany()
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserToken<string>", b =>
+                {
+                    b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("QRBusinessExchange.Core.Entities.Advertisement", b =>
                 {
                     b.HasOne("QRBusinessExchange.Core.Entities.User", "User")
@@ -617,6 +1612,72 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("FK_Advertisements_Users");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.Business", b =>
+                {
+                    b.HasOne("QRBusinessExchange.Core.Entities.User", "Owner")
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_Businesses_OwnerUser");
+
+                    b.Navigation("Owner");
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.BusinessMember", b =>
+                {
+                    b.HasOne("QRBusinessExchange.Core.Entities.Business", "Business")
+                        .WithMany("Members")
+                        .HasForeignKey("BusinessId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_BusinessMembers_Businesses");
+
+                    b.HasOne("QRBusinessExchange.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_BusinessMembers_Users");
+
+                    b.Navigation("Business");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.BusinessPaymentSettings", b =>
+                {
+                    b.HasOne("QRBusinessExchange.Core.Entities.Business", "Business")
+                        .WithOne()
+                        .HasForeignKey("QRBusinessExchange.Core.Entities.BusinessPaymentSettings", "BusinessId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_BusinessPaymentSettings_Businesses");
+
+                    b.Navigation("Business");
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.BusinessRole", b =>
+                {
+                    b.HasOne("QRBusinessExchange.Core.Entities.Business", "Business")
+                        .WithMany("Roles")
+                        .HasForeignKey("BusinessId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_BusinessRoles_Businesses");
+
+                    b.HasOne("QRBusinessExchange.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_BusinessRoles_Users");
+
+                    b.Navigation("Business");
 
                     b.Navigation("User");
                 });
@@ -640,6 +1701,27 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                     b.Navigation("InitiatorUser");
 
                     b.Navigation("RecipientUser");
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.Contact", b =>
+                {
+                    b.HasOne("QRBusinessExchange.Core.Entities.User", "ContactUser")
+                        .WithMany()
+                        .HasForeignKey("ContactUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_Contacts_ContactUser");
+
+                    b.HasOne("QRBusinessExchange.Core.Entities.User", "OwnerUser")
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_Contacts_OwnerUser");
+
+                    b.Navigation("ContactUser");
+
+                    b.Navigation("OwnerUser");
                 });
 
             modelBuilder.Entity("QRBusinessExchange.Core.Entities.EmailVerification", b =>
@@ -678,6 +1760,18 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.ProfileImage", b =>
+                {
+                    b.HasOne("QRBusinessExchange.Core.Entities.User", "User")
+                        .WithOne()
+                        .HasForeignKey("QRBusinessExchange.Core.Entities.ProfileImage", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_ProfileImages_Users");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("QRBusinessExchange.Core.Entities.QRCode", b =>
                 {
                     b.HasOne("QRBusinessExchange.Core.Entities.User", "User")
@@ -686,6 +1780,132 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("FK_QRCodes_Users");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.QrLoginSession", b =>
+                {
+                    b.HasOne("QRBusinessExchange.Core.Entities.User", "ApprovedUser")
+                        .WithMany()
+                        .HasForeignKey("ApprovedUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("FK_QrLoginSessions_Users");
+
+                    b.HasOne("QRBusinessExchange.Core.Entities.SsoApplication", "Application")
+                        .WithMany()
+                        .HasForeignKey("SsoApplicationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .HasConstraintName("FK_QrLoginSessions_SsoApplications");
+
+                    b.Navigation("Application");
+
+                    b.Navigation("ApprovedUser");
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.QrPaymentRequest", b =>
+                {
+                    b.HasOne("QRBusinessExchange.Core.Entities.Business", "Business")
+                        .WithMany()
+                        .HasForeignKey("BusinessId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_QrPaymentRequests_Businesses");
+
+                    b.Navigation("Business");
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.SavedCard", b =>
+                {
+                    b.HasOne("QRBusinessExchange.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_SavedCards_Users");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.SsoAppAccess", b =>
+                {
+                    b.HasOne("QRBusinessExchange.Core.Entities.Business", "Business")
+                        .WithMany()
+                        .HasForeignKey("BusinessId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .HasConstraintName("FK_SsoAppAccess_Businesses");
+
+                    b.HasOne("QRBusinessExchange.Core.Entities.SsoAppCategory", "Category")
+                        .WithMany()
+                        .HasForeignKey("SsoAppCategoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_SsoAppAccess_SsoAppCategories");
+
+                    b.HasOne("QRBusinessExchange.Core.Entities.SsoApplication", "Application")
+                        .WithMany()
+                        .HasForeignKey("SsoApplicationId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("FK_SsoAppAccess_SsoApplications");
+
+                    b.HasOne("QRBusinessExchange.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_SsoAppAccess_Users");
+
+                    b.Navigation("Application");
+
+                    b.Navigation("Business");
+
+                    b.Navigation("Category");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.SsoAppCategory", b =>
+                {
+                    b.HasOne("QRBusinessExchange.Core.Entities.SsoApplication", "Application")
+                        .WithMany("Categories")
+                        .HasForeignKey("SsoApplicationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_SsoAppCategories_SsoApplications");
+
+                    b.Navigation("Application");
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.SsoApplication", b =>
+                {
+                    b.HasOne("QRBusinessExchange.Core.Entities.Business", "Business")
+                        .WithMany("Applications")
+                        .HasForeignKey("BusinessId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_SsoApplications_Businesses");
+
+                    b.Navigation("Business");
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.SsoAuthorizationCode", b =>
+                {
+                    b.HasOne("QRBusinessExchange.Core.Entities.SsoApplication", "Application")
+                        .WithMany()
+                        .HasForeignKey("SsoApplicationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_SsoAuthorizationCodes_SsoApplications");
+
+                    b.HasOne("QRBusinessExchange.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_SsoAuthorizationCodes_Users");
+
+                    b.Navigation("Application");
 
                     b.Navigation("User");
                 });
@@ -724,6 +1944,20 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                         .HasConstraintName("FK_UserLocations_Users");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.Business", b =>
+                {
+                    b.Navigation("Applications");
+
+                    b.Navigation("Members");
+
+                    b.Navigation("Roles");
+                });
+
+            modelBuilder.Entity("QRBusinessExchange.Core.Entities.SsoApplication", b =>
+                {
+                    b.Navigation("Categories");
                 });
 
             modelBuilder.Entity("QRBusinessExchange.Core.Entities.User", b =>

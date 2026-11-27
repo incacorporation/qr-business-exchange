@@ -1,0 +1,35 @@
+.qrbound-signin {
+    --qrbound-accent: #0d6efd;
+    max-width: 22rem;
+    margin: 0 auto;
+    text-align: center;
+    font-family: inherit;
+}
+.qrbound-title { font-size: 1.25rem; margin: 0 0 1rem; }
+.qrbound-qr { width: 15rem; height: 15rem; margin: 0 auto 1rem; transition: opacity .2s; }
+.qrbound-qr ::deep svg { width: 100%; height: 100%; display: block; }
+.qrbound-dimmed { opacity: .25; }
+.qrbound-lead { font-weight: 600; margin: 0 0 .25rem; }
+.qrbound-hint { color: #6c757d; font-size: .875rem; margin: 0 0 .5rem; }
+.qrbound-code { font-size: 3rem; font-weight: 700; letter-spacing: .1em; margin: .25rem 0 .5rem; }
+.qrbound-center { padding: 3rem 0; }
+.qrbound-spinner {
+    display: inline-block; width: 2.5rem; height: 2.5rem; border-radius: 50%;
+    border: .25rem solid var(--qrbound-accent); border-right-color: transparent;
+    animation: qrbound-spin .75s linear infinite;
+}
+@keyframes qrbound-spin { to { transform: rotate(360deg); } }
+.qrbound-alert {
+    background: #fff3cd; color: #664d03; border: 1px solid #ffecb5; border-radius: .375rem;
+    padding: .75rem; font-size: .875rem; margin-bottom: 1rem;
+}
+.qrbound-notice {
+    background: #e7f1ff; color: #084298; border: 1px solid #b6d4fe; border-radius: .375rem;
+    padding: .75rem; font-size: .875rem; margin-bottom: 1rem;
+}
+.qrbound-button {
+    display: inline-block; background: var(--qrbound-accent); color: #fff; border: 0;
+    border-radius: .375rem; padding: .375rem .75rem; cursor: pointer; text-decoration: none;
+}
+.qrbound-fallback { margin-top: 1rem; }
+.qrbound-link { background: none; border: 0; color: var(--qrbound-accent); cursor: pointer; text-decoration: underline; font-size: .875rem; }

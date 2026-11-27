@@ -28,12 +28,14 @@ Update the connection string in `src/QRBusinessExchange.API/appsettings.json`:
 
 ### 3. Configure Application Settings
 
-Update `src/QRBusinessExchange.API/appsettings.json` with your keys:
+Non-secret settings live in `src/QRBusinessExchange.API/appsettings.json`. **Never put keys or passwords there**:
+secrets go in user-secrets (see "User Secrets" below). The API refuses to start without a JWT signing key, or with
+a short or sample one.
 
 ```json
 {
   "JwtSettings": {
-    "SecretKey": "your-super-secret-key-min-32-characters",
+    "SecretKey": "",
     "Issuer": "QRBusinessExchange",
     "Audience": "QRBusinessExchange",
     "ExpirationMinutes": 15,
@@ -51,7 +53,7 @@ Update `src/QRBusinessExchange.API/appsettings.json` with your keys:
     "SmtpHost": "smtp.gmail.com",
     "SmtpPort": 587,
     "SmtpUser": "your-email@gmail.com",
-    "SmtpPassword": "your-app-password",
+    "SmtpPassword": "",
     "FromEmail": "noreply@qrbound.com",
     "FromName": "QR Business Exchange"
   },
@@ -131,12 +133,20 @@ docker-compose down
 
 For sensitive data in development, use User Secrets:
 
-```bash
+```powershell
 cd src/QRBusinessExchange.API
-dotnet user-secrets init
-dotnet user-secrets set "JwtSettings:SecretKey" "your-secret-key"
-dotnet user-secrets set "PaymentSettings:PayPalClientSecret" "your-secret"
+# JWT signing key: 64 random bytes. Anyone with this key can sign in as any user - never share or commit it.
+$b = New-Object byte[] 64; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b)
+dotnet user-secrets set "JwtSettings:SecretKey" ([Convert]::ToBase64String($b))
+dotnet user-secrets set "Database:Password" "<database password>"
+dotnet user-secrets set "EmailSettings:SmtpPassword" "<mailbox password for EmailSettings:SmtpUser>"
+dotnet user-secrets set "PaymentSettings:PayPalClientSecret" "<secret>"
+# Optional: allows POST /api/auth/register-admin (send it in the X-Admin-Secret header). Leave unset to keep it off.
+dotnet user-secrets set "Admin:RegistrationSecret" "<long random value>"
 ```
+
+On servers use environment variables instead: `JwtSettings__SecretKey`, `Database__Password`,
+`EmailSettings__SmtpPassword`, `Admin__RegistrationSecret`. Changing the JWT key signs everyone out.
 
 ## Testing
 

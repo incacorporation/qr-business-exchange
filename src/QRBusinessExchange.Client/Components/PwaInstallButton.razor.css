@@ -1,0 +1,159 @@
+/* ---------- Desktop: floating bottom-left card ---------- */
+.pwa-install-floating {
+    position: fixed;
+    left: 20px;
+    bottom: calc(20px + env(safe-area-inset-bottom));
+    z-index: 1025;
+    align-items: stretch;
+    border-radius: 14px;
+    background: #FFFFFF;
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-lg);
+    animation: pwa-slide-in 0.4s ease-out both;
+    overflow: hidden;
+}
+
+.pwa-install-floating-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.7rem 0.6rem 0.7rem 0.75rem;
+    border: 0;
+    background: transparent;
+    color: var(--text-color);
+    text-align: left;
+    cursor: pointer;
+}
+
+.pwa-install-floating-btn:hover .pwa-install-arrow {
+    transform: translateY(2px);
+}
+
+.pwa-install-icon {
+    display: grid;
+    place-items: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 10px;
+    background: var(--primary-color);
+}
+
+.pwa-install-icon img {
+    width: 1.5rem;
+    height: 1.5rem;
+}
+
+.pwa-install-text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.2;
+}
+
+.pwa-install-title {
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: var(--ink-900);
+}
+
+.pwa-install-sub {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
+.pwa-install-arrow {
+    margin-left: 0.25rem;
+    color: var(--primary-color);
+    font-size: 1.1rem;
+    transition: transform 0.15s ease;
+}
+
+.pwa-install-close {
+    display: grid;
+    place-items: center;
+    width: 2rem;
+    border: 0;
+    border-left: 1px solid var(--border-color);
+    background: transparent;
+    color: var(--text-subtle);
+    font-size: 1.2rem;
+    cursor: pointer;
+}
+
+.pwa-install-close:hover {
+    background: #F5F7FB;
+    color: var(--text-color);
+}
+
+@keyframes pwa-slide-in {
+    from { transform: translateY(16px); opacity: 0; }
+    to   { transform: none; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pwa-install-floating {
+        animation: none;
+    }
+}
+
+/* ---------- Mobile: static footer link (sits on the dark footer) ---------- */
+.pwa-install-footer {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 44px;
+    padding: 0.45rem 1rem;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    background: rgba(255, 255, 255, 0.06);
+    color: #FFFFFF;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.pwa-install-footer:hover,
+.pwa-install-footer:focus-visible {
+    background: rgba(255, 255, 255, 0.14);
+}
+
+/* ---------- iPhone / iPad "Add to Home Screen" help ---------- */
+.pwa-ios-help-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1060;
+    background: rgba(11, 22, 56, 0.45);
+}
+
+.pwa-ios-help {
+    position: fixed;
+    left: 50%;
+    bottom: calc(1rem + env(safe-area-inset-bottom));
+    z-index: 1061;
+    width: min(92vw, 380px);
+    transform: translateX(-50%);
+    padding: 1.25rem 1.25rem 1rem;
+    border-radius: 18px;
+    background: #FFFFFF;
+    color: var(--text-color);
+    box-shadow: var(--shadow-lg);
+    text-align: left;
+}
+
+.pwa-ios-help h3 {
+    margin: 0;
+    font-size: 1.05rem;
+}
+
+.pwa-ios-help ol {
+    margin: 0;
+    padding-left: 1.2rem;
+    color: var(--text-muted);
+    font-size: 0.95rem;
+}
+
+.pwa-ios-help li {
+    margin-bottom: 0.35rem;
+}
+
+.pwa-ios-help li i {
+    color: var(--primary-color);
+}

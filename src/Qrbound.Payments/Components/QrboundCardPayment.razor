@@ -1,0 +1,440 @@
+@namespace Qrbound.Payments
+@using System.Globalization
+@inject QrboundPaymentsClient Payments
+
+@* A complete card payment form: payer details, CardPointe's card fields, amount, invoice and
+   description. Charges the card through the server and raises OnCompleted with the result.
+   Amount, invoice and description are fixed when passed in, otherwise the payer fills them in. *@
+
+<div class="qrbound-pay @CssClass" data-view="@view">
+    <div class="qrbound-pay-header">
+        <h3 class="qrbound-pay-title">
+            <svg class="qrbound-pay-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="2" y="5" width="20" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.8" />
+                <path d="M2 10h20" stroke="currentColor" stroke-width="1.8" />
+                <path d="M6 15h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            </svg>
+            @Title
+        </h3>
+        @if (!string.IsNullOrEmpty(Subtitle))
+        {
+            <p class="qrbound-pay-subtitle">@Subtitle</p>
+        }
+    </div>
+
+    <div class="qrbound-pay-body">
+        @switch (view)
+        {
+            case View.Loading:
+                <div class="qrbound-pay-center"><span class="qrbound-pay-spinner" role="status" aria-label="Loading"></span></div>
+                break;
+
+            case View.Unavailable:
+                <div class="qrbound-pay-alert" role="alert">@message</div>
+                <button type="button" class="qrbound-pay-secondary" @onclick="LoadAsync">Try again</button>
+                break;
+
+            case View.Approved:
+                <div class="qrbound-pay-success" role="status">
+                    <p class="qrbound-pay-lead">Payment approved</p>
+                    <p class="qrbound-pay-small">@FormatAmount(result!.AmountCents) · Reference @result.TransactionId</p>
+                </div>
+                @if (ShowClearButton)
+                {
+                    <button type="button" class="qrbound-pay-secondary" @onclick="StartOver">New payment</button>
+                }
+                break;
+
+            default:
+                var busy = view == View.Paying;
+
+                <div class="qrbound-pay-field">
+                    <label class="qrbound-pay-label" for="@Id("name")">Cardholder Name <span class="qrbound-pay-req">*</span></label>
+                    <input id="@Id("name")" class="qrbound-pay-input" placeholder="Full Name" autocomplete="cc-name" maxlength="100"
+                           @bind="cardholderName" @bind:event="oninput" @bind:after='() => Edited("name")' disabled="@busy" aria-invalid="@Invalid("name")" />
+                    <FieldError Errors="errors" Key="name" />
+                </div>
+
+                <div class="qrbound-pay-field">
+                    <label class="qrbound-pay-label" for="@Id("email")">
+                        Email Address @if (RequireEmail) { <span class="qrbound-pay-req">*</span> }
+                    </label>
+                    <input id="@Id("email")" type="email" class="qrbound-pay-input" placeholder="email@example.com" autocomplete="email" maxlength="254"
+                           @bind="email" @bind:event="oninput" @bind:after='() => Edited("email")' disabled="@busy" aria-invalid="@Invalid("email")" />
+                    <FieldError Errors="errors" Key="email" />
+                </div>
+
+                <div class="qrbound-pay-card">
+                    <CardPointeTokenizer @key="tokenizerKey" TokenizerUrl="@config!.TokenizerUrl" OnTokenized="OnTokenized" Css="@(TokenizerCss ?? FormTokenizerCss)" Height="@TokenizerHeight" />
+                    @if (config.IsTestMode)
+                    {
+                        <p class="qrbound-pay-small"><strong>Test mode:</strong> use test card 4111 1111 1111 1111 with any future expiry. No real charge is made.</p>
+                    }
+                    <FieldError Errors="errors" Key="card" />
+                </div>
+
+                <p class="qrbound-pay-note">
+                    <span aria-hidden="true">🔒</span> Your card number goes straight to CardPointe and never passes through our servers.
+                </p>
+
+                <div class="qrbound-pay-field">
+                    <label class="qrbound-pay-label" for="@Id("amount")">Amount (@config.Currency) <span class="qrbound-pay-req">*</span></label>
+                    @if (AmountCents > 0)
+                    {
+                        <input id="@Id("amount")" class="qrbound-pay-input" value="@FormatPlain(AmountCents)" readonly />
+                    }
+                    else
+                    {
+                        <input id="@Id("amount")" class="qrbound-pay-input" inputmode="decimal" placeholder="0.00"
+                               @bind="amountText" @bind:event="oninput" @bind:after='() => Edited("amount")' disabled="@busy" aria-invalid="@Invalid("amount")" />
+                    }
+                    <FieldError Errors="errors" Key="amount" />
+                </div>
+
+                <div class="qrbound-pay-field">
+                    <label class="qrbound-pay-label" for="@Id("currency")">Currency</label>
+                    <select id="@Id("currency")" class="qrbound-pay-input" disabled>
+                        <option>@CurrencyName(config.Currency)</option>
+                    </select>
+                </div>
+
+                <div class="qrbound-pay-field">
+                    <label class="qrbound-pay-label" for="@Id("invoice")">Invoice Number</label>
+                    <input id="@Id("invoice")" class="qrbound-pay-input" maxlength="19" placeholder="INV-2024-001"
+                           @bind="invoiceNumber" @bind:event="oninput" @bind:after='() => Edited("invoice")' readonly="@(!string.IsNullOrEmpty(InvoiceNumber))" disabled="@busy"
+                           aria-invalid="@Invalid("invoice")" />
+                    <FieldError Errors="errors" Key="invoice" />
+                </div>
+
+                <div class="qrbound-pay-field">
+                    <label class="qrbound-pay-label" for="@Id("description")">Description</label>
+                    <input id="@Id("description")" class="qrbound-pay-input" maxlength="250" placeholder="Payment description"
+                           @bind="description" @bind:event="oninput" readonly="@(!string.IsNullOrEmpty(Description))" disabled="@busy" />
+                </div>
+
+                @if (!string.IsNullOrEmpty(message))
+                {
+                    <div class="qrbound-pay-alert" role="alert">@message</div>
+                }
+
+                <button type="button" class="qrbound-pay-primary" disabled="@busy" @onclick="PayAsync">
+                    @if (busy)
+                    {
+                        <span class="qrbound-pay-spinner qrbound-pay-spinner-sm" aria-hidden="true"></span>
+                        <text> Processing…</text>
+                    }
+                    else
+                    {
+                        @ButtonText
+                    }
+                </button>
+
+                @if (ShowClearButton)
+                {
+                    <button type="button" class="qrbound-pay-secondary" disabled="@busy" @onclick="StartOver">Clear Form</button>
+                }
+                break;
+        }
+    </div>
+
+    <div class="qrbound-pay-footer">
+        Card numbers are handled by CardPointe and are never stored on our servers.
+    </div>
+</div>
+
+@code {
+    private enum View { Loading, Unavailable, Form, Paying, Approved }
+
+    /// <summary>Styling for CardPointe's fields, matching this form.</summary>
+    private const string FormTokenizerCss =
+        "body{margin:0;background:transparent;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:#212529;}" +
+        "label{display:block;font-size:14px;margin:0 0 2px;}" +
+        "input,select{font-size:15px;padding:8px 12px;border:1px solid #ced4da;border-radius:6px;background:#fff;box-sizing:border-box;}" +
+        "input{width:100%;}" +
+        "select{width:auto;margin-right:8px;}" +
+        ".error{color:#dc3545;border-color:#dc3545;}";
+
+    private readonly string idPrefix = "qrbound-pay-" + Guid.NewGuid().ToString("N")[..8];
+    private readonly Dictionary<string, string> errors = new();
+    private View view = View.Loading;
+    private PaymentConfig? config;
+    private TokenizationResult? card;
+    private CardPaymentResult? result;
+    private int tokenizerKey;
+    private string cardholderName = string.Empty;
+    private string email = string.Empty;
+    private string amountText = string.Empty;
+    private string invoiceNumber = string.Empty;
+    private string description = string.Empty;
+    private string? message;
+
+    /// <summary>Amount in cents (1250 is $12.50). Leave 0 to let the payer enter it.</summary>
+    [Parameter] public long AmountCents { get; set; }
+
+    /// <summary>Invoice/order number (at most 19 characters). Leave empty to generate one the payer can change.</summary>
+    [Parameter] public string? InvoiceNumber { get; set; }
+
+    /// <summary>What the payment is for. Leave empty to let the payer describe it.</summary>
+    [Parameter] public string? Description { get; set; }
+
+    /// <summary>Email to fill in; the payer can change it.</summary>
+    [Parameter] public string? Email { get; set; }
+
+    /// <summary>Whether the payer must give an email for the receipt.</summary>
+    [Parameter] public bool RequireEmail { get; set; } = true;
+
+    [Parameter] public string Title { get; set; } = "Secure Payment Form";
+
+    [Parameter] public string? Subtitle { get; set; } = "Card details are entered on CardPointe's secure form";
+
+    [Parameter] public string ButtonText { get; set; } = "Process Payment";
+
+    /// <summary>Show "Clear Form" (and "New payment" after an approval).</summary>
+    [Parameter] public bool ShowClearButton { get; set; } = true;
+
+    /// <summary>Raised once the gateway answers, approved or not.</summary>
+    [Parameter] public EventCallback<CardPaymentResult> OnCompleted { get; set; }
+
+    /// <summary>CSS for the fields inside the CardPointe iframe; null matches this form.</summary>
+    [Parameter] public string? TokenizerCss { get; set; }
+
+    /// <summary>Height of CardPointe's iframe; raise it if your TokenizerCss makes the fields taller.</summary>
+    [Parameter] public string TokenizerHeight { get; set; } = "10.5rem";
+
+    [Parameter] public string? CssClass { get; set; }
+
+    /// <summary>
+    /// Sends the charge somewhere other than the server's /process endpoint, e.g. to pay a QR
+    /// payment request. Null uses <see cref="QrboundPaymentsClient.ChargeAsync"/>.
+    /// </summary>
+    [Parameter] public Func<CardPaymentRequest, Task<CardPaymentResult>>? ChargeHandler { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        ResetFields();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        view = View.Loading;
+        message = null;
+
+        try
+        {
+            config = await Payments.GetConfigAsync();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or System.Text.Json.JsonException)
+        {
+            config = null;
+        }
+
+        if (config is null || string.IsNullOrWhiteSpace(config.TokenizerUrl))
+        {
+            message = "Card payments are not available right now.";
+            view = View.Unavailable;
+        }
+        else if (AmountCents > 0 && (AmountCents < config.MinAmountCents || AmountCents > config.MaxAmountCents))
+        {
+            message = $"The amount must be between {FormatAmount(config.MinAmountCents)} and {FormatAmount(config.MaxAmountCents)}.";
+            view = View.Unavailable;
+        }
+        else
+        {
+            view = View.Form;
+        }
+    }
+
+    private void OnTokenized(TokenizationResult tokenization)
+    {
+        card = tokenization;
+        if (tokenization.IsValid)
+        {
+            errors.Remove("card");
+        }
+        else
+        {
+            errors["card"] = "Check the card number and expiry.";
+        }
+    }
+
+    private async Task PayAsync()
+    {
+        if (view != View.Form || !Validate(out var cents))
+        {
+            return;
+        }
+
+        view = View.Paying;
+        message = null;
+
+        CardPaymentResult charge;
+        try
+        {
+            var request = new CardPaymentRequest
+            {
+                PaymentToken = card!.Token!,
+                Expiry = ExpiryAsMmYy(card.Expiry!),
+                CardholderName = cardholderName.Trim(),
+                AmountCents = cents,
+                Currency = config!.Currency,
+                InvoiceNumber = invoiceNumber.Trim(),
+                Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim(),
+                Email = string.IsNullOrWhiteSpace(email) ? null : email.Trim()
+            };
+
+            charge = ChargeHandler is null
+                ? await Payments.ChargeAsync(request)
+                : await ChargeHandler(request);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or System.Text.Json.JsonException)
+        {
+            // The outcome is unknown: don't invite a second charge without saying so.
+            charge = new CardPaymentResult
+            {
+                StatusMessage = "Error",
+                ErrorMessage = "We couldn't confirm the payment. Check before trying again.",
+                AmountCents = cents
+            };
+        }
+
+        result = charge;
+
+        if (charge.IsSuccess)
+        {
+            view = View.Approved;
+        }
+        else
+        {
+            message = charge.ErrorMessage ?? "The payment did not go through.";
+            view = View.Form;
+        }
+
+        await OnCompleted.InvokeAsync(charge);
+    }
+
+    private bool Validate(out long cents)
+    {
+        errors.Clear();
+        cents = AmountCents;
+
+        if (string.IsNullOrWhiteSpace(cardholderName))
+        {
+            errors["name"] = "Enter the name on the card.";
+        }
+
+        var trimmedEmail = email.Trim();
+        if (RequireEmail && trimmedEmail.Length == 0)
+        {
+            errors["email"] = "Enter an email for the receipt.";
+        }
+        else if (trimmedEmail.Length > 0 && !System.Net.Mail.MailAddress.TryCreate(trimmedEmail, out _))
+        {
+            errors["email"] = "Enter a valid email address.";
+        }
+
+        if (card?.IsValid != true || string.IsNullOrWhiteSpace(card.Expiry))
+        {
+            errors["card"] = "Enter the card number and expiry.";
+        }
+
+        if (AmountCents <= 0)
+        {
+            if (!TryParseCents(amountText, out cents) || cents <= 0)
+            {
+                errors["amount"] = "Enter an amount, like 12.50.";
+            }
+            else if (cents < config!.MinAmountCents || cents > config.MaxAmountCents)
+            {
+                errors["amount"] = $"Enter between {FormatAmount(config.MinAmountCents)} and {FormatAmount(config.MaxAmountCents)}.";
+            }
+        }
+
+        var invoice = invoiceNumber.Trim();
+        if (invoice.Length == 0)
+        {
+            errors["invoice"] = "Enter an invoice number.";
+        }
+        else if (invoice.Length > 19)
+        {
+            errors["invoice"] = "Use at most 19 characters.";
+        }
+
+        return errors.Count == 0;
+    }
+
+    private void StartOver()
+    {
+        ResetFields();
+        card = null;
+        result = null;
+        message = null;
+        errors.Clear();
+        tokenizerKey++;   // reloads CardPointe's iframe, clearing the card
+        if (view == View.Approved)
+        {
+            view = View.Form;
+        }
+    }
+
+    private void ResetFields()
+    {
+        cardholderName = string.Empty;
+        email = Email ?? string.Empty;
+        amountText = string.Empty;
+        invoiceNumber = string.IsNullOrEmpty(InvoiceNumber) ? NewInvoiceNumber() : InvoiceNumber;
+        description = Description ?? string.Empty;
+    }
+
+    /// <summary>INV-yyMMdd-xxxxxx: 17 characters, unique enough per payer.</summary>
+    private static string NewInvoiceNumber() =>
+        $"INV-{DateTime.UtcNow:yyMMdd}-{Random.Shared.Next(0, 1_000_000):D6}";
+
+    /// <summary>The tokenizer gives YYYYMM; CardPointe's auth takes MMYY.</summary>
+    public static string ExpiryAsMmYy(string expiry) =>
+        expiry.Length == 6 && expiry.All(char.IsAsciiDigit) ? expiry[4..6] + expiry[2..4] : expiry;
+
+    /// <summary>Parses "12.5", "12.50" or "$1,234.56" into cents; more than two decimals is rejected.</summary>
+    internal static bool TryParseCents(string? text, out long cents)
+    {
+        cents = 0;
+        var cleaned = (text ?? string.Empty).Trim().TrimStart('$').Replace(",", string.Empty);
+        if (!decimal.TryParse(cleaned, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var amount))
+        {
+            return false;
+        }
+
+        var scaled = amount * 100m;
+        if (scaled != decimal.Truncate(scaled) || scaled > long.MaxValue)
+        {
+            return false;
+        }
+
+        cents = (long)scaled;
+        return true;
+    }
+
+    private void Edited(string field) => errors.Remove(field);
+
+    private string Id(string field) => $"{idPrefix}-{field}";
+
+    private string? Invalid(string field) => errors.ContainsKey(field) ? "true" : null;
+
+    private static string FormatPlain(long cents) => (cents / 100m).ToString("0.00", CultureInfo.InvariantCulture);
+
+    private string FormatAmount(long cents)
+    {
+        var amount = (cents / 100m).ToString("N2", CultureInfo.InvariantCulture);
+        var currency = config?.Currency ?? "USD";
+        return currency == "USD" ? "$" + amount : amount + " " + currency;
+    }
+
+    private static string CurrencyName(string code) => code.ToUpperInvariant() switch
+    {
+        "USD" => "US Dollar (USD)",
+        "CAD" => "Canadian Dollar (CAD)",
+        "EUR" => "Euro (EUR)",
+        "GBP" => "British Pound (GBP)",
+        _ => code.ToUpperInvariant()
+    };
+}

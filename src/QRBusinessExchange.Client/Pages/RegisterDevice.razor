@@ -1,0 +1,79 @@
+@page "/register-device"
+@using QRBusinessExchange.Client.Components.Auth
+@inject PortalAuthService PortalAuth
+@inject NavigationManager Navigation
+
+@* Register the device you're on (create a passkey here) or, from a computer, a phone (QR code).
+   The registered devices list is the same one as in Settings. *@
+
+<PageTitle>Register a device - qrbound</PageTitle>
+
+@if (!ready)
+{
+    <div class="text-center py-5"><span class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></span></div>
+}
+else
+{
+    <div class="register-device">
+        <h1 class="h3 mb-1">Register a device</h1>
+        <p class="text-muted mb-4">
+            A registered device logs in to qrbound with a passkey (Face ID, Touch ID, fingerprint or your device PIN)
+            instead of your password.
+        </p>
+
+        <div class="card shadow-sm mb-4">
+            <div class="card-body">
+                <h2 class="h5 mb-1"><i class="bi bi-laptop me-2"></i>This device</h2>
+                <p class="text-muted small mb-3">
+                    Create a passkey on the device you're using now. Your device will ask you to confirm with
+                    Face ID, Touch ID, a fingerprint or its PIN.
+                </p>
+                <PasskeyManagement @ref="passkeys" Title="" AddLabel="Register this device" ShowIntro="false" />
+            </div>
+        </div>
+
+        @* A phone can't scan its own screen, so linking another phone is offered in the desktop layout only. *@
+        <div class="card shadow-sm mb-4 d-none d-lg-block">
+            <div class="card-body">
+                <h2 class="h5 mb-2"><i class="bi bi-phone me-2"></i>A phone</h2>
+                <LinkPhonePanel OnLinked="OnPhoneLinkedAsync" />
+            </div>
+        </div>
+
+        <p class="text-muted small d-lg-none">
+            <i class="bi bi-info-circle me-1"></i>
+            To register a computer, log in to qrbound on it and open <strong>Register device</strong> from the menu.
+        </p>
+    </div>
+}
+
+@code {
+    private bool ready;
+    private PasskeyManagement? passkeys;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Signed-in users only (an expired token counts as signed out).
+        var session = await PortalAuth.GetSessionStateAsync();
+        if (session != PortalSessionState.Active)
+        {
+            if (session == PortalSessionState.Expired)
+            {
+                await PortalAuth.SignOutAsync();
+            }
+            Navigation.NavigateTo($"/login?returnUrl={Uri.EscapeDataString("/register-device")}", replace: true);
+            return;
+        }
+
+        ready = true;
+    }
+
+    // A phone linked by QR code shows up in the list right away.
+    private async Task OnPhoneLinkedAsync()
+    {
+        if (passkeys != null)
+        {
+            await passkeys.ReloadAsync();
+        }
+    }
+}

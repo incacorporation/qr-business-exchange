@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 350 350" role="img" aria-label="qrbound">
+  <defs>
+    <mask id="phone-cutout">
+      <rect x="128" y="60" width="148" height="216" rx="26" fill="#fff"/>
+      <g fill="none" stroke="#000" stroke-width="18" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M167 120 V106 a10 10 0 0 1 10 -10 H186"/>
+        <path d="M218 99 H227 a10 10 0 0 1 10 10 V120"/>
+        <path d="M167 214 V228 a10 10 0 0 0 10 10 H186"/>
+        <path d="M218 238 H227 a10 10 0 0 0 10 -10 V214"/>
+      </g>
+    </mask>
+  </defs>
+  <rect width="350" height="350" rx="64" fill="#1F43AD"/>
+  <g fill="#829BEB" transform="translate(37 37)">
+    <rect x="0" y="0" width="98" height="97" rx="24"/>
+    <rect x="0" y="129" width="98" height="97" rx="24"/>
+    <path d="M128 39 V24 a24 24 0 0 1 24 -24 H202 a24 24 0 0 1 24 24 V39 Z"/>
+    <rect x="128" y="60" width="148" height="216" rx="26" mask="url(#phone-cutout)"/>
+  </g>
+</svg>

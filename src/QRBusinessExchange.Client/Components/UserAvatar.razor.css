@@ -1,0 +1,23 @@
+.user-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: var(--avatar-size);
+    height: var(--avatar-size);
+    line-height: 1;
+}
+
+.user-avatar i {
+    font-size: var(--avatar-size);
+}
+
+/* Round like the icon it replaces; "contain" on white so logos aren't cropped */
+.user-avatar img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: contain;
+    background: #fff;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+}

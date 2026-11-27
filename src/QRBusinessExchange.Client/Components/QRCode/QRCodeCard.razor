@@ -1,0 +1,57 @@
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+
+<div class="qr-code-container text-center">
+    <div class="mb-3"><div id="qrcode-@UserId" class="d-inline-block"></div></div>
+    
+    <div class="btn-group" role="group">
+        <button class="btn btn-sm btn-outline-primary" @onclick="DownloadQRCode">
+            <i class="bi bi-download"></i> Download
+        </button>
+        <button class="btn btn-sm btn-outline-primary" @onclick="PrintQRCode">
+            <i class="bi bi-printer"></i> Print
+        </button>
+        <button class="btn btn-sm btn-outline-primary" @onclick="ShareQRCode">
+            <i class="bi bi-share"></i> Share
+        </button>
+    </div>
+    
+    <p class="text-muted mt-3 mb-0">
+        <small>Scan this code to view your profile</small>
+    </p>
+</div>
+
+@code {
+    [Parameter]
+    public Guid? UserId { get; set; }
+
+    private string ProfileUrl => $"{Navigation.BaseUri}user/{UserId}";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && UserId.HasValue)
+        {
+            await GenerateQRCode();
+        }
+    }
+
+    private async Task GenerateQRCode()
+    {
+        await JS.InvokeVoidAsync("qrCodeInterop.generateQRCode", $"qrcode-{UserId}", ProfileUrl);
+    }
+
+    private async Task DownloadQRCode()
+    {
+        await JS.InvokeVoidAsync("qrCodeInterop.downloadQRCode", $"qrcode-{UserId}", $"qr-code-{UserId}.png");
+    }
+
+    private async Task PrintQRCode()
+    {
+        await JS.InvokeVoidAsync("qrCodeInterop.printQRCode", $"qrcode-{UserId}");
+    }
+
+    private async Task ShareQRCode()
+    {
+        await JS.InvokeVoidAsync("qrCodeInterop.shareQRCode", ProfileUrl);
+    }
+}

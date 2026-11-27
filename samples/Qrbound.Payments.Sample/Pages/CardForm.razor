@@ -1,0 +1,48 @@
+@page "/card-form"
+
+<PageTitle>Card form - Qrbound payments sample</PageTitle>
+
+<h2>The card payment form</h2>
+<p>
+    <code>QrboundCardPayment</code> is a complete card form: cardholder name, email, CardPointe's card
+    fields, amount, invoice number and description. Below it charges through a stand-in handler, so you can
+    try it without an account; nothing is sent to CardPointe's gateway.
+</p>
+<p class="warn">
+    In a real app, leave out <code>ChargeHandler</code>: the form then calls the qrbound API's
+    <code>POST api/cardpointe/process</code>, which needs a signed-in user. Add a handler that attaches the
+    user's bearer token, for example
+    <code>AddQrboundPayments(apiUri).AddHttpMessageHandler&lt;YourTokenHandler&gt;()</code>.
+</p>
+
+<QrboundCardPayment AmountCents="1250"
+                    InvoiceNumber="SAMPLE-1001"
+                    Description="Sample order"
+                    Title="Pay Acme Shop"
+                    ChargeHandler="PretendChargeAsync"
+                    OnCompleted="r => last = r" />
+
+@if (last != null)
+{
+    <p class="ok" style="margin-top:1rem">
+        <b>OnCompleted</b>: @last.StatusMessage, reference <code>@last.TransactionId</code>.
+    </p>
+}
+
+@code {
+    private CardPaymentResult? last;
+
+    // Stands in for the server so the sample works on its own. The card was still tokenized by
+    // CardPointe's hosted fields; only the charge is pretend.
+    private static async Task<CardPaymentResult> PretendChargeAsync(CardPaymentRequest request)
+    {
+        await Task.Delay(400);
+        return new CardPaymentResult
+        {
+            IsSuccess = true,
+            StatusMessage = "Approved",
+            TransactionId = "SAMPLE" + DateTime.UtcNow.ToString("HHmmss"),
+            AmountCents = request.AmountCents
+        };
+    }
+}

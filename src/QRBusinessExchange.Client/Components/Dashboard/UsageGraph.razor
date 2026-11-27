@@ -1,0 +1,27 @@
+@using QRBusinessExchange.Client.Models
+@inject IJSRuntime JS
+
+<div class="chart-container" style="position: relative; height: 300px;">
+    <canvas id="usageChart"></canvas>
+</div>
+
+@code {
+    [Parameter]
+    public List<UsageDataPoint>? UsageData { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && UsageData != null && UsageData.Any())
+        {
+            await RenderChart();
+        }
+    }
+
+    private async Task RenderChart()
+    {
+        var labels = UsageData?.Select(d => d.Label).ToArray() ?? Array.Empty<string>();
+        var values = UsageData?.Select(d => d.Value).ToArray() ?? Array.Empty<int>();
+
+        await JS.InvokeVoidAsync("chartInterop.createChart", "usageChart", labels, values);
+    }
+}

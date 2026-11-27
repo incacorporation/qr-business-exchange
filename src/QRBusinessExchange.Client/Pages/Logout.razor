@@ -1,0 +1,44 @@
+@page "/logout"
+@layout AuthLayout
+@inject StateService StateService
+@inject NavigationManager Navigation
+
+<PageTitle>Logging out...</PageTitle>
+
+<div class="auth-narrow text-center">
+    <div class="spinner-border text-white mb-3" style="width: 3rem; height: 3rem;" role="status">
+        <span class="visually-hidden">Logging out...</span>
+    </div>
+    <h1 class="auth-title">Logging out</h1>
+    <p class="auth-subtitle">Please wait while we securely sign you out…</p>
+</div>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        Console.WriteLine("=== LOGOUT STARTED ===");
+        
+        try
+        {
+            // Clear authentication state
+            await StateService.ResetAsync();
+            
+            Console.WriteLine("? State cleared successfully");
+            
+            // Small delay to show the logout message
+            await Task.Delay(800);
+            
+            // Redirect to home page
+            Navigation.NavigateTo("/", true);
+            
+            Console.WriteLine("? Redirected to home");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"? Logout error: {ex.Message}");
+            // Redirect anyway even if there's an error
+            Navigation.NavigateTo("/", true);
+        }
+    }
+}
+

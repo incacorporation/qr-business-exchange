@@ -1,0 +1,61 @@
+@using QRBusinessExchange.Client.Models
+
+<div class="ad-banner bg-light border rounded p-3 text-center mb-3">
+    @if (isLoading)
+    {
+        <div class="spinner-border spinner-border-sm" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    }
+    else if (advertisement != null)
+    {
+        <div class="ad-content">
+            @if (!string.IsNullOrEmpty(advertisement.ImageUrl))
+            {
+                <img src="@advertisement.ImageUrl" alt="@advertisement.Title" class="img-fluid mb-2" style="max-height: 200px;" />
+            }
+            <h5>@advertisement.Title</h5>
+            <p class="text-muted mb-2">@advertisement.Description</p>
+            @if (!string.IsNullOrEmpty(advertisement.Link))
+            {
+                <a href="@advertisement.Link" target="_blank" class="btn btn-sm btn-primary">Learn More</a>
+            }
+        </div>
+    }
+    else
+    {
+        <p class="text-muted mb-0">Advertisement Space</p>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public string? AdCategory { get; set; }
+
+    private Advertisement? advertisement;
+    private bool isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAd();
+    }
+
+    private async Task LoadAd()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        await Task.Delay(500);
+
+        advertisement = new Advertisement
+        {
+            Title = "Upgrade Your Network",
+            Description = "Get Premium and unlock unlimited connections!",
+            ImageUrl = null,
+            Link = "/subscriptions"
+        };
+
+        isLoading = false;
+        StateHasChanged();
+    }
+}

@@ -15,6 +15,7 @@ public class JwtService
 {
     private readonly JwtSettings _jwtSettings;
     private readonly JwtSecurityTokenHandler _tokenHandler;
+    private readonly SymmetricSecurityKey _signingKey;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="JwtService"/> class
@@ -23,12 +24,11 @@ public class JwtService
     public JwtService(IOptions<JwtSettings> jwtSettings)
     {
         _jwtSettings = jwtSettings?.Value ?? throw new ArgumentNullException(nameof(jwtSettings));
-        _tokenHandler = new JwtSecurityTokenHandler();
+        // Keep claim names as written ("sub", "email"); by default the handler renames "sub" to a
+        // long ClaimTypes URI, so ValidateToken never found the user id and always returned null.
+        _tokenHandler = new JwtSecurityTokenHandler { MapInboundClaims = false };
 
-        if (string.IsNullOrWhiteSpace(_jwtSettings.SecretKey))
-        {
-            throw new InvalidOperationException("JWT SecretKey is not configured");
-        }
+        _signingKey = new SymmetricSecurityKey(JwtSettings.GetValidatedKeyBytes(_jwtSettings.SecretKey));
     }
 
     /// <summary>
@@ -63,8 +63,7 @@ public class JwtService
                 }
             }
 
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtSettings.SecretKey));
-            var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+            var credentials = new SigningCredentials(_signingKey, SecurityAlgorithms.HmacSha256);
 
             var token = new JwtSecurityToken(
                 issuer: _jwtSettings.Issuer,
@@ -115,8 +114,6 @@ public class JwtService
 
         try
         {
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtSettings.SecretKey));
-
             var validationParameters = new TokenValidationParameters
             {
                 ValidateIssuer = true,
@@ -125,7 +122,8 @@ public class JwtService
                 ValidateIssuerSigningKey = true,
                 ValidIssuer = _jwtSettings.Issuer,
                 ValidAudience = _jwtSettings.Audience,
-                IssuerSigningKey = key,
+                IssuerSigningKey = _signingKey,
+                ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
                 ClockSkew = TimeSpan.Zero
             };
 

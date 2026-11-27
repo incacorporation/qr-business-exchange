@@ -1,0 +1,14 @@
+@namespace Qrbound.Payments
+
+@* Shows the validation message for one field of QrboundCardPayment, if it has one. *@
+
+@if (Errors.TryGetValue(Key, out var text))
+{
+    <p class="qrbound-pay-error" role="alert">@text</p>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyDictionary<string, string> Errors { get; set; } = default!;
+
+    [Parameter, EditorRequired] public string Key { get; set; } = string.Empty;
+}

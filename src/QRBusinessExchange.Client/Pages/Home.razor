@@ -1,0 +1,329 @@
+@page "/"
+@inject StateService StateService
+
+<PageTitle>qrbound - Turn every handshake into a qualified lead</PageTitle>
+
+<!-- ===================== Hero ===================== -->
+<section class="hero content-bleed">
+    <div class="container hero-inner">
+        <div class="row align-items-center g-5">
+            <div class="col-lg-6 text-center text-lg-start">
+                <span class="hero-eyebrow">
+                    <img src="images/qrbound-mark.svg" alt="" width="18" height="18" />
+                    Let's get QR Bound
+                </span>
+
+                <h1 class="hero-title">Turn every handshake into a <span class="hero-highlight">qualified lead</span>.</h1>
+
+                <p class="hero-lead">
+                    qrbound gives business owners and sales professionals a scannable digital business card,
+                    so new contacts land in your network instantly - with the context you need to follow up and close.
+                </p>
+
+                @if (!StateService.IsAuthenticated)
+                {
+                    <div class="hero-actions">
+                        <a href="/register" class="btn btn-light btn-lg">
+                            Create your free profile <i class="bi bi-arrow-right ms-1"></i>
+                        </a>
+                        <a href="/login" class="btn btn-outline-light btn-lg">
+                            Sign in
+                        </a>
+                    </div>
+                    <ul class="hero-assurances">
+                        <li><i class="bi bi-check2"></i> Free to get started</li>
+                        <li><i class="bi bi-check2"></i> No credit card required</li>
+                        <li><i class="bi bi-shield-lock"></i> Passkey-secured sign-in</li>
+                    </ul>
+                }
+                else
+                {
+                    <p class="hero-welcome">Welcome back, <strong>@StateService.UserFullName</strong>.</p>
+                    <div class="hero-actions">
+                        <a href="/dashboard" class="btn btn-light btn-lg">
+                            <i class="bi bi-speedometer2 me-2"></i>Go to your dashboard
+                        </a>
+                        <a href="/businesses" class="btn btn-outline-light btn-lg">
+                            Manage businesses
+                        </a>
+                    </div>
+                }
+            </div>
+
+            <!-- Illustrative digital business card -->
+            <div class="col-lg-6 d-none d-md-block">
+                <div class="card-showcase" aria-hidden="true">
+                    <div class="bizcard">
+                        <div class="bizcard-top">
+                            <div class="bizcard-avatar">AM</div>
+                            <div class="min-w-0">
+                                <div class="bizcard-name">Alex Morgan</div>
+                                <div class="bizcard-role">Regional Sales Director</div>
+                                <div class="bizcard-company"><i class="bi bi-buildings"></i> Northwind Supply Co.</div>
+                            </div>
+                        </div>
+                        <div class="bizcard-body">
+                            <div class="bizcard-qr">
+                                <i class="bi bi-qr-code"></i>
+                            </div>
+                            <div class="bizcard-details">
+                                <div><i class="bi bi-envelope"></i> alex@@northwind.example</div>
+                                <div><i class="bi bi-telephone"></i> (555) 014-2290</div>
+                                <div><i class="bi bi-geo-alt"></i> Houston, TX</div>
+                                <span class="bizcard-cta"><i class="bi bi-qr-code-scan"></i> Scan to connect</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="float-chip chip-lead">
+                        <span class="chip-icon"><i class="bi bi-person-plus-fill"></i></span>
+                        <div>
+                            <div class="chip-title">New connection</div>
+                            <div class="chip-sub">Scanned at Expo Hall B</div>
+                        </div>
+                    </div>
+
+                    <div class="float-chip chip-stat">
+                        <span class="chip-icon chip-icon-green"><i class="bi bi-graph-up-arrow"></i></span>
+                        <div>
+                            <div class="chip-title">Profile views</div>
+                            <div class="chip-sub">Tracked in your dashboard</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ===================== Trust strip ===================== -->
+<section class="trust-strip bleed-x">
+    <div class="container">
+        <div class="row g-3 text-center">
+            <div class="col-6 col-md-3">
+                <div class="trust-value">10K+</div>
+                <div class="trust-label">Active professionals</div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="trust-value">50K+</div>
+                <div class="trust-label">Connections made</div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="trust-value">100K+</div>
+                <div class="trust-label">QR scans</div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="trust-value">24/7</div>
+                <div class="trust-label">Support</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ===================== Who it's for ===================== -->
+<section class="landing-section">
+    <div class="container">
+        <div class="section-head">
+            <span class="eyebrow">Who it's for</span>
+            <h2 class="section-title">Built for people whose business runs on relationships</h2>
+            <p class="section-lead">Whether you own the company or carry the quota, qrbound makes every introduction count.</p>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-md-4">
+                <div class="audience-card">
+                    <span class="feature-icon"><i class="bi bi-shop"></i></span>
+                    <h3>Business owners</h3>
+                    <p>Put your company in front of the right people. Share a polished profile that showcases what you offer and how to reach you.</p>
+                    <ul class="check-list">
+                        <li>Professional profile for your business</li>
+                        <li>Share by QR code or link</li>
+                        <li>See who is engaging</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="audience-card audience-card-featured">
+                    <span class="feature-icon"><i class="bi bi-briefcase"></i></span>
+                    <h3>Sales professionals</h3>
+                    <p>Capture leads at events, on-site visits and meetings in seconds - no more lost business cards or retyped contacts.</p>
+                    <ul class="check-list">
+                        <li>Instant lead capture with one scan</li>
+                        <li>Connection history for follow-ups</li>
+                        <li>Activity and profile-view analytics</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="audience-card">
+                    <span class="feature-icon"><i class="bi bi-buildings"></i></span>
+                    <h3>Teams &amp; organizations</h3>
+                    <p>Bring your team under one roof. Register your business and let staff sign in to your apps with qrbound.</p>
+                    <ul class="check-list">
+                        <li>Multi-business management</li>
+                        <li>Single sign-on for your apps</li>
+                        <li>Phone-approved QR sign-in</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ===================== How it works ===================== -->
+<section class="landing-section landing-section-alt bleed-x">
+    <div class="container">
+        <div class="section-head">
+            <span class="eyebrow">How it works</span>
+            <h2 class="section-title">From first hello to follow-up in three steps</h2>
+        </div>
+
+        <div class="row g-4 steps">
+            <div class="col-md-4">
+                <div class="step">
+                    <span class="step-number">1</span>
+                    <h3>Create your profile</h3>
+                    <p>Add your company, role, services and contact details. Secure it with a passkey - no password to remember.</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="step">
+                    <span class="step-number">2</span>
+                    <h3>Share your QR code</h3>
+                    <p>Show it on your phone, print it on your card or booth, or send the link. Anyone can scan it - no app required.</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="step">
+                    <span class="step-number">3</span>
+                    <h3>Connect &amp; close</h3>
+                    <p>New contacts join your network instantly. Track engagement and follow up while the conversation is still warm.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ===================== Features ===================== -->
+<section class="landing-section">
+    <div class="container">
+        <div class="section-head">
+            <span class="eyebrow">Features</span>
+            <h2 class="section-title">Everything you need to network with intent</h2>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-sm-6 col-lg-4">
+                <div class="feature">
+                    <span class="feature-icon"><i class="bi bi-qr-code"></i></span>
+                    <div>
+                        <h3>Digital business card</h3>
+                        <p>A scannable, always up-to-date card you can download, print or share.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-4">
+                <div class="feature">
+                    <span class="feature-icon"><i class="bi bi-people"></i></span>
+                    <div>
+                        <h3>Connection tracking</h3>
+                        <p>Every scan becomes a connection you can find, review and follow up on.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-4">
+                <div class="feature">
+                    <span class="feature-icon"><i class="bi bi-bar-chart-line"></i></span>
+                    <div>
+                        <h3>Engagement analytics</h3>
+                        <p>See QR scans, profile views and new connections over the last 30 days.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-4">
+                <div class="feature">
+                    <span class="feature-icon"><i class="bi bi-geo-alt"></i></span>
+                    <div>
+                        <h3>Nearby professionals</h3>
+                        <p>Discover businesses and contacts around you on an interactive map.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-4">
+                <div class="feature">
+                    <span class="feature-icon"><i class="bi bi-fingerprint"></i></span>
+                    <div>
+                        <h3>Passkey security</h3>
+                        <p>Sign in with Face ID, Touch ID or Windows Hello - phishing-resistant by design.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-4">
+                <div class="feature">
+                    <span class="feature-icon"><i class="bi bi-shield-check"></i></span>
+                    <div>
+                        <h3>Business single sign-on</h3>
+                        <p>Let your team sign in to your own apps with qrbound, approved from their phone.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ===================== Final CTA ===================== -->
+<section class="landing-section pt-0">
+    <div class="container">
+        <div class="cta-panel">
+            <div class="row align-items-center g-4">
+                <div class="col-lg-8 text-center text-lg-start">
+                    <h2>Your next customer is one scan away.</h2>
+                    <p>Join business owners and sales teams who turn introductions into opportunities with qrbound.</p>
+                </div>
+                <div class="col-lg-4 text-center text-lg-end">
+                    @if (!StateService.IsAuthenticated)
+                    {
+                        <a href="/register" class="btn btn-light btn-lg">
+                            Get started free <i class="bi bi-arrow-right ms-1"></i>
+                        </a>
+                    }
+                    else
+                    {
+                        <a href="/dashboard" class="btn btn-light btn-lg">
+                            Continue to dashboard <i class="bi bi-arrow-right ms-1"></i>
+                        </a>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ===================== Footer ===================== -->
+<footer class="landing-footer bleed-x">
+    <div class="container footer-inner">
+        <div class="footer-brand-row">
+            @* Mobile/tablet only: static "Install app" on the left of the footer (desktop uses the floating button) *@
+            <PwaInstallButton Variant="PwaInstallButton.InstallButtonVariant.Footer" />
+            <a class="brand-lockup" href="" aria-label="qrbound home">
+                <img src="images/qrbound-mark.svg" class="brand-mark" alt="" />
+                <span class="brand-wordmark">qrbound</span>
+            </a>
+        </div>
+        <nav class="footer-links" aria-label="Footer">
+            <a href="/register">Create account</a>
+            <a href="/login">Sign in</a>
+            <a href="/subscriptions">Plans</a>
+            <a href="/privacy">Privacy Policy</a>
+            <a href="/terms">Terms</a>
+        </nav>
+        <small>&copy; @DateTime.Now.Year qrbound, a product of INCACorporation, Inc. All rights reserved.</small>
+    </div>
+</footer>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        await StateService.InitializeAsync();
+    }
+}

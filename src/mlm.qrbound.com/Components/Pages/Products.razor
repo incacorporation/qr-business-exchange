@@ -1,0 +1,44 @@
+@page "/products"
+@inject NetworkService Network
+
+<SeoHead Title="Smart Business Cards & Digital Profiles — Products"
+         Description="Compare QRBound NFC + QR business cards, Digital Profile Pro, event lead kits and team bundles. Clear prices, no contracts."
+         Path="/products" JsonLd="_jsonLd" />
+
+<section class="wrap">
+    <h1>Products</h1>
+    <p class="lead">Everything works together: cards link to a profile, the profile captures leads.</p>
+    <div class="cards">
+        @foreach (var p in _products)
+        {
+            <article class="card">
+                <h2 class="h3"><a href="/products/@p.Slug">@p.Name</a></h2>
+                <p>@p.Description</p>
+                <p class="price">@p.Price.ToString("C")</p>
+                <a class="btn btn-small" href="/products/@p.Slug">Details</a>
+            </article>
+        }
+    </div>
+</section>
+
+@code {
+    private List<Product> _products = [];
+    private object? _jsonLd;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _products = await Network.GetProductsAsync();
+        _jsonLd = new Dictionary<string, object>
+        {
+            ["@context"] = "https://schema.org",
+            ["@type"] = "ItemList",
+            ["itemListElement"] = _products.Select((p, i) => new Dictionary<string, object>
+            {
+                ["@type"] = "ListItem",
+                ["position"] = i + 1,
+                ["url"] = $"https://mlm.qrbound.com/products/{p.Slug}",
+                ["name"] = p.Name,
+            }).ToList(),
+        };
+    }
+}

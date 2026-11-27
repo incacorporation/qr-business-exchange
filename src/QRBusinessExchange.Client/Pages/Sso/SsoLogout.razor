@@ -1,0 +1,58 @@
+@page "/sso/logout"
+@layout AuthLayout
+@using QRBusinessExchange.Client.Services
+@inject ApiService ApiService
+@inject PortalAuthService PortalAuth
+@inject NavigationManager Navigation
+
+@* Ends the portal session. If client_id + post_logout_redirect_uri are supplied and the URI
+   is registered for that application, the browser is sent back there. *@
+
+<PageTitle>Signed out</PageTitle>
+
+<div class="auth-narrow text-center">
+    @if (redirecting)
+    {
+        <span class="spinner-border text-white" role="status"><span class="visually-hidden">Signing you out</span></span>
+        <p class="auth-subtitle mt-3">Signing you out…</p>
+    }
+    else
+    {
+        <i class="bi bi-door-closed display-4 text-white" aria-hidden="true"></i>
+        <h1 class="auth-title mt-3">You are signed out</h1>
+        <p class="auth-subtitle">Your qrbound session has ended on this device.</p>
+        <a href="/login" class="auth-btn">Log in again</a>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "client_id")] public string? ClientId { get; set; }
+    [SupplyParameterFromQuery(Name = "post_logout_redirect_uri")] public string? PostLogoutRedirectUri { get; set; }
+    [SupplyParameterFromQuery(Name = "state")] public string? State { get; set; }
+
+    private bool redirecting = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await PortalAuth.SignOutAsync();
+
+        if (!string.IsNullOrEmpty(ClientId) && !string.IsNullOrEmpty(PostLogoutRedirectUri))
+        {
+            var response = await ApiService.GetResponseAsync(
+                $"api/sso/clients/{Uri.EscapeDataString(ClientId)}?redirectUri={Uri.EscapeDataString(PostLogoutRedirectUri)}");
+
+            if (response.IsSuccessStatusCode)
+            {
+                var url = PostLogoutRedirectUri;
+                if (!string.IsNullOrEmpty(State))
+                {
+                    url += (url.Contains('?') ? "&" : "?") + "state=" + Uri.EscapeDataString(State);
+                }
+                Navigation.NavigateTo(url, forceLoad: true);
+                return;
+            }
+        }
+
+        redirecting = false;
+    }
+}

@@ -406,10 +406,24 @@ namespace QRBusinessExchange.Infrastructure.Data.Migrations
                 columns: new[] { "UserId", "Date" },
                 unique: true);
 
-            migrationBuilder.CreateIndex(
-                name: "IX_UserLocations_GeographyPoint",
-                table: "UserLocations",
-                column: "GeographyPoint");
+            // Create spatial index for geography column using raw SQL
+            // Cannot use CreateIndex for geography/geometry types
+            // Geography types use GEOGRAPHY_AUTO_GRID or GEOGRAPHY_GRID tessellation
+            migrationBuilder.Sql(@"
+                CREATE SPATIAL INDEX [IX_UserLocations_GeographyPoint] 
+                ON [UserLocations] ([GeographyPoint])
+                USING GEOGRAPHY_AUTO_GRID
+                WITH (
+                    CELLS_PER_OBJECT = 16,
+                    PAD_INDEX = OFF,
+                    STATISTICS_NORECOMPUTE = OFF,
+                    SORT_IN_TEMPDB = OFF,
+                    DROP_EXISTING = OFF,
+                    ONLINE = OFF,
+                    ALLOW_ROW_LOCKS = ON,
+                    ALLOW_PAGE_LOCKS = ON
+                );
+            ");
 
             migrationBuilder.CreateIndex(
                 name: "IX_UserLocations_LastUpdated",

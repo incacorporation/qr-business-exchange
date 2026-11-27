@@ -1,0 +1,589 @@
+using System.Security.Cryptography;
+using System.Text.RegularExpressions;
+using Microsoft.EntityFrameworkCore;
+using QRBusinessExchange.Core.DTOs;
+using QRBusinessExchange.Core.Entities;
+using QRBusinessExchange.Infrastructure.Data;
+
+namespace QRBusinessExchange.Infrastructure.Services;
+
+/// <summary>
+/// Manages businesses (tenants), their members, and the applications they register for SSO.
+/// Every operation is performed on behalf of an acting user and checks that user's role.
+/// </summary>
+public class BusinessService
+{
+    private readonly ApplicationDbContext _db;
+
+    public BusinessService(ApplicationDbContext db)
+    {
+        _db = db;
+    }
+
+    // -----------------------------------------------------------------------
+    // Businesses
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// The businesses the user belongs to or is Administrator of; for a SuperAdmin, every business.
+    /// </summary>
+    public async Task<List<BusinessDto>> GetMyBusinessesAsync(Guid userId)
+    {
+        var isSuperAdmin = await BusinessAccess.IsSuperAdminAsync(_db, userId);
+
+        var rows = await _db.Businesses
+            .Where(b => isSuperAdmin ||
+                        b.Members.Any(m => m.UserId == userId) ||
+                        b.Roles.Any(r => r.UserId == userId && r.RoleName == BusinessRoleNames.Administrator))
+            .Select(b => new
+            {
+                Dto = new BusinessDto
+                {
+                    BusinessId = b.BusinessId,
+                    Name = b.Name,
+                    Slug = b.Slug,
+                    Description = b.Description,
+                    WebsiteUrl = b.WebsiteUrl,
+                    LogoUrl = b.LogoUrl,
+                    IsActive = b.IsActive,
+                    OwnerEmail = b.Owner.Email,
+                    ApplicationCount = b.Applications.Count,
+                    MemberCount = b.Members.Count,
+                    CreatedAt = b.CreatedAt
+                },
+                MemberRole = b.Members.Where(m => m.UserId == userId).Select(m => m.Role).FirstOrDefault(),
+                MyRoles = b.Roles.Where(r => r.UserId == userId).Select(r => r.RoleName).ToList()
+            })
+            .ToListAsync();
+
+        foreach (var row in rows)
+        {
+            var isAdministrator = row.MyRoles.Contains(BusinessRoleNames.Administrator);
+            row.Dto.MyRole = BusinessAccess.Combine(row.MemberRole, isAdministrator, isSuperAdmin) ?? string.Empty;
+            row.Dto.MyRoles = row.MyRoles.OrderBy(r => r).ToList();
+        }
+
+        return rows.Select(r => r.Dto).OrderBy(b => b.Name).ToList();
+    }
+
+    /// <summary>Whether the user is a SuperAdmin, and how many businesses they can open and manage.</summary>
+    public async Task<MyBusinessAccessDto> GetMyAccessAsync(Guid userId)
+    {
+        var businesses = await GetMyBusinessesAsync(userId);
+        return new MyBusinessAccessDto
+        {
+            IsSuperAdmin = await BusinessAccess.IsSuperAdminAsync(_db, userId),
+            BusinessCount = businesses.Count,
+            ManagedCount = businesses.Count(b => BusinessRoles.CanManage(b.MyRole))
+        };
+    }
+
+    public async Task<BusinessDto> GetBusinessAsync(Guid userId, Guid businessId)
+    {
+        var dto = (await GetMyBusinessesAsync(userId)).FirstOrDefault(b => b.BusinessId == businessId);
+        return dto ?? throw SsoException.NotFound("Business");
+    }
+
+    /// <param name="makeSlugUnique">When the slug is taken, add "-2", "-3", ... instead of refusing (used at registration).</param>
+    public async Task<BusinessDto> CreateBusinessAsync(Guid userId, CreateBusinessRequest request, bool makeSlugUnique = false)
+    {
+        var slug = Slugify(string.IsNullOrWhiteSpace(request.Slug) ? request.Name : request.Slug);
+        if (slug.Length < 2)
+        {
+            throw new SsoException("invalid_request", "Business slug must contain at least 2 letters or digits");
+        }
+
+        if (await _db.Businesses.AnyAsync(b => b.Slug == slug))
+        {
+            if (!makeSlugUnique)
+            {
+                throw new SsoException("slug_taken", $"The slug '{slug}' is already in use", 409);
+            }
+
+            var baseSlug = slug.Length > 90 ? slug[..90].Trim('-') : slug;
+            var n = 2;
+            do
+            {
+                slug = $"{baseSlug}-{n++}";
+            }
+            while (await _db.Businesses.AnyAsync(b => b.Slug == slug));
+        }
+
+        var business = new Business
+        {
+            Name = request.Name.Trim(),
+            Slug = slug,
+            Description = request.Description,
+            WebsiteUrl = request.WebsiteUrl,
+            LogoUrl = request.LogoUrl,
+            OwnerUserId = userId,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        business.Members.Add(new BusinessMember
+        {
+            UserId = userId,
+            Role = BusinessRoles.Owner,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        // The creator is the new business's Administrator.
+        business.Roles.Add(new BusinessRole
+        {
+            UserId = userId,
+            RoleName = BusinessRoleNames.Administrator,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        _db.Businesses.Add(business);
+        await _db.SaveChangesAsync();
+
+        return await GetBusinessAsync(userId, business.BusinessId);
+    }
+
+    public async Task<BusinessDto> UpdateBusinessAsync(Guid userId, Guid businessId, UpdateBusinessRequest request)
+    {
+        await RequireManagerAsync(userId, businessId);
+
+        var business = await _db.Businesses.FirstAsync(b => b.BusinessId == businessId);
+        business.Name = request.Name.Trim();
+        business.Description = request.Description;
+        business.WebsiteUrl = request.WebsiteUrl;
+        business.LogoUrl = request.LogoUrl;
+        business.IsActive = request.IsActive;
+        business.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        return await GetBusinessAsync(userId, businessId);
+    }
+
+    public async Task DeleteBusinessAsync(Guid userId, Guid businessId)
+    {
+        var role = await GetRoleAsync(userId, businessId) ?? throw SsoException.NotFound("Business");
+        if (!BusinessRoles.HasOwnerRights(role))
+        {
+            throw SsoException.Forbidden("Only the owner can delete a business");
+        }
+
+        // Access to this business's apps, and access to other apps granted for acting as this business
+        await _db.SsoAppAccess
+            .Where(a => a.BusinessId == businessId || a.Application.BusinessId == businessId)
+            .ExecuteDeleteAsync();
+
+        var business = await _db.Businesses.FirstAsync(b => b.BusinessId == businessId);
+        _db.Businesses.Remove(business);
+        await _db.SaveChangesAsync();
+    }
+
+    // -----------------------------------------------------------------------
+    // Members
+    // -----------------------------------------------------------------------
+
+    public async Task<List<BusinessMemberDto>> GetMembersAsync(Guid userId, Guid businessId)
+    {
+        await RequireMemberAsync(userId, businessId);
+
+        return await _db.BusinessMembers
+            .Where(m => m.BusinessId == businessId)
+            .OrderBy(m => m.User.Email)
+            .Select(m => new BusinessMemberDto
+            {
+                UserId = m.UserId,
+                Email = m.User.Email,
+                FullName = m.User.FirstName + " " + m.User.LastName,
+                Role = m.Role,
+                CreatedAt = m.CreatedAt
+            })
+            .ToListAsync();
+    }
+
+    public async Task<BusinessMemberDto> AddOrUpdateMemberAsync(Guid userId, Guid businessId, AddBusinessMemberRequest request)
+    {
+        var actingRole = await RequireManagerAsync(userId, businessId);
+
+        if (!BusinessRoles.All.Contains(request.Role))
+        {
+            throw new SsoException("invalid_request", $"Role must be one of: {string.Join(", ", BusinessRoles.All)}");
+        }
+
+        if (request.Role == BusinessRoles.Owner && !BusinessRoles.HasOwnerRights(actingRole))
+        {
+            throw SsoException.Forbidden("Only an owner can grant the Owner role");
+        }
+
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == request.Email)
+            ?? throw new SsoException("user_not_found", "No account exists with that email. Ask them to register first.", 404);
+
+        var member = await _db.BusinessMembers.FirstOrDefaultAsync(m => m.BusinessId == businessId && m.UserId == user.UserId);
+        if (member == null)
+        {
+            member = new BusinessMember { BusinessId = businessId, UserId = user.UserId, CreatedAt = DateTime.UtcNow };
+            _db.BusinessMembers.Add(member);
+        }
+        else if (member.Role == BusinessRoles.Owner && !BusinessRoles.HasOwnerRights(actingRole))
+        {
+            throw SsoException.Forbidden("Only an owner can change another owner's role");
+        }
+
+        member.Role = request.Role;
+        await EnsureOwnerRemainsAsync(businessId, changingUserId: user.UserId, newRole: request.Role);
+        await _db.SaveChangesAsync();
+
+        return new BusinessMemberDto
+        {
+            UserId = user.UserId,
+            Email = user.Email,
+            FullName = $"{user.FirstName} {user.LastName}",
+            Role = member.Role,
+            CreatedAt = member.CreatedAt
+        };
+    }
+
+    public async Task RemoveMemberAsync(Guid userId, Guid businessId, Guid memberUserId)
+    {
+        var actingRole = await RequireManagerAsync(userId, businessId);
+
+        var member = await _db.BusinessMembers.FirstOrDefaultAsync(m => m.BusinessId == businessId && m.UserId == memberUserId)
+            ?? throw SsoException.NotFound("Member");
+
+        if (member.Role == BusinessRoles.Owner && !BusinessRoles.HasOwnerRights(actingRole))
+        {
+            throw SsoException.Forbidden("Only an owner can remove an owner");
+        }
+
+        await EnsureOwnerRemainsAsync(businessId, changingUserId: memberUserId, newRole: null);
+
+        // Leaving the business ends the roles held in it (Administrator included); SuperAdmin is platform-wide and stays.
+        _db.BusinessRoles.RemoveRange(await _db.BusinessRoles
+            .Where(r => r.BusinessId == businessId && r.UserId == memberUserId && r.RoleName != BusinessRoleNames.SuperAdmin)
+            .ToListAsync());
+        _db.BusinessMembers.Remove(member);
+        await _db.SaveChangesAsync();
+    }
+
+    // -----------------------------------------------------------------------
+    // Business roles (BusinessRoles): several named roles per business and user
+    // -----------------------------------------------------------------------
+
+    public async Task<List<BusinessRoleDto>> GetRolesAsync(Guid userId, Guid businessId)
+    {
+        await RequireMemberAsync(userId, businessId);
+
+        return await _db.BusinessRoles
+            .Where(r => r.BusinessId == businessId)
+            .OrderBy(r => r.RoleName).ThenBy(r => r.User.Email)
+            .Select(r => new BusinessRoleDto
+            {
+                BusinessRoleId = r.BusinessRoleId,
+                UserId = r.UserId,
+                Email = r.User.Email,
+                FullName = r.User.FirstName + " " + r.User.LastName,
+                RoleName = r.RoleName,
+                CreatedAt = r.CreatedAt
+            })
+            .ToListAsync();
+    }
+
+    /// <summary>
+    /// Gives an account a named role in the business. Managers (Owner, Admin, Administrator, SuperAdmin) can
+    /// give any role except SuperAdmin, which only a SuperAdmin can give, and only to
+    /// <see cref="BusinessRoleNames.SuperAdminEmail"/>. An account that is not yet a member joins as a Member.
+    /// </summary>
+    public async Task<BusinessRoleDto> AddRoleAsync(Guid userId, Guid businessId, AddBusinessRoleRequest request)
+    {
+        await RequireManagerAsync(userId, businessId);
+        var roleName = NormalizeRoleName(request.RoleName);
+
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == request.Email.Trim())
+            ?? throw new SsoException("user_not_found", "No account exists with that email. Ask them to register first.", 404);
+
+        if (roleName == BusinessRoleNames.SuperAdmin)
+        {
+            // Checked on the account: in a business they own, a SuperAdmin's role there reads "Owner".
+            if (!await BusinessAccess.IsSuperAdminAsync(_db, userId))
+            {
+                throw SsoException.Forbidden("Only a SuperAdmin can give the SuperAdmin role");
+            }
+            if (!string.Equals(user.Email.Trim(), BusinessRoleNames.SuperAdminEmail, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new SsoException("invalid_request", $"The SuperAdmin role can only be given to {BusinessRoleNames.SuperAdminEmail}");
+            }
+        }
+
+        if (await _db.BusinessRoles.AnyAsync(r => r.BusinessId == businessId && r.UserId == user.UserId && r.RoleName == roleName))
+        {
+            throw new SsoException("role_exists", $"{user.Email} already has the {roleName} role", 409);
+        }
+
+        // Holding a role in a business means belonging to it (SuperAdmin is platform-wide, so it adds no membership).
+        if (roleName != BusinessRoleNames.SuperAdmin &&
+            !await _db.BusinessMembers.AnyAsync(m => m.BusinessId == businessId && m.UserId == user.UserId))
+        {
+            _db.BusinessMembers.Add(new BusinessMember
+            {
+                BusinessId = businessId,
+                UserId = user.UserId,
+                Role = BusinessRoles.Member,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        var role = new BusinessRole
+        {
+            BusinessId = businessId,
+            UserId = user.UserId,
+            RoleName = roleName,
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.BusinessRoles.Add(role);
+        await _db.SaveChangesAsync();
+
+        return new BusinessRoleDto
+        {
+            BusinessRoleId = role.BusinessRoleId,
+            UserId = user.UserId,
+            Email = user.Email,
+            FullName = $"{user.FirstName} {user.LastName}",
+            RoleName = role.RoleName,
+            CreatedAt = role.CreatedAt
+        };
+    }
+
+    public async Task RemoveRoleAsync(Guid userId, Guid businessId, Guid businessRoleId)
+    {
+        await RequireManagerAsync(userId, businessId);
+
+        var role = await _db.BusinessRoles.FirstOrDefaultAsync(r => r.BusinessRoleId == businessRoleId && r.BusinessId == businessId)
+            ?? throw SsoException.NotFound("Role");
+
+        if (role.RoleName == BusinessRoleNames.SuperAdmin)
+        {
+            if (!await BusinessAccess.IsSuperAdminAsync(_db, userId))
+            {
+                throw SsoException.Forbidden("Only a SuperAdmin can remove the SuperAdmin role");
+            }
+            if (!await _db.BusinessRoles.AnyAsync(r => r.RoleName == BusinessRoleNames.SuperAdmin && r.BusinessRoleId != businessRoleId))
+            {
+                throw new SsoException("last_superadmin", "This is the only SuperAdmin role; it cannot be removed");
+            }
+        }
+
+        _db.BusinessRoles.Remove(role);
+        await _db.SaveChangesAsync();
+    }
+
+    /// <summary>Known role names keep their spelling ("administrator" becomes "Administrator"); others are checked.</summary>
+    private static string NormalizeRoleName(string value)
+    {
+        var name = Regex.Replace(value.Trim(), @"\s+", " ");
+        foreach (var known in new[] { BusinessRoleNames.Administrator, BusinessRoleNames.SuperAdmin })
+        {
+            if (string.Equals(name, known, StringComparison.OrdinalIgnoreCase))
+            {
+                return known;
+            }
+        }
+
+        if (name.Length is < 2 or > 50 || !Regex.IsMatch(name, @"^[A-Za-z0-9][A-Za-z0-9 _\-]*$"))
+        {
+            throw new SsoException("invalid_request", "A role name has 2 to 50 letters, digits, spaces, '-' or '_'");
+        }
+        return name;
+    }
+
+    // -----------------------------------------------------------------------
+    // Applications
+    // -----------------------------------------------------------------------
+
+    public async Task<List<SsoApplicationDto>> GetApplicationsAsync(Guid userId, Guid businessId)
+    {
+        await RequireMemberAsync(userId, businessId);
+
+        var apps = await _db.SsoApplications
+            .Where(a => a.BusinessId == businessId)
+            .OrderBy(a => a.Name)
+            .ToListAsync();
+
+        return apps.Select(a => ToDto(a)).ToList();
+    }
+
+    public async Task<SsoApplicationDto> CreateApplicationAsync(Guid userId, Guid businessId, CreateSsoApplicationRequest request)
+    {
+        await RequireManagerAsync(userId, businessId);
+
+        var redirectUris = ValidateRedirectUris(request.RedirectUris);
+        string? secret = request.IsConfidential ? SsoCrypto.NewSecret() : null;
+
+        var app = new SsoApplication
+        {
+            BusinessId = businessId,
+            Name = request.Name.Trim(),
+            ClientId = "qrb_" + Convert.ToHexString(RandomNumberGenerator.GetBytes(10)).ToLowerInvariant(),
+            ClientSecretHash = secret == null ? null : SsoCrypto.Hash(secret),
+            RedirectUris = string.Join('\n', redirectUris),
+            RequireMembership = request.RequireMembership,
+            RequireApprovedCategory = request.RequireApprovedCategory,
+            TokenLifetimeMinutes = request.TokenLifetimeMinutes,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        _db.SsoApplications.Add(app);
+        await _db.SaveChangesAsync();
+
+        return ToDto(app, secret);
+    }
+
+    public async Task<SsoApplicationDto> UpdateApplicationAsync(Guid userId, Guid businessId, Guid applicationId, UpdateSsoApplicationRequest request)
+    {
+        await RequireManagerAsync(userId, businessId);
+        var app = await GetOwnedApplicationAsync(businessId, applicationId);
+
+        app.Name = request.Name.Trim();
+        app.RedirectUris = string.Join('\n', ValidateRedirectUris(request.RedirectUris));
+        app.RequireMembership = request.RequireMembership;
+        app.RequireApprovedCategory = request.RequireApprovedCategory;
+        app.TokenLifetimeMinutes = request.TokenLifetimeMinutes;
+        app.IsActive = request.IsActive;
+        app.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        return ToDto(app);
+    }
+
+    public async Task<SsoApplicationDto> RotateSecretAsync(Guid userId, Guid businessId, Guid applicationId)
+    {
+        await RequireManagerAsync(userId, businessId);
+        var app = await GetOwnedApplicationAsync(businessId, applicationId);
+
+        if (!app.IsConfidential)
+        {
+            throw new SsoException("invalid_request", "Public applications do not use a client secret");
+        }
+
+        var secret = SsoCrypto.NewSecret();
+        app.ClientSecretHash = SsoCrypto.Hash(secret);
+        app.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        return ToDto(app, secret);
+    }
+
+    public async Task DeleteApplicationAsync(Guid userId, Guid businessId, Guid applicationId)
+    {
+        await RequireManagerAsync(userId, businessId);
+        var app = await GetOwnedApplicationAsync(businessId, applicationId);
+        await _db.SsoAppAccess.Where(a => a.SsoApplicationId == applicationId).ExecuteDeleteAsync();
+        _db.SsoApplications.Remove(app);
+        await _db.SaveChangesAsync();
+    }
+
+    // -----------------------------------------------------------------------
+    // Helpers
+    // -----------------------------------------------------------------------
+
+    /// <summary>Effective role (see <see cref="BusinessAccess.GetRoleAsync"/>); null when the user has no access.</summary>
+    public Task<string?> GetRoleAsync(Guid userId, Guid businessId) =>
+        BusinessAccess.GetRoleAsync(_db, userId, businessId);
+
+    private async Task<string> RequireMemberAsync(Guid userId, Guid businessId) =>
+        await GetRoleAsync(userId, businessId) ?? throw SsoException.NotFound("Business");
+
+    private async Task<string> RequireManagerAsync(Guid userId, Guid businessId)
+    {
+        var role = await RequireMemberAsync(userId, businessId);
+        if (!BusinessRoles.CanManage(role))
+        {
+            throw SsoException.Forbidden();
+        }
+        return role;
+    }
+
+    private async Task EnsureOwnerRemainsAsync(Guid businessId, Guid changingUserId, string? newRole)
+    {
+        if (newRole == BusinessRoles.Owner)
+        {
+            return;
+        }
+
+        var otherOwners = await _db.BusinessMembers.CountAsync(m =>
+            m.BusinessId == businessId && m.Role == BusinessRoles.Owner && m.UserId != changingUserId);
+
+        var isOwnerNow = await _db.BusinessMembers.AnyAsync(m =>
+            m.BusinessId == businessId && m.UserId == changingUserId && m.Role == BusinessRoles.Owner);
+
+        if (isOwnerNow && otherOwners == 0)
+        {
+            throw new SsoException("last_owner", "A business must keep at least one owner");
+        }
+    }
+
+    private async Task<SsoApplication> GetOwnedApplicationAsync(Guid businessId, Guid applicationId) =>
+        await _db.SsoApplications.FirstOrDefaultAsync(a => a.SsoApplicationId == applicationId && a.BusinessId == businessId)
+        ?? throw SsoException.NotFound("Application");
+
+    private static SsoApplicationDto ToDto(SsoApplication app, string? secret = null) => new()
+    {
+        SsoApplicationId = app.SsoApplicationId,
+        BusinessId = app.BusinessId,
+        Name = app.Name,
+        ClientId = app.ClientId,
+        IsConfidential = app.IsConfidential,
+        RedirectUris = app.GetRedirectUris().ToList(),
+        RequireMembership = app.RequireMembership,
+        RequireApprovedCategory = app.RequireApprovedCategory,
+        TokenLifetimeMinutes = app.TokenLifetimeMinutes,
+        IsActive = app.IsActive,
+        CreatedAt = app.CreatedAt,
+        ClientSecret = secret
+    };
+
+    /// <summary>
+    /// Redirect URIs must be absolute, have no fragment, and use HTTPS unless they point
+    /// at a loopback host. Custom schemes (e.g. "myapp://callback") are allowed for mobile apps.
+    /// </summary>
+    public static List<string> ValidateRedirectUris(IEnumerable<string> uris)
+    {
+        var result = new List<string>();
+        foreach (var raw in uris.Select(u => u?.Trim()).Where(u => !string.IsNullOrEmpty(u)))
+        {
+            if (!Uri.TryCreate(raw, UriKind.Absolute, out var uri))
+            {
+                throw new SsoException("invalid_redirect_uri", $"'{raw}' is not an absolute URI");
+            }
+
+            if (!string.IsNullOrEmpty(uri.Fragment))
+            {
+                throw new SsoException("invalid_redirect_uri", $"'{raw}' must not contain a fragment");
+            }
+
+            var scheme = uri.Scheme.ToLowerInvariant();
+            if (scheme is "javascript" or "data" or "file" or "vbscript")
+            {
+                throw new SsoException("invalid_redirect_uri", $"'{raw}' uses a forbidden scheme");
+            }
+
+            if (scheme == "http" && !uri.IsLoopback)
+            {
+                throw new SsoException("invalid_redirect_uri", $"'{raw}' must use https (http is only allowed for localhost)");
+            }
+
+            result.Add(raw!);
+        }
+
+        if (result.Count == 0)
+        {
+            throw new SsoException("invalid_redirect_uri", "At least one redirect URI is required");
+        }
+
+        return result.Distinct(StringComparer.Ordinal).ToList();
+    }
+
+    private static string Slugify(string value)
+    {
+        var slug = Regex.Replace(value.Trim().ToLowerInvariant(), "[^a-z0-9]+", "-").Trim('-');
+        return slug.Length > 100 ? slug[..100].Trim('-') : slug;
+    }
+}

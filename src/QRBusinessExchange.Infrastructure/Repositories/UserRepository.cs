@@ -120,6 +120,8 @@ public class UserRepository : IUserRepository
                 return false;
             }
 
+            // Other people's contact entries for this user (their own list is removed by cascade).
+            await _context.Contacts.Where(c => c.ContactUserId == userId).ExecuteDeleteAsync();
             _context.Users.Remove(user);
             await _context.SaveChangesAsync();
 

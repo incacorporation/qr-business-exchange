@@ -231,15 +231,37 @@ Create `/var/www/qrbusiness/api/appsettings.Production.json`:
 ```json
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Server=incacorporation.net;Database=www.qrbound.com;User Id=ssoAdministrator;Password=8^7lhy1F;TrustServerCertificate=True;Encrypt=False;"
+    "DefaultConnection": "Server=tcp:incacorporation.net,1433;Database=www.qrbound.com;User Id=ssoAdministrator;Encrypt=Mandatory;TrustServerCertificate=False;Connect Timeout=30;Persist Security Info=False"
   },
   "JwtSettings": {
-    "SecretKey": "your-production-secret-key-min-32-chars",
     "Issuer": "QRBusinessExchange",
-    "Audience": "QRBusinessExchange"
+    "Audience": "QRBusinessExchangeAPI"
   }
 }
 ```
+
+Secrets are not in this file. Put them in the service's environment, readable only by root
+(`sudo systemctl edit qrbusiness-api`):
+```ini
+[Service]
+Environment=Database__Password=<password>
+Environment=JwtSettings__SecretKey=<output of: openssl rand -base64 64 | tr -d '\n'>
+Environment=EmailSettings__SmtpPassword=<password of the noreply@qrbound.com mailbox>
+# Only if you need POST /api/auth/register-admin; leave it out to keep that endpoint switched off.
+# Environment=Admin__RegistrationSecret=<output of: openssl rand -base64 32>
+```
+
+The API refuses to start if `JwtSettings__SecretKey` is missing, shorter than 32 bytes or a sample value.
+Use a different key in production than in development, and changing it signs everyone out.
+
+Password-reset links are signed with ASP.NET Core Data Protection keys. Persist them so links survive restarts,
+for example by mounting a volume and calling `PersistKeysToFileSystem` in `Program.cs`.
+
+SQL Server (Docker container `sqlDB`, port 1433) uses a Let's Encrypt certificate for `incacorporation.net`
+and forces encryption, so the API verifies the server's identity (`TrustServerCertificate=False`).
+The certificate is renewed by certbot on the host; its deploy hook
+(`/etc/letsencrypt/renewal-hooks/deploy/mssql.sh`) must copy the new files into the container and restart it,
+otherwise connections fail once the old certificate expires.
 
 ## Step 10: Monitoring & Logs
 

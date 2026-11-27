@@ -1,0 +1,71 @@
+/* Square camera view with a framing guide */
+.scan-viewfinder {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    border-radius: 1rem;
+    background: #0c1530;
+}
+
+.scan-video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.scan-frame {
+    position: absolute;
+    inset: 15%;
+    border-radius: 0.75rem;
+    box-shadow: 0 0 0 100vmax rgba(12, 21, 48, 0.45); /* dims everything outside the frame */
+    border: 3px solid rgba(255, 255, 255, 0.9);
+}
+
+.scan-viewfinder.is-live .scan-frame {
+    animation: scan-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes scan-pulse {
+    0%, 100% { border-color: rgba(255, 255, 255, 0.9); }
+    50%      { border-color: #FFFF00; }
+}
+
+.scan-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(12, 21, 48, 0.55);
+}
+
+.scan-status {
+    margin: 0.85rem 0 0;
+    text-align: center;
+    font-weight: 500;
+}
+
+.scan-photo {
+    margin-top: 1.25rem;
+    text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .scan-viewfinder.is-live .scan-frame { animation: none; }
+}
+
+/* Compact: a 4:3 view so more of the page shows under it; the framing guide stays square. */
+.qr-scanner--compact .scan-viewfinder {
+    aspect-ratio: 4 / 3;
+}
+
+.qr-scanner--compact .scan-frame {
+    inset: auto;
+    top: 50%;
+    left: 50%;
+    width: 56%;
+    aspect-ratio: 1 / 1;
+    transform: translate(-50%, -50%);
+}

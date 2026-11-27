@@ -1,0 +1,343 @@
+@page "/login"
+@layout AuthLayout
+@using QRBusinessExchange.Core.DTOs
+@using QRBusinessExchange.Client.Services
+@using QRBusinessExchange.Client.Components.Auth
+@inject ApiService ApiService
+@inject StateService StateService
+@inject NavigationManager Navigation
+@inject IndexedDBService IndexedDB
+@inject PortalAuthService PortalAuth
+@inject IJSRuntime JS
+
+<PageTitle>Log in - qrbound</PageTitle>
+
+<div class="auth-narrow">
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger auth-alert d-flex align-items-start gap-2" role="alert">
+            <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+            <span class="flex-grow-1">@errorMessage</span>
+            <button type="button" class="btn-close btn-sm" aria-label="Dismiss" @onclick="@(() => errorMessage = string.Empty)"></button>
+        </div>
+    }
+
+    @if (QrFirst)
+    {
+        @* A device is registered: lead with "scan with your phone"; email and password stay one tap away. *@
+        <div class="auth-panel">
+            <QrLoginPanel OnSuccess="HandlePasskeySuccess" />
+        </div>
+
+        <div class="auth-or">OR</div>
+
+        @PasskeyButton
+    }
+    else
+    {
+    <EditForm Model="loginRequest" OnValidSubmit="HandleLogin">
+        <DataAnnotationsValidator />
+
+        <div class="auth-field">
+            <label for="email" class="visually-hidden">Email</label>
+            <InputText id="email"
+                       type="email"
+                       @bind-Value="loginRequest.Email"
+                       class="form-control auth-input"
+                       placeholder="Email"
+                       autocomplete="username webauthn"
+                       disabled="@isLoading" />
+            <ValidationMessage For="@(() => loginRequest.Email)" />
+        </div>
+
+        <div class="auth-field">
+            <label for="password" class="visually-hidden">Password</label>
+            <InputText id="password"
+                       type="password"
+                       @bind-Value="loginRequest.Password"
+                       class="form-control auth-input"
+                       placeholder="Password"
+                       autocomplete="current-password"
+                       disabled="@isLoading" />
+            <ValidationMessage For="@(() => loginRequest.Password)" />
+        </div>
+
+        <label class="auth-check" for="rememberMe">
+            <input type="checkbox" id="rememberMe" disabled="@isLoading" />
+            Remember me
+        </label>
+
+        <button type="submit" class="auth-btn" disabled="@isLoading">
+            @if (isLoading && !passkeyInProgress)
+            {
+                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                <span>Logging in…</span>
+            }
+            else
+            {
+                <span>Log in</span>
+            }
+        </button>
+    </EditForm>
+
+    <div class="auth-or">OR</div>
+
+    @PasskeyButton
+
+    @if (showQr)
+    {
+        <div class="auth-panel mt-3">
+            <QrLoginPanel OnSuccess="HandlePasskeySuccess" />
+        </div>
+    }
+    }
+
+    <hr class="auth-divider" />
+
+    <nav class="auth-links" aria-label="Account help">
+        @if (QrFirst)
+        {
+            <button type="button" class="auth-link-btn" @onclick="() => showForm = true" disabled="@isLoading">
+                Log in with email and password
+            </button>
+        }
+        <a href="/forgot-password">Forgot your password?</a>
+        <a href="@RegisterHref">Register as a new user</a>
+        <a href="/email-verification">Resend email confirmation</a>
+        @if (!QrFirst)
+        {
+            <button type="button" class="auth-link-btn" @onclick="() => showQr = !showQr" disabled="@isLoading">
+                @(showQr ? "Hide the QR code" : "Log in with your phone camera")
+            </button>
+        }
+    </nav>
+</div>
+
+@code {
+[SupplyParameterFromQuery(Name = "returnUrl")] public string? ReturnUrl { get; set; }
+
+private LoginRequest loginRequest = new();
+private string errorMessage = string.Empty;
+private bool isLoading = false;
+private bool passkeyInProgress = false;
+private bool showQr = false;
+
+// Default view: the phone-camera QR code when this browser knows a device is registered and the screen is a
+// computer's (a phone can't scan its own screen); otherwise email and password. showForm switches to the form.
+private bool deviceRegistered;
+private bool showForm;
+private bool QrFirst => deviceRegistered && !showForm;
+
+private RenderFragment PasskeyButton => @<button type="button" class="auth-btn" @onclick="HandleAnyPasskeyLogin" disabled="@isLoading">
+    @if (passkeyInProgress)
+    {
+        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+        <span>Waiting for your passkey…</span>
+    }
+    else
+    {
+        <span>Log in with a passkey</span>
+    }
+</button>;
+
+private string RegisterHref => SafeReturnUrl == null ? "/register" : $"/register?returnUrl={Uri.EscapeDataString(SafeReturnUrl)}";
+
+protected override async Task OnInitializedAsync()
+{
+    // If already signed in with a token that hasn't expired, go to the dashboard (or where the user was going).
+    // An expired session must show the form, otherwise the user bounces between here and the dashboard.
+    await StateService.InitializeAsync();
+    if (await PortalAuth.GetSessionStateAsync() == PortalSessionState.Active && StateService.CurrentUser != null)
+    {
+        Navigation.NavigateTo(SafeReturnUrl ?? "/dashboard");
+        return;
+    }
+
+    deviceRegistered = await PortalAuth.HasRegisteredDeviceAsync() &&
+                       !await JS.InvokeAsync<bool>("qrScanner.isMobile");
+}
+
+    /// <summary>Only allow same-site relative return URLs (prevents open redirects).</summary>
+    private string? SafeReturnUrl =>
+        !string.IsNullOrEmpty(ReturnUrl) && ReturnUrl.StartsWith('/') && !ReturnUrl.StartsWith("//") && !ReturnUrl.StartsWith("/\\")
+            ? ReturnUrl
+            : null;
+
+    private void NavigateAfterLogin(UserProfileDto user)
+    {
+        if (SafeReturnUrl != null)
+        {
+            Navigation.NavigateTo(SafeReturnUrl);
+        }
+        else
+        {
+            Navigation.NavigateTo(user.IsEmailVerified ? "/dashboard" : "/email-verification");
+        }
+    }
+
+    private async Task HandleAnyPasskeyLogin()
+    {
+        isLoading = true;
+        passkeyInProgress = true;
+        errorMessage = string.Empty;
+        try
+        {
+            // With an email typed in, offer that account's passkeys; otherwise let the
+            // browser list every passkey saved for this site.
+            var email = loginRequest.Email?.Trim();
+            var auth = await PortalAuth.SignInWithPasskeyAsync(
+                !string.IsNullOrEmpty(email) && email.Contains('@') ? email : null);
+            NavigateAfterLogin(auth.User);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = PortalAuthService.Describe(ex);
+        }
+        finally
+        {
+            isLoading = false;
+            passkeyInProgress = false;
+        }
+    }
+
+    private async Task HandleLogin()
+    {
+        Console.WriteLine("=== HandleLogin STARTED ===");
+        
+        isLoading = true;
+        errorMessage = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            Console.WriteLine($"Calling API: api/auth/login with email: {loginRequest.Email}");
+            var response = await ApiService.PostAsync("api/auth/login", loginRequest);
+            
+            Console.WriteLine($"API Response Status: {response.StatusCode}");
+            
+            if (response.IsSuccessStatusCode)
+            {
+                Console.WriteLine("Parsing response...");
+                var result = await ApiService.ParseResponseAsync<AuthResponse>(response);
+
+                if (result != null && !string.IsNullOrEmpty(result.AccessToken))
+                {
+                    Console.WriteLine("=== LOGIN SUCCESS ===");
+                    Console.WriteLine($"User: {result.User.Email}");
+                    
+                    // Update state
+                    StateService.CurrentUser = new UserProfileDto
+                    {
+                        UserId = result.User.UserId,
+                        Email = result.User.Email,
+                        FirstName = result.User.FirstName,
+                        LastName = result.User.LastName,
+                        CompanyName = result.User.CompanyName,
+                        PhoneNumber = result.User.PhoneNumber,
+                        ProfileImageUrl = result.User.ProfileImageUrl,
+                        Bio = result.User.Bio,
+                        Skills = result.User.Skills,
+                        ServicePricing = result.User.ServicePricing,
+                        IsEmailVerified = result.User.IsEmailVerified,
+                        Role = result.User.Role,
+                        CreatedAt = result.User.CreatedAt
+                    };
+                    
+                    StateService.IsAuthenticated = true;
+                    Console.WriteLine("StateService updated with user data and auth status");
+                    
+                    // Save tokens to localStorage
+                    await IndexedDB.SetItemAsync("authToken", result.AccessToken);
+                    await IndexedDB.SetItemAsync("userId", result.User.UserId.ToString());
+                    
+                    NavigateAfterLogin(result.User);
+                }
+                else
+                {
+                    errorMessage = "Invalid response from server. Please try again.";
+                }
+            }
+            else
+            {
+                Console.WriteLine($"Login failed - Status: {response.StatusCode}");
+                
+                // User-friendly error messages
+                errorMessage = response.StatusCode switch
+                {
+                    System.Net.HttpStatusCode.Unauthorized => "Invalid email or password. Please check your credentials.",
+                    System.Net.HttpStatusCode.TooManyRequests => "Too many login attempts. Please try again later.",
+                    System.Net.HttpStatusCode.ServiceUnavailable => "Service temporarily unavailable. Please try again.",
+                    _ => "Unable to sign in. Please try again or contact support."
+                };
+            }
+        }
+        catch (HttpRequestException httpEx)
+        {
+            Console.WriteLine($"HTTP error: {httpEx.Message}");
+            errorMessage = "Network error. Please check your internet connection and try again.";
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Login error: {ex.Message}");
+            errorMessage = "An unexpected error occurred. Please try again.";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandlePasskeySuccess(AuthResponse result)
+    {
+        try
+        {
+            Console.WriteLine("=== PASSKEY LOGIN SUCCESS ===");
+            Console.WriteLine($"User: {result.User.Email}");
+
+            // Update state
+            StateService.CurrentUser = new UserProfileDto
+            {
+                UserId = result.User.UserId,
+                Email = result.User.Email,
+                FirstName = result.User.FirstName,
+                LastName = result.User.LastName,
+                CompanyName = result.User.CompanyName,
+                PhoneNumber = result.User.PhoneNumber,
+                ProfileImageUrl = result.User.ProfileImageUrl,
+                Bio = result.User.Bio,
+                Skills = result.User.Skills,
+                ServicePricing = result.User.ServicePricing,
+                IsEmailVerified = result.User.IsEmailVerified,
+                Role = result.User.Role,
+                CreatedAt = result.User.CreatedAt
+            };
+
+            StateService.IsAuthenticated = true;
+            Console.WriteLine("StateService updated with user data and auth status");
+
+            // Save tokens to localStorage
+            await IndexedDB.SetItemAsync("authToken", result.AccessToken);
+            await IndexedDB.SetItemAsync("userId", result.User.UserId.ToString());
+
+            NavigateAfterLogin(result.User);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error handling passkey success: {ex.Message}");
+            errorMessage = "An error occurred during authentication";
+        }
+    }
+
+    public class LoginRequest
+    {
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Enter your email")]
+        [System.ComponentModel.DataAnnotations.EmailAddress(ErrorMessage = "Enter a valid email address")]
+        public string Email { get; set; } = "";
+
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Enter your password")]
+        public string Password { get; set; } = "";
+    }
+}
+
+

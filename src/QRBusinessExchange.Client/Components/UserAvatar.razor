@@ -1,0 +1,53 @@
+@inject StateService StateService
+@inject ProfilePictureCache Pictures
+@implements IDisposable
+
+@* The signed-in user's profile picture or logo, or the person icon when they have none. *@
+
+<span class="user-avatar @CssClass" style="--avatar-size: @Size" aria-hidden="true">
+    @if (src != null)
+    {
+        <img src="@src" alt="" />
+    }
+    else
+    {
+        <i class="bi bi-person-circle"></i>
+    }
+</span>
+
+@code {
+    /// <summary>Width and height, e.g. "1.5rem".</summary>
+    [Parameter] public string Size { get; set; } = "1.5rem";
+
+    [Parameter] public string? CssClass { get; set; }
+
+    private string? src;
+    private string? loadedFor;
+
+    protected override async Task OnInitializedAsync()
+    {
+        StateService.OnStateChanged += OnStateChanged;
+        await RefreshAsync();
+    }
+
+    // The picture changes when the profile does (upload, removal, or a refresh from another device).
+    private void OnStateChanged() => _ = InvokeAsync(async () =>
+    {
+        await RefreshAsync();
+        StateHasChanged();
+    });
+
+    private async Task RefreshAsync()
+    {
+        var url = StateService.IsAuthenticated ? StateService.CurrentUser?.ProfileImageUrl : null;
+        if (url == loadedFor && (src != null || url == null))
+        {
+            return;
+        }
+
+        loadedFor = url;
+        src = await Pictures.GetAsync(url);
+    }
+
+    public void Dispose() => StateService.OnStateChanged -= OnStateChanged;
+}

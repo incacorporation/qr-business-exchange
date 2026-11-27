@@ -1,0 +1,546 @@
+@page "/pay/{PaymentId:guid}"
+@using System.Globalization
+@implements IDisposable
+@inject QrboundPaymentsClient Payments
+@inject ApiService ApiService
+@inject PortalAuthService PortalAuth
+
+@* Where a payment QR code leads. The customer checks the bill, adds a tip if the business takes them,
+   and pays one of two ways:
+   - with a saved card, approved by their fingerprint or face (signed in, with a passkey). The
+     fingerprint signs this exact total; qrbound's server then charges it through CardPointe.
+   - with a card on Fiserv's CardPointe Hosted Payment Page, where the customer submits the payment
+     to Fiserv themselves (or, where no hosted page is set up, in CardPointe's card fields here).
+   Both charge the total of the same locked quote. *@
+
+<PageTitle>Pay - qrbound</PageTitle>
+
+<div class="py-3 px-2">
+    @if (info?.Status != QrPaymentStates.Open)
+    {
+        @* Loading problems and every final state (paid, expired, cancelled…) are shown by QrboundPayLink. *@
+        <QrboundPayLink @key="payLinkKey" PaymentId="PaymentId" />
+    }
+    else
+    {
+        <div class="fp-checkout mb-3">
+            <div class="fp-head">
+                <p class="fp-business">@info.BusinessName</p>
+                <p class="fp-amount">@Money(TotalCents)</p>
+                @if (TipCents > 0)
+                {
+                    <p class="fp-desc">Bill @Money(info.AmountCents) + tip @Money(TipCents)</p>
+                }
+                @if (!string.IsNullOrEmpty(info.Description)) { <p class="fp-desc">@info.Description</p> }
+            </div>
+
+            <div class="fp-body">
+                @if (info.TipsEnabled && step == Step.Choose)
+                {
+                    <p class="fp-label">Add a tip</p>
+                    <div class="fp-tips" role="group" aria-label="Tip">
+                        <button type="button" class="fp-tip @(tipChoice == NoTip ? "fp-tip-on" : null)" disabled="@busy" @onclick="() => ChooseTip(NoTip)">
+                            <span>No tip</span>
+                        </button>
+                        @foreach (var p in info.TipPercentages)
+                        {
+                            var percent = p;
+                            <button type="button" class="fp-tip @(tipChoice == percent ? "fp-tip-on" : null)" disabled="@busy" @onclick="() => ChooseTip(percent)">
+                                <span>@percent%</span><small>@Money(QrPaymentInfo.TipFor(info.AmountCents, percent))</small>
+                            </button>
+                        }
+                        @if (info.AllowCustomTip)
+                        {
+                            <button type="button" class="fp-tip @(tipChoice == CustomTip ? "fp-tip-on" : null)" disabled="@busy" @onclick="() => ChooseTip(CustomTip)">
+                                <span>Other</span>
+                            </button>
+                        }
+                    </div>
+                    @if (tipChoice == CustomTip)
+                    {
+                        <div class="input-group input-group-sm mt-2">
+                            <span class="input-group-text">$</span>
+                            <input class="form-control" inputmode="decimal" placeholder="0.00" aria-label="Tip amount"
+                                   @bind="customTipText" @bind:event="oninput" disabled="@busy" />
+                        </div>
+                        <p class="fp-small">Up to @Money(MaxTipCents)</p>
+                    }
+                }
+
+                @if (!string.IsNullOrEmpty(error))
+                {
+                    <div class="alert alert-warning small mt-3 mb-0 text-start" role="alert">@error</div>
+                }
+
+                @if (step == Step.Choose)
+                {
+                    @if (ShowFingerprint)
+                    {
+                        <p class="fp-label mt-3">Pay with a saved card</p>
+                        @foreach (var c in usableCards)
+                        {
+                            <label class="fp-card @(c.Id == selectedCardId ? "fp-card-selected" : null)">
+                                <input type="radio" name="fp-card" checked="@(c.Id == selectedCardId)" disabled="@busy"
+                                       @onchange="() => selectedCardId = c.Id" />
+                                <i class="bi bi-credit-card-2-front"></i>
+                                <span>@SavedCards.Brand(c.CardBrand) ending @c.Last4</span>
+                                <span class="fp-exp">@c.Expiry[..2]/@c.Expiry[2..]</span>
+                            </label>
+                        }
+
+                        <button type="button" class="fp-button" disabled="@(busy || !TipIsValid)" @onclick="PayWithFingerprintAsync">
+                            @if (busy && busyAction == nameof(PayWithFingerprintAsync))
+                            {
+                                <span class="spinner-border spinner-border-sm me-2"></span><text>@busyText</text>
+                            }
+                            else
+                            {
+                                <i class="bi bi-fingerprint fp-icon"></i>
+                                <span>Pay @Money(TotalCents)</span>
+                            }
+                        </button>
+                        <p class="fp-hint">Confirm the payment with your fingerprint or face.</p>
+                        <p class="fp-or">or</p>
+                    }
+
+                    <button type="button" class="btn @(ShowFingerprint ? "btn-outline-primary" : "btn-primary") w-100 mt-2"
+                            disabled="@(busy || !TipIsValid)" @onclick="PayWithCardAsync">
+                        @if (busy && busyAction == nameof(PayWithCardAsync))
+                        {
+                            <span class="spinner-border spinner-border-sm me-2"></span>
+                        }
+                        <i class="bi bi-credit-card me-1"></i> Pay @Money(TotalCents) with a card
+                    </button>
+                    <p class="fp-small mt-1">
+                        @(info.HostedPageAvailable
+                            ? "You'll pay on Fiserv's secure CardPointe page."
+                            : "Card details go into CardPointe's secure card fields.")
+                    </p>
+
+                    @if (info.HostedPageStarted)
+                    {
+                        <p class="fp-small mt-2">
+                            Already paid on the secure card page?
+                            <button type="button" class="btn btn-link btn-sm p-0 align-baseline" disabled="@busy" @onclick="() => CheckHostedAsync(true)">Check now</button>
+                        </p>
+                    }
+                }
+                else if (step == Step.Hosted)
+                {
+                    <p class="fp-label mt-1">Pay on Fiserv's secure page</p>
+                    <a class="btn btn-primary w-100" href="@hosted!.Url" target="_blank" rel="noopener noreferrer">
+                        <i class="bi bi-box-arrow-up-right me-1"></i> Open the secure card page
+                    </a>
+                    <p class="fp-small mt-2">
+                        It opens in a new tab with @Money(hosted.TotalCents) and invoice @hosted.InvoiceNumber filled in.
+                        Please don't change the amount there. Come back to this tab when you're done.
+                    </p>
+                    <div class="fp-waiting">
+                        <span class="spinner-border spinner-border-sm me-2"></span> Waiting for your payment…
+                    </div>
+                    <button type="button" class="btn btn-outline-primary btn-sm w-100 mt-2" disabled="@busy" @onclick="() => CheckHostedAsync(true)">
+                        I've paid. Check now
+                    </button>
+                    <button type="button" class="btn btn-link btn-sm w-100" disabled="@busy" @onclick="BackToChoose">Change the tip or how I pay</button>
+                }
+            </div>
+        </div>
+
+        @if (step == Step.Card)
+        {
+            <QrboundPayLink @key="payLinkKey" PaymentId="PaymentId" Quote="quote" OnPaid="OnPaidByCard" />
+            <button type="button" class="btn btn-link w-100" @onclick="BackToChoose">Change the tip or how I pay</button>
+        }
+
+        @if (step == Step.Choose && info.SavedCardsAccepted)
+        {
+            if (signedIn && usableCards.Count == 0 && cardsLoaded)
+            {
+                <p class="text-center small mt-3">
+                    <a href="@($"/saved-cards?returnUrl={Uri.EscapeDataString($"/pay/{PaymentId}")}")">
+                        <i class="bi bi-fingerprint"></i> Save a card to pay with your fingerprint
+                    </a>
+                </p>
+            }
+            else if (!signedIn)
+            {
+                <p class="text-center small mt-3 text-muted">
+                    Have a qrbound account with a saved card?
+                    <a href="@($"/login?returnUrl={Uri.EscapeDataString($"/pay/{PaymentId}")}")">Sign in</a> to pay with your fingerprint.
+                </p>
+            }
+        }
+    }
+</div>
+
+<style>
+    .fp-checkout { max-width: 26rem; margin: 0 auto; border-radius: .75rem; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,.08); font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    .fp-head { background: #f5b82e; color: #fff; text-align: center; padding: 1rem; }
+    .fp-business { margin: 0; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+    .fp-amount { margin: .25rem 0 0; font-size: 2.25rem; font-weight: 700; color: #1d2939; }
+    .fp-desc { margin: .15rem 0 0; font-size: .875rem; color: #1d2939; opacity: .8; }
+    .fp-body { background: #d6ecfa; padding: 1.25rem; text-align: center; }
+    .fp-label { text-align: left; font-size: .8125rem; color: #475467; margin: 0 0 .4rem; }
+    .fp-small { font-size: .75rem; color: #475467; margin: .25rem 0 0; }
+    .fp-tips { display: grid; grid-template-columns: repeat(auto-fit, minmax(4.25rem, 1fr)); gap: .4rem; }
+    .fp-tip { display: flex; flex-direction: column; align-items: center; background: #fff; border: 2px solid transparent; border-radius: .5rem; padding: .45rem .25rem; font-weight: 600; color: #1d2939; }
+    .fp-tip small { font-weight: 400; color: #667085; }
+    .fp-tip-on { border-color: #2e90fa; }
+    .fp-card { display: flex; align-items: center; gap: .6rem; background: #fff; border: 2px solid transparent; border-radius: .5rem; padding: .6rem .75rem; margin-bottom: .5rem; cursor: pointer; text-align: left; }
+    .fp-card input { accent-color: #2e90fa; }
+    .fp-card-selected { border-color: #2e90fa; }
+    .fp-exp { margin-left: auto; color: #667085; font-size: .8125rem; }
+    .fp-button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .35rem; width: 9rem; height: 9rem; margin: 1.25rem auto .5rem; border-radius: 1rem; border: 2px solid #fff; background: #2e90fa; color: #fff; font-weight: 600; cursor: pointer; }
+    .fp-button:disabled { opacity: .7; cursor: progress; flex-direction: row; font-size: .875rem; }
+    .fp-icon { font-size: 3.5rem; line-height: 1; }
+    .fp-hint { margin: 0; font-size: .8125rem; color: #1d2939; text-transform: uppercase; letter-spacing: .04em; }
+    .fp-or { margin: .75rem 0 0; font-size: .8125rem; color: #667085; }
+    .fp-waiting { margin-top: 1rem; font-size: .875rem; color: #1d2939; }
+</style>
+
+@code {
+    [Parameter] public Guid PaymentId { get; set; }
+
+    private enum Step { Choose, Card, Hosted }
+
+    private const int NoTip = 0;
+    private const int CustomTip = -1;
+
+    private QrPaymentInfo? info;
+    private bool signedIn;
+    private bool cardsLoaded;
+    private List<SavedCardDto> usableCards = new();
+    private Guid selectedCardId;
+    private Step step = Step.Choose;
+    private int tipChoice = NoTip;
+    private string customTipText = string.Empty;
+    private QrPaymentQuote? quote;
+    private HostedPageStart? hosted;
+    private bool busy;
+    private string busyAction = string.Empty;
+    private string busyText = string.Empty;
+    private string? error;
+    private int payLinkKey;
+    private Timer? poll;
+    private int pollTicks;
+
+    private bool ShowFingerprint => info?.Status == QrPaymentStates.Open && info.SavedCardsAccepted && usableCards.Count > 0;
+
+    private long MaxTipCents => info is null ? 0 : QrPaymentInfo.TipFor(info.AmountCents, info.MaxTipPercent);
+
+    /// <summary>The tip chosen, in cents; null while a typed tip can't be read.</summary>
+    private long? ChosenTipCents
+    {
+        get
+        {
+            if (info is null || !info.TipsEnabled || tipChoice == NoTip)
+            {
+                return 0;
+            }
+
+            if (tipChoice != CustomTip)
+            {
+                return QrPaymentInfo.TipFor(info.AmountCents, tipChoice);
+            }
+
+            if (string.IsNullOrWhiteSpace(customTipText))
+            {
+                return 0;
+            }
+
+            return decimal.TryParse(customTipText.Trim().TrimStart('$'), NumberStyles.Number, CultureInfo.InvariantCulture, out var dollars) && dollars >= 0
+                ? (long)Math.Round(dollars * 100m, MidpointRounding.AwayFromZero)
+                : null;
+        }
+    }
+
+    private bool TipIsValid => ChosenTipCents is { } t && (t == 0 || (info?.TipsEnabled == true && t <= MaxTipCents));
+
+    /// <summary>After choosing how to pay, the quote's tip; before, the tip being chosen.</summary>
+    private long TipCents => step != Step.Choose && quote is not null ? quote.TipCents : ChosenTipCents ?? 0;
+
+    private long TotalCents => (info?.AmountCents ?? 0) + TipCents;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        try
+        {
+            info = await Payments.GetQrPaymentAsync(PaymentId);
+        }
+        catch (HttpRequestException)
+        {
+            info = null; // QrboundPayLink shows the problem and a retry
+        }
+
+        signedIn = await PortalAuth.HasSessionAsync();
+        if (signedIn && info?.Status == QrPaymentStates.Open && info.SavedCardsAccepted)
+        {
+            var cards = await ApiService.GetAsync<List<SavedCardDto>>("api/saved-cards") ?? new();
+            usableCards = cards.Where(c => !c.IsExpired).ToList();
+            selectedCardId = usableCards.FirstOrDefault()?.Id ?? Guid.Empty;
+            cardsLoaded = true;
+        }
+    }
+
+    private void ChooseTip(int choice)
+    {
+        tipChoice = choice;
+        error = null;
+    }
+
+    /// <summary>Locks the chosen tip into a quote on the server.</summary>
+    private async Task<QrPaymentQuote?> LockQuoteAsync()
+    {
+        if (ChosenTipCents is not { } tip)
+        {
+            error = "Enter the tip as an amount, like 5.00.";
+            return null;
+        }
+
+        try
+        {
+            return quote = await Payments.QuoteQrPaymentAsync(PaymentId, tip);
+        }
+        catch (QrboundPaymentException ex)
+        {
+            error = ex.Message;
+            await RefreshAsync();
+            return null;
+        }
+    }
+
+    private async Task PayWithFingerprintAsync()
+    {
+        Begin(nameof(PayWithFingerprintAsync));
+        try
+        {
+            busyText = "Checking the total…";
+            if (await LockQuoteAsync() is not { } q)
+            {
+                return;
+            }
+
+            busyText = "Waiting for your fingerprint…";
+            var init = await ApiService.PostAsync($"api/pay/{PaymentId}/saved-card/init",
+                new SavedCardPayInitRequest { SavedCardId = selectedCardId, QuoteId = q.QuoteId });
+            if (!init.IsSuccessStatusCode)
+            {
+                error = await ApiService.ReadErrorAsync(init, "Fingerprint checkout isn't available for this payment.");
+                return;
+            }
+
+            var options = await ApiService.ParseResponseAsync<PasskeyAuthenticationOptionsDto>(init)
+                ?? throw new InvalidOperationException("Invalid passkey options.");
+
+            AssertionResponseDto assertion;
+            try
+            {
+                assertion = await PortalAuth.AssertAsync(options);
+            }
+            catch (Exception)
+            {
+                error = "The fingerprint check was cancelled or didn't work. Nothing was charged.";
+                return;
+            }
+
+            busyText = "Paying…";
+            var pay = await ApiService.PostAsync($"api/pay/{PaymentId}/saved-card", new SavedCardPayRequest
+            {
+                SavedCardId = selectedCardId,
+                QuoteId = q.QuoteId,
+                Challenge = options.Challenge,
+                Assertion = assertion
+            });
+
+            if (!pay.IsSuccessStatusCode)
+            {
+                error = await ApiService.ReadErrorAsync(pay, "The payment couldn't be made.");
+                await RefreshAsync();
+                return;
+            }
+
+            var result = await ApiService.ParseResponseAsync<CardPaymentResult>(pay);
+            if (result?.IsSuccess != true)
+            {
+                error = result?.ErrorMessage ?? "The card was declined.";
+            }
+
+            await RefreshAsync();
+        }
+        catch (HttpRequestException)
+        {
+            error = "We couldn't confirm the payment. Check before trying again.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task PayWithCardAsync()
+    {
+        Begin(nameof(PayWithCardAsync));
+        try
+        {
+            if (await LockQuoteAsync() is not { } q)
+            {
+                return;
+            }
+
+            if (!info!.HostedPageAvailable)
+            {
+                step = Step.Card;
+                payLinkKey++;
+                return;
+            }
+
+            hosted = await Payments.StartHostedPaymentAsync(PaymentId, q.QuoteId);
+            step = Step.Hosted;
+            StartPolling();
+        }
+        catch (QrboundPaymentException ex)
+        {
+            error = ex.Message;
+        }
+        catch (HttpRequestException)
+        {
+            error = "We couldn't reach qrbound. Check your connection and try again.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    /// <summary>Asks the server to check with CardPointe whether the hosted page payment went through.</summary>
+    private async Task CheckHostedAsync(bool userAsked)
+    {
+        if (userAsked)
+        {
+            Begin(nameof(CheckHostedAsync));
+        }
+
+        try
+        {
+            info = await Payments.CheckHostedPaymentAsync(PaymentId);
+            if (info.Status != QrPaymentStates.Open)
+            {
+                Finish();
+            }
+            else if (userAsked)
+            {
+                error = "We haven't heard from Fiserv yet. If you just paid, wait a moment and check again.";
+            }
+        }
+        catch (Exception ex) when (ex is QrboundPaymentException or HttpRequestException)
+        {
+            if (userAsked)
+            {
+                error = ex.Message;
+            }
+        }
+        finally
+        {
+            if (userAsked)
+            {
+                busy = false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// While the customer pays on the hosted page: reload the bill every 3 seconds (the webhook may
+    /// have marked it paid) and ask CardPointe every 15 seconds, for up to 20 minutes.
+    /// </summary>
+    private void StartPolling()
+    {
+        poll?.Dispose();
+        pollTicks = 0;
+        poll = new Timer(_ => InvokeAsync(async () =>
+        {
+            if (step != Step.Hosted || busy)
+            {
+                return;
+            }
+
+            pollTicks++;
+            if (pollTicks > 400)
+            {
+                StopPolling();
+                return;
+            }
+
+            try
+            {
+                if (pollTicks % 5 == 0)
+                {
+                    await CheckHostedAsync(userAsked: false);
+                }
+                else
+                {
+                    info = await Payments.GetQrPaymentAsync(PaymentId);
+                    if (info?.Status != QrPaymentStates.Open)
+                    {
+                        Finish();
+                    }
+                }
+            }
+            catch (HttpRequestException)
+            {
+                // Try again on the next tick.
+            }
+
+            StateHasChanged();
+        }), null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
+    }
+
+    private void StopPolling()
+    {
+        poll?.Dispose();
+        poll = null;
+    }
+
+    private void BackToChoose()
+    {
+        StopPolling();
+        step = Step.Choose;
+        hosted = null;
+        error = null;
+    }
+
+    private void Begin(string action)
+    {
+        busy = true;
+        busyAction = action;
+        error = null;
+    }
+
+    /// <summary>The bill isn't open any more: QrboundPayLink shows paid (with the tip) or why not.</summary>
+    private void Finish()
+    {
+        StopPolling();
+        step = Step.Choose;
+        error = null;
+        payLinkKey++;
+    }
+
+    private Task OnPaidByCard(CardPaymentResult _) => RefreshAsync();
+
+    private async Task RefreshAsync()
+    {
+        info = await Payments.GetQrPaymentAsync(PaymentId);
+        if (info?.Status != QrPaymentStates.Open)
+        {
+            Finish();
+        }
+    }
+
+    private string Money(long cents)
+    {
+        var currency = info?.Currency ?? "USD";
+        var amount = (cents / 100m).ToString("N2", CultureInfo.InvariantCulture);
+        return currency == "USD" ? "$" + amount : amount + " " + currency;
+    }
+
+    public void Dispose() => StopPolling();
+}
