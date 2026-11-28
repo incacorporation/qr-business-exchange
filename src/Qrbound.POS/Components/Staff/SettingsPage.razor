@@ -1,0 +1,111 @@
+@page "/pos/{RestaurantId:guid}/settings"
+@namespace Qrbound.POS.Components.Staff
+@layout PosStaffLayout
+@rendermode InteractiveServer
+@attribute [Authorize(Policy = QrboundPosDefaults.ManagerPolicy)]
+@inherits RestaurantPageBase
+@inject QrboundBusinessClient Qrbound
+@inject CheckoutService Checkout
+
+<PageTitle>Settings · @(Restaurant?.Name ?? "POS")</PageTitle>
+
+@if (!Loaded) { <span class="spinner" role="status" aria-label="Loading"></span> }
+else if (Restaurant is null || form is null) { <p>Restaurant not found. <a href="pos">All restaurants</a></p> }
+else
+{
+    <StaffNav Restaurant="Restaurant" />
+    @if (Error is not null) { <div class="alert alert-error" role="alert">@Error</div> }
+    @if (Notice is not null) { <div class="alert alert-ok" role="status">@Notice</div> }
+
+    <div class="register" style="grid-template-columns:minmax(0,640px) 1fr">
+        <div class="card">
+            <h2>Restaurant</h2>
+            <div class="field"><label for="s-name">Name</label><input id="s-name" type="text" maxlength="120" @bind="form.Name" /></div>
+            <div class="field">
+                <label for="s-slug">Link name</label>
+                <input id="s-slug" type="text" maxlength="60" @bind="form.Slug" />
+                <div class="hint">Customers' links start /r/@RestaurantService.Slugify(form.Slug). Changing it breaks printed takeaway QR codes and table codes.</div>
+            </div>
+            <div class="field"><label for="s-desc">Description</label><textarea id="s-desc" maxlength="500" @bind="form.Description"></textarea></div>
+            <div class="field"><label for="s-logo">Logo URL</label><input id="s-logo" type="url" maxlength="500" @bind="form.LogoUrl" /></div>
+            <div class="row" style="align-items:flex-start">
+                <div class="field" style="width:120px"><label for="s-cur">Currency</label><input id="s-cur" type="text" maxlength="3" @bind="form.Currency" /></div>
+                <div class="field" style="width:140px"><label for="s-tax">Tax %</label><input id="s-tax" type="text" inputmode="decimal" @bind="taxText" /></div>
+                <div class="field grow">
+                    <label for="s-tz">Time zone</label>
+                    <input id="s-tz" type="text" list="pos-zones" @bind="form.TimeZoneId" />
+                    <datalist id="pos-zones">@foreach (var z in zones) { <option value="@z" /> }</datalist>
+                    <div class="hint">Orders are numbered per day in this zone.</div>
+                </div>
+            </div>
+
+            <h2 style="margin-top:1rem">Ordering</h2>
+            <label class="check field"><input type="checkbox" @bind="form.OnlineOrderingOpen" /> Customers can order from their phones</label>
+            <label class="check field"><input type="checkbox" @bind="form.AllowTakeaway" /> Accept takeaway orders (no table)</label>
+            <label class="check field"><input type="checkbox" @bind="form.PayBeforeKitchen" /> Customers pay before the order goes to the kitchen</label>
+            <p class="hint">Off: phone orders go to the kitchen straight away, and the customer pays from the order page when they're ready (a tab).</p>
+
+            <h2 style="margin-top:1rem">Card payments (qrbound)</h2>
+            <div class="field">
+                <label for="s-biz">qrbound business ID</label>
+                <input id="s-biz" type="text" placeholder="00000000-0000-0000-0000-000000000000" @bind="businessText" />
+                <div class="hint">The qrbound business that takes this restaurant's card payments. The POS's qrbound service account must be a member of it, allowed to take payments. Its currency must be @form.Currency.</div>
+            </div>
+            @if (!Checkout.Simulated && !Qrbound.IsConfigured)
+            {
+                <div class="alert alert-warn small">The POS has no qrbound service account yet (QrboundPos:Qrbound:ServiceAccountEmail / ServiceAccountPassword), so card payments won't work.</div>
+            }
+            @if (Checkout.Simulated)
+            {
+                <div class="alert alert-warn small">Payments are simulated (QrboundPos:Payments:Simulate). Nothing is charged.</div>
+            }
+
+            <button type="button" class="btn btn-primary" @onclick="Save">Save settings</button>
+        </div>
+    </div>
+}
+
+@code {
+    private Restaurant? form;
+    private string? taxText;
+    private string? businessText;
+    private static readonly string[] zones = TimeZoneInfo.GetSystemTimeZones().Select(z => z.Id).ToArray();
+
+    protected override Task LoadAsync()
+    {
+        if (Restaurant is null) return Task.CompletedTask;
+        var r = Restaurant;
+        form = new Restaurant
+        {
+            Id = r.Id, Name = r.Name, Slug = r.Slug, Description = r.Description, LogoUrl = r.LogoUrl,
+            Currency = r.Currency, TaxRatePercent = r.TaxRatePercent, QrboundBusinessId = r.QrboundBusinessId,
+            OnlineOrderingOpen = r.OnlineOrderingOpen, PayBeforeKitchen = r.PayBeforeKitchen,
+            AllowTakeaway = r.AllowTakeaway, TimeZoneId = r.TimeZoneId
+        };
+        taxText = r.TaxRatePercent.ToString("0.###", CultureInfo.InvariantCulture);
+        businessText = r.QrboundBusinessId?.ToString();
+        return Task.CompletedTask;
+    }
+
+    private async Task Save()
+    {
+        if (form is null) return;
+        Error = null;
+        if (!decimal.TryParse(taxText?.Trim().TrimEnd('%'), NumberStyles.Number, CultureInfo.InvariantCulture, out var tax)) { Error = "Type the tax like 8.875."; return; }
+        Guid? business = null;
+        if (!string.IsNullOrWhiteSpace(businessText))
+        {
+            if (!Guid.TryParse(businessText.Trim(), out var b)) { Error = "The qrbound business ID is a GUID, like 3f2b…-…"; return; }
+            business = b;
+        }
+
+        form.TaxRatePercent = tax;
+        form.QrboundBusinessId = business;
+        await Try(() => Restaurants.UpdateAsync(form), "Settings saved.");
+        if (Error is null)
+        {
+            await ReloadRestaurantAsync();
+            await LoadAsync();
+        }
+    }
+}

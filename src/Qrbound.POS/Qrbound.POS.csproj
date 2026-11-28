@@ -1,0 +1,41 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Qrbound.POS</RootNamespace>
+
+    <!-- NuGet package -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Qrbound.POS</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>QRBound</Authors>
+    <Description>A restaurant point of sale for Blazor Web Apps on SQL Server: customers scan a table's QR code, order from the menu on their phone and pay through qrbound; staff run the register, the kitchen screen, the menu and the tables.</Description>
+    <PackageTags>qrbound;pos;point-of-sale;restaurant;qr;blazor;sqlserver</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Server-side library: the pages run with Interactive Server rendering and talk to SQL Server directly. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.2" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.2" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Qrbound.Payments\Qrbound.Payments.csproj" />
+    <!-- Customer sign-in: Pkce, QrboundClient and the token types come from Qrbound.SignIn itself, so
+         reference it directly rather than through Qrbound.SignIn.Server. -->
+    <ProjectReference Include="..\Qrbound.SignIn\Qrbound.SignIn.csproj" />
+    <ProjectReference Include="..\Qrbound.SignIn.Server\Qrbound.SignIn.Server.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <InternalsVisibleTo Include="Qrbound.POS.Tests" />
+  </ItemGroup>
+
+</Project>

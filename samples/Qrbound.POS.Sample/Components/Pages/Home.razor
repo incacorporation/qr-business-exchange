@@ -1,0 +1,23 @@
+@page "/"
+@layout Qrbound.POS.Components.Shared.PosCustomerLayout
+
+<PageTitle>Qrbound POS sample</PageTitle>
+
+<div class="wrap page">
+    <h1>Qrbound POS sample</h1>
+    <p class="muted">A restaurant POS from the Qrbound.POS component library.</p>
+
+    <div class="card stack">
+        <h2>Staff</h2>
+        <p><a href="pos">Open the POS</a>: register, kitchen screen, orders, menu, tables and QR codes. The first time, <a href="pos/setup">set it up</a> with the setup key.</p>
+        <h2>Customers</h2>
+        <p>Customers scan a table's QR code (printed from Tables &amp; QR codes). In development the demo restaurant's tables are:</p>
+        <ul>
+            @for (var n = 1; n <= 6; n++)
+            {
+                <li><a href="@($"r/harbor-street/t/demo{n:00}")">Table @n</a></li>
+            }
+            <li><a href="r/harbor-street">Takeaway</a></li>
+        </ul>
+    </div>
+</div>

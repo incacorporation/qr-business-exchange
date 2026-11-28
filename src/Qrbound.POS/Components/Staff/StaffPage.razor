@@ -1,0 +1,125 @@
+@page "/pos/staff"
+@namespace Qrbound.POS.Components.Staff
+@layout PosStaffLayout
+@rendermode InteractiveServer
+@attribute [Authorize(Policy = QrboundPosDefaults.OwnerPolicy)]
+@using System.Security.Claims
+@inject StaffService Staff
+
+<PageTitle>Staff · POS</PageTitle>
+
+<p><a href="pos">← Restaurants</a></p>
+<h1>Staff</h1>
+<p class="muted">Staff run the register and kitchen. Managers also edit the menu, tables and settings. Owners also manage staff and add restaurants. Every account works in every restaurant of this POS.</p>
+
+@if (error is not null) { <div class="alert alert-error" role="alert">@error</div> }
+@if (notice is not null) { <div class="alert alert-ok" role="status">@notice</div> }
+
+<table class="grid" style="margin-bottom:1rem">
+    <thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Active</th><th>Last sign-in</th><th></th></tr></thead>
+    <tbody>
+        @foreach (var s in staff)
+        {
+            @if (editId == s.Id)
+            {
+                <tr>
+                    <td><input type="text" maxlength="80" aria-label="Name" @bind="editName" /></td>
+                    <td>@s.UserName</td>
+                    <td><select aria-label="Role" @bind="editRole">@foreach (var r in Enum.GetValues<StaffRole>()) { <option value="@r">@r</option> }</select></td>
+                    <td><input type="checkbox" aria-label="Active" @bind="editActive" /></td>
+                    <td colspan="2">
+                        <div class="row">
+                            <input type="password" placeholder="New password (optional)" aria-label="New password" autocomplete="new-password" style="width:200px" @bind="editPassword" />
+                            <button type="button" class="btn btn-sm btn-primary" @onclick="() => Save(s)">Save</button>
+                            <button type="button" class="btn btn-sm" @onclick="() => editId = null">Cancel</button>
+                        </div>
+                    </td>
+                </tr>
+            }
+            else
+            {
+                <tr style="@(s.IsActive ? null : "opacity:.55")">
+                    <td>@s.DisplayName</td>
+                    <td>@s.UserName</td>
+                    <td>@s.Role</td>
+                    <td>@(s.IsActive ? "Yes" : "No")@(s.LockedUntil > DateTime.UtcNow ? " (locked)" : "")</td>
+                    <td class="small muted">@(s.LastSignInAt?.ToString("yyyy-MM-dd HH:mm") + (s.LastSignInAt is null ? "never" : " UTC"))</td>
+                    <td class="right"><button type="button" class="btn btn-sm" @onclick="() => Edit(s)">Edit</button></td>
+                </tr>
+            }
+        }
+    </tbody>
+</table>
+
+<div class="card" style="max-width:520px">
+    <h2>Add a staff member</h2>
+    <div class="field"><label for="n-name">Name</label><input id="n-name" type="text" maxlength="80" @bind="newName" /></div>
+    <div class="field"><label for="n-user">Username</label><input id="n-user" type="text" maxlength="60" autocomplete="off" @bind="newUser" /></div>
+    <div class="field"><label for="n-pass">Password</label><input id="n-pass" type="password" autocomplete="new-password" @bind="newPassword" /><div class="hint">At least @StaffService.MinPasswordLength characters.</div></div>
+    <div class="field"><label for="n-role">Role</label><select id="n-role" @bind="newRole">@foreach (var r in Enum.GetValues<StaffRole>()) { <option value="@r">@r</option> }</select></div>
+    <button type="button" class="btn btn-primary" @onclick="Add">Add</button>
+</div>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private List<StaffMember> staff = new();
+    private string? error;
+    private string? notice;
+
+    private Guid? editId;
+    private string editName = string.Empty;
+    private StaffRole editRole;
+    private bool editActive;
+    private string? editPassword;
+
+    private string? newName, newUser, newPassword;
+    private StaffRole newRole = StaffRole.Staff;
+
+    protected override async Task OnInitializedAsync() => staff = await Staff.ListAsync();
+
+    private void Edit(StaffMember s)
+    {
+        editId = s.Id;
+        editName = s.DisplayName;
+        editRole = s.Role;
+        editActive = s.IsActive;
+        editPassword = null;
+    }
+
+    private async Task Save(StaffMember s)
+    {
+        await Run(async () =>
+        {
+            var me = AuthState is null ? Guid.Empty : Guid.TryParse((await AuthState).User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : Guid.Empty;
+            await Staff.UpdateAsync(s.Id, editName, editRole, editActive, me);
+            if (!string.IsNullOrEmpty(editPassword)) await Staff.SetPasswordAsync(s.Id, editPassword);
+            editId = null;
+        }, $"{editName} saved.");
+    }
+
+    private async Task Add()
+    {
+        await Run(async () =>
+        {
+            await Staff.CreateAsync(newUser ?? "", newName ?? "", newPassword ?? "", newRole);
+            newName = newUser = newPassword = null;
+            newRole = StaffRole.Staff;
+        }, "Staff member added.");
+    }
+
+    private async Task Run(Func<Task> action, string success)
+    {
+        error = notice = null;
+        try
+        {
+            await action();
+            notice = success;
+            staff = await Staff.ListAsync();
+        }
+        catch (PosException ex)
+        {
+            error = ex.Message;
+        }
+    }
+}

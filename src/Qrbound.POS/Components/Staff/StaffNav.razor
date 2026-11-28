@@ -1,0 +1,20 @@
+@namespace Qrbound.POS.Components.Staff
+
+@* The tabs across the top of a restaurant's staff pages. *@
+
+<nav class="pos-nav" aria-label="Restaurant">
+    <span class="title">@Restaurant.Name</span>
+    <NavLink href="@($"pos/{Restaurant.Id}")" Match="NavLinkMatch.All">Orders</NavLink>
+    <NavLink href="@($"pos/{Restaurant.Id}/register")">Register</NavLink>
+    <NavLink href="@($"pos/{Restaurant.Id}/kitchen")">Kitchen</NavLink>
+    <AuthorizeView Policy="@QrboundPosDefaults.ManagerPolicy">
+        <NavLink href="@($"pos/{Restaurant.Id}/menu")">Menu</NavLink>
+        <NavLink href="@($"pos/{Restaurant.Id}/tables")">Tables &amp; QR codes</NavLink>
+        <NavLink href="@($"pos/{Restaurant.Id}/settings")">Settings</NavLink>
+    </AuthorizeView>
+    <a href="@($"r/{Restaurant.Slug}")" target="_blank" rel="noopener" style="margin-left:auto">Customer menu ↗</a>
+</nav>
+
+@code {
+    [Parameter, EditorRequired] public Restaurant Restaurant { get; set; } = default!;
+}

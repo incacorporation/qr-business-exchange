@@ -1,0 +1,72 @@
+@namespace Qrbound.POS.Components.Shared
+
+@* The customer picks a tip: a suggested percentage, their own amount, or none. *@
+
+<div>
+    <label>Add a tip?</label>
+    <div class="tips">
+        <button type="button" class="btn @(mode == "none" ? "on" : null)" @onclick="@(() => Choose("none", 0))">None</button>
+        @foreach (var p in Percentages.Take(AllowCustom ? 2 : 3))
+        {
+            var cents = QrPaymentInfo.TipFor(BillCents, p);
+            <button type="button" class="btn @(mode == $"p{p}" ? "on" : null)" @onclick="@(() => Choose($"p{p}", cents))">
+                @p%<small class="num">@Money.Format(cents, Currency)</small>
+            </button>
+        }
+        @if (AllowCustom)
+        {
+            <button type="button" class="btn @(mode == "custom" ? "on" : null)" @onclick="@(() => { mode = "custom"; customError = null; })">Other</button>
+        }
+    </div>
+    @if (mode == "custom")
+    {
+        <div class="row">
+            <input type="text" inputmode="decimal" placeholder="0.00" aria-label="Tip amount" @bind="customText" @bind:event="oninput" style="max-width:140px" />
+            <button type="button" class="btn" @onclick="ApplyCustom">Set tip</button>
+        </div>
+        @if (customError is not null)
+        {
+            <div class="hint" style="color:var(--pos-danger)">@customError</div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public long BillCents { get; set; }
+    [Parameter] public string Currency { get; set; } = "USD";
+    [Parameter] public IReadOnlyList<int> Percentages { get; set; } = [15, 18, 20];
+    [Parameter] public bool AllowCustom { get; set; } = true;
+
+    /// <summary>Largest tip accepted, in percent of the bill; 0 for no limit here (the server still checks).</summary>
+    [Parameter] public int MaxPercent { get; set; }
+
+    [Parameter] public EventCallback<long> OnChanged { get; set; }
+
+    private string mode = "none";
+    private string? customText;
+    private string? customError;
+
+    private Task Choose(string m, long cents)
+    {
+        mode = m;
+        return OnChanged.InvokeAsync(cents);
+    }
+
+    private async Task ApplyCustom()
+    {
+        if (!Money.TryParse(customText, out var cents))
+        {
+            customError = "Type an amount like 3.50.";
+            return;
+        }
+
+        if (MaxPercent > 0 && cents > QrPaymentInfo.TipFor(BillCents, MaxPercent))
+        {
+            customError = $"The most you can tip here is {MaxPercent}% ({Money.Format(QrPaymentInfo.TipFor(BillCents, MaxPercent), Currency)}).";
+            return;
+        }
+
+        customError = null;
+        await OnChanged.InvokeAsync(cents);
+    }
+}

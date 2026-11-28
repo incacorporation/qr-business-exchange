@@ -1,0 +1,47 @@
+@namespace Qrbound.POS.Components.Shared
+
+@* An order's lines and totals. *@
+
+<ul class="lines">
+    @foreach (var l in Order.Lines)
+    {
+        <li>
+            <span class="qty num">@l.Quantity×</span>
+            <span class="grow">
+                @l.Name
+                @if (l.ModifiersText is not null) { <span class="mods" style="display:block">@l.ModifiersText</span> }
+                @if (l.Notes is not null) { <span class="note" style="display:block">“@l.Notes”</span> }
+            </span>
+            @if (ShowPrices)
+            {
+                <span class="num">@Money.Format(l.LineTotalCents, Order.Currency)</span>
+            }
+        </li>
+    }
+</ul>
+
+@if (Order.Notes is not null)
+{
+    <p class="small"><b>Note:</b> @Order.Notes</p>
+}
+
+@if (ShowPrices)
+{
+    <div class="totals num">
+        <div><span>Subtotal</span><span>@Money.Format(Order.SubtotalCents, Order.Currency)</span></div>
+        @if (Order.TaxCents > 0 || Order.TaxRatePercent > 0)
+        {
+            <div><span>Tax (@Order.TaxRatePercent.ToString("0.###", CultureInfo.InvariantCulture)%)</span><span>@Money.Format(Order.TaxCents, Order.Currency)</span></div>
+        }
+        @if (Order.TipCents > 0)
+        {
+            <div><span>Tip</span><span>@Money.Format(Order.TipCents, Order.Currency)</span></div>
+        }
+        <div class="total"><span>@(Order.PaymentStatus == PaymentStatus.Paid ? "Paid" : "Total")</span><span>@Money.Format(Order.PaidCents ?? Order.TotalCents, Order.Currency)</span></div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Order Order { get; set; } = default!;
+    [Parameter] public bool ShowPrices { get; set; } = true;
+}

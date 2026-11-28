@@ -1,0 +1,159 @@
+@page "/pos/{RestaurantId:guid}"
+@namespace Qrbound.POS.Components.Staff
+@layout PosStaffLayout
+@rendermode InteractiveServer
+@attribute [Authorize(Policy = QrboundPosDefaults.StaffPolicy)]
+@inherits RestaurantPageBase
+@inject OrderService Orders
+@inject CheckoutService Checkout
+
+<PageTitle>Orders · @(Restaurant?.Name ?? "POS")</PageTitle>
+
+@if (!Loaded) { <span class="spinner" role="status" aria-label="Loading"></span> }
+else if (Restaurant is null) { <p>Restaurant not found. <a href="pos">All restaurants</a></p> }
+else
+{
+    <StaffNav Restaurant="Restaurant" />
+
+    @if (Restaurant.QrboundBusinessId is null && !Checkout.Simulated)
+    {
+        <div class="alert alert-warn">Card payments aren't set up: add the qrbound business ID in <a href="@($"pos/{Restaurant.Id}/settings")">Settings</a>.</div>
+    }
+
+    <div class="row" style="margin-bottom:.75rem">
+        <input type="date" aria-label="Business day" value="@day.ToString("yyyy-MM-dd")" @onchange="ChangeDay" style="max-width:180px" />
+        <label class="check"><input type="checkbox" @bind="unpaidOnly" @bind:after="LoadAsync" /> Unpaid only</label>
+    </div>
+
+    @if (summary is not null)
+    {
+        <div class="stats">
+            <div class="stat"><b class="num">@Money.Format(summary.SalesCents, Restaurant.Currency)</b><span>Sales (before tax), @summary.PaidOrders paid orders</span></div>
+            <div class="stat"><b class="num">@Money.Format(summary.CardCents, Restaurant.Currency)</b><span>Card, incl. tips</span></div>
+            <div class="stat"><b class="num">@Money.Format(summary.CashCents, Restaurant.Currency)</b><span>Cash</span></div>
+            <div class="stat"><b class="num">@Money.Format(summary.TipsCents, Restaurant.Currency)</b><span>Tips</span></div>
+            <div class="stat"><b class="num">@Money.Format(summary.TaxCents, Restaurant.Currency)</b><span>Tax collected</span></div>
+            <div class="stat"><b class="num">@summary.OpenOrders</b><span>Open orders</span></div>
+        </div>
+    }
+
+    @if (Error is not null) { <div class="alert alert-error" role="alert">@Error</div> }
+
+    @if (orders.Count == 0)
+    {
+        <p class="muted">No orders@(unpaidOnly ? " waiting for payment" : "") on @day.ToString("d MMM yyyy", CultureInfo.InvariantCulture).</p>
+    }
+    else
+    {
+        <table class="grid">
+            <thead>
+                <tr><th>#</th><th>Time</th><th>Where</th><th>Customer</th><th>Status</th><th>Payment</th><th class="right">Total</th><th></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var o in orders)
+                {
+                    <tr>
+                        <td class="num"><b>@o.Number</b></td>
+                        <td class="num">@RestaurantService.ToLocal(Restaurant, o.CreatedAt).ToString("HH:mm")</td>
+                        <td>@PosUi.Where(o) <span class="small muted">@(o.Source == OrderSource.Customer ? "phone" : "register")</span></td>
+                        <td>
+                            @o.CustomerName
+                            @if (o.CustomerEmail is not null) { <div class="small muted">@o.CustomerEmail</div> }
+                        </td>
+                        <td><span class="@PosUi.StatusBadge(o.Status)">@PosUi.StatusLabel(o.Status)</span></td>
+                        <td><span class="@PosUi.PaymentBadge(o.PaymentStatus)">@PosUi.PaymentLabel(o)</span></td>
+                        <td class="right num">@Money.Format(o.PaidCents ?? o.TotalCents, o.Currency)</td>
+                        <td class="right"><button type="button" class="btn btn-sm" @onclick="() => Toggle(o.Id)">@(open == o.Id ? "Close" : "Open")</button></td>
+                    </tr>
+                    @if (open == o.Id)
+                    {
+                        <tr>
+                            <td colspan="8" style="background:var(--pos-bg)">
+                                <div class="register" style="grid-template-columns:1fr 360px">
+                                    <div class="card">
+                                        <OrderLinesView Order="o" />
+                                        <div class="row" style="margin-top:.75rem">
+                                            @if (o.Status == OrderStatus.AwaitingPayment)
+                                            {
+                                                <button type="button" class="btn btn-sm" @onclick="() => Act(() => Orders.SetStatusAsync(o.Id, OrderStatus.New))">Send to kitchen unpaid</button>
+                                            }
+                                            @if (o.Status is OrderStatus.New or OrderStatus.Preparing or OrderStatus.Ready)
+                                            {
+                                                <button type="button" class="btn btn-sm" @onclick="() => Act(() => Orders.SetStatusAsync(o.Id, OrderStatus.Completed))">Mark completed</button>
+                                            }
+                                            @if (o.Status is not (OrderStatus.Cancelled or OrderStatus.Completed))
+                                            {
+                                                <button type="button" class="btn btn-sm btn-danger" @onclick="() => confirmCancel = o.Id">Cancel order</button>
+                                            }
+                                        </div>
+                                        @if (confirmCancel == o.Id)
+                                        {
+                                            <div class="alert alert-warn" style="margin-top:.6rem">
+                                                Cancel order #@o.Number? Any open card payment request is cancelled too.
+                                                <div class="row" style="margin-top:.4rem">
+                                                    <button type="button" class="btn btn-sm btn-danger" @onclick="() => Act(() => Checkout.CancelOrderAsync(o.Id))">Yes, cancel it</button>
+                                                    <button type="button" class="btn btn-sm" @onclick="() => confirmCancel = null">Keep it</button>
+                                                </div>
+                                            </div>
+                                        }
+                                        <p class="small muted" style="margin-top:.6rem">
+                                            @if (o.CreatedBy is not null) { <span>Rung up by @o.CreatedBy. </span> }
+                                            @if (o.PaymentInvoiceNumber is not null) { <span>qrbound invoice @o.PaymentInvoiceNumber.</span> }
+                                        </p>
+                                    </div>
+                                    <div class="card">
+                                        <h3>Payment</h3>
+                                        <OrderPaymentPanel Order="o" OnChanged="LoadAsync" />
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    private List<Order> orders = new();
+    private DaySummary? summary;
+    private DateOnly day;
+    private bool dayChosen;
+    private bool unpaidOnly;
+    private Guid? open;
+    private Guid? confirmCancel;
+
+    protected override bool LiveUpdates => true;
+
+    protected override async Task LoadAsync()
+    {
+        if (Restaurant is null) return;
+        if (!dayChosen) day = Today;
+        orders = await Orders.ListAsync(Restaurant.Id, day, unpaidOnly);
+        summary = await Orders.SummaryAsync(Restaurant.Id, day);
+    }
+
+    private async Task ChangeDay(ChangeEventArgs e)
+    {
+        if (DateOnly.TryParse(e.Value?.ToString(), CultureInfo.InvariantCulture, out var d))
+        {
+            day = d;
+            dayChosen = true;
+            await LoadAsync();
+        }
+    }
+
+    private void Toggle(Guid id)
+    {
+        open = open == id ? null : id;
+        confirmCancel = null;
+    }
+
+    private async Task Act(Func<Task> action)
+    {
+        await Try(action);
+        confirmCancel = null;
+        await LoadAsync();
+    }
+}

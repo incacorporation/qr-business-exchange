@@ -1,0 +1,93 @@
+@page "/pos/{RestaurantId:guid}/kitchen"
+@namespace Qrbound.POS.Components.Staff
+@layout PosStaffLayout
+@rendermode InteractiveServer
+@attribute [Authorize(Policy = QrboundPosDefaults.StaffPolicy)]
+@inherits RestaurantPageBase
+@inject OrderService Orders
+
+@* The kitchen display: tickets move New → Preparing → Ready → done. Updates live as orders
+   are placed and paid. *@
+
+<PageTitle>Kitchen · @(Restaurant?.Name ?? "POS")</PageTitle>
+
+@if (!Loaded) { <span class="spinner" role="status" aria-label="Loading"></span> }
+else if (Restaurant is null) { <p>Restaurant not found. <a href="pos">All restaurants</a></p> }
+else
+{
+    <StaffNav Restaurant="Restaurant" />
+    @if (Error is not null) { <div class="alert alert-error" role="alert">@Error</div> }
+
+    <div class="kds">
+        @foreach (var (status, title, next, action) in Columns)
+        {
+            var list = tickets.Where(t => t.Status == status).ToList();
+            <section class="kds-col" aria-label="@title">
+                <h2>@title <span class="badge">@list.Count</span></h2>
+                @foreach (var o in list)
+                {
+                    var age = UtcNow - (o.SentToKitchenAt ?? o.CreatedAt);
+                    <article class="ticket-card @(status != OrderStatus.Ready && age > LateAfter ? "late" : null)">
+                        <div class="head">
+                            <span class="no num">#@o.Number</span>
+                            <b>@PosUi.Where(o)</b>
+                            <span class="small muted num">@PosUi.Ago(o.SentToKitchenAt ?? o.CreatedAt, UtcNow)</span>
+                        </div>
+                        @if (o.CustomerName is not null) { <div class="small">@o.CustomerName</div> }
+                        <OrderLinesView Order="o" ShowPrices="false" />
+                        <div class="row" style="margin-top:.5rem">
+                            <span class="@PosUi.PaymentBadge(o.PaymentStatus)">@PosUi.PaymentLabel(o)</span>
+                            @if (status != OrderStatus.New)
+                            {
+                                <button type="button" class="btn btn-sm" aria-label="@($"Move order {o.Number} back")" @onclick="() => Move(o, Back(status))">↩</button>
+                            }
+                            <button type="button" class="btn btn-sm btn-primary grow" @onclick="() => Move(o, next)">@action</button>
+                        </div>
+                    </article>
+                }
+            </section>
+        }
+    </div>
+}
+
+@code {
+    private static readonly TimeSpan LateAfter = TimeSpan.FromMinutes(20);
+
+    private static readonly (OrderStatus Status, string Title, OrderStatus Next, string Action)[] Columns =
+    [
+        (OrderStatus.New, "New", OrderStatus.Preparing, "Start"),
+        (OrderStatus.Preparing, "Preparing", OrderStatus.Ready, "Ready"),
+        (OrderStatus.Ready, "Ready", OrderStatus.Completed, "Served")
+    ];
+
+    private List<Order> tickets = new();
+    private System.Threading.Timer? clockTimer;
+
+    protected override bool LiveUpdates => true;
+
+    protected override async Task LoadAsync()
+    {
+        if (Restaurant is not null) tickets = await Orders.KitchenAsync(Restaurant.Id);
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        base.OnAfterRender(firstRender);
+        // Refresh the ticket ages every half minute.
+        if (firstRender) clockTimer = new System.Threading.Timer(_ => InvokeAsync(StateHasChanged), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+    }
+
+    private static OrderStatus Back(OrderStatus s) => s == OrderStatus.Ready ? OrderStatus.Preparing : OrderStatus.New;
+
+    private async Task Move(Order o, OrderStatus to)
+    {
+        await Try(() => Orders.SetStatusAsync(o.Id, to));
+        await LoadAsync();
+    }
+
+    public override void Dispose()
+    {
+        clockTimer?.Dispose();
+        base.Dispose();
+    }
+}

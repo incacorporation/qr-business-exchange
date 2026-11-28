@@ -1,0 +1,358 @@
+@page "/r/{Slug}"
+@page "/r/{Slug}/t/{TableCode}"
+@namespace Qrbound.POS.Components.Customer
+@layout PosCustomerLayout
+@rendermode InteractiveServer
+@attribute [Authorize(Policy = QrboundPosDefaults.CustomerPolicy)]
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@inject CurrentCustomer Customers
+@inject RestaurantService Restaurants
+@inject MenuService Menu
+@inject OrderService Orders
+@inject NavigationManager Nav
+@inject ProtectedSessionStorage Session
+
+@* What a customer sees after scanning a table's QR code: the menu, their cart, and Place order. *@
+
+<PageTitle>@(restaurant?.Name ?? "Menu")</PageTitle>
+
+@if (loading)
+{
+    <div class="center"><span class="spinner" role="status" aria-label="Loading"></span></div>
+}
+else if (restaurant is null)
+{
+    <div class="page center"><div><h1>Menu not found</h1><p class="muted">Check the QR code, or ask a member of staff.</p></div></div>
+}
+else if (tableMissing)
+{
+    <div class="page center">
+        <div>
+            <h1>@restaurant.Name</h1>
+            <p class="muted">This table's QR code isn't in use any more. Please ask a member of staff.</p>
+        </div>
+    </div>
+}
+else
+{
+    <div class="hero">
+        <div class="wrap">
+            <div class="hero-title">
+                @if (restaurant.LogoUrl is not null) { <img src="@restaurant.LogoUrl" alt="" /> }
+                <div>
+                    <h1>@restaurant.Name</h1>
+                    <p class="muted small">@(table is null ? "Takeaway order" : $"Ordering for {table.Name}")</p>
+                </div>
+            </div>
+            @if (restaurant.Description is not null) { <p class="muted small">@restaurant.Description</p> }
+            @if (customer is not null)
+            {
+                <form method="post" action="@SignOutAction" class="small muted" style="margin:.25rem 0 .5rem">
+                    Signed in with qrbound as <b>@customer.DisplayName</b> ·
+                    <button type="submit" class="pos-link">Not you?</button>
+                </form>
+            }
+            @if (!restaurant.OnlineOrderingOpen)
+            {
+                <div class="alert alert-warn">We aren't taking orders from phones right now. Please ask a member of staff.</div>
+            }
+            else if (table is null && !restaurant.AllowTakeaway)
+            {
+                <div class="alert alert-warn">Scan the QR code on your table to order.</div>
+            }
+            @if (recentOrders.Count > 0)
+            {
+                <p class="small">
+                    Your orders:
+                    @foreach (var r in recentOrders)
+                    {
+                        <a href="@OrderLink(r.Token)" style="margin-right:.6rem">#@r.Number</a>
+                    }
+                </p>
+            }
+        </div>
+    </div>
+
+    @if (menu.Count == 0)
+    {
+        <div class="page center"><p class="muted">The menu is empty right now.</p></div>
+    }
+    else
+    {
+        <nav class="cat-tabs" aria-label="Menu sections">
+            @foreach (var c in menu)
+            {
+                <a href="@($"{Nav.ToBaseRelativePath(Nav.Uri).Split('#')[0]}#cat-{c.Id:N}")">@c.Name</a>
+            }
+        </nav>
+        <div class="wrap">
+            @foreach (var c in menu)
+            {
+                <section class="cat" id="@($"cat-{c.Id:N}")">
+                    <h2>@c.Name</h2>
+                    @if (c.Description is not null) { <p class="muted small">@c.Description</p> }
+                    <div class="items">
+                        @foreach (var item in c.Items)
+                        {
+                            var inCart = cart.Where(l => l.MenuItemId == item.Id).Sum(l => l.Quantity);
+                            <button type="button" class="item" disabled="@(!CanOrder)" @onclick="() => Open(item)">
+                                <span class="grow">
+                                    <b>@item.Name</b>
+                                    @if (item.Description is not null) { <span class="desc" style="display:block">@item.Description</span> }
+                                    <span class="price num" style="display:block">@Money.Format(item.PriceCents, restaurant.Currency)@(item.ModifierGroups.Any(g => g.Modifiers.Any(m => m.PriceDeltaCents > 0)) ? "+" : "")</span>
+                                </span>
+                                @if (item.ImageUrl is not null) { <img src="@item.ImageUrl" alt="" loading="lazy" /> }
+                                @if (inCart > 0) { <span class="badge badge-ok in-cart">@inCart</span> }
+                            </button>
+                        }
+                    </div>
+                </section>
+            }
+        </div>
+    }
+
+    @if (cart.Count > 0 && !showCart)
+    {
+        <div class="cart-bar">
+            <button type="button" class="btn btn-primary btn-block" @onclick="() => showCart = true">
+                <span>View order · @cart.Sum(l => l.Quantity) item@(cart.Sum(l => l.Quantity) == 1 ? "" : "s")</span>
+                <span class="num">@Money.Format(Subtotal, restaurant.Currency)</span>
+            </button>
+        </div>
+    }
+
+    @if (selected is not null)
+    {
+        <ItemOptionsSheet Item="selected" Editing="editing" Currency="@restaurant.Currency" OnAdd="AddToCart" OnCancel="CloseItem" />
+    }
+
+    @if (showCart)
+    {
+        <div class="sheet-backdrop" @onclick="() => showCart = false">
+            <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="cart-title" @onclick:stopPropagation="true">
+                <div class="sheet-head">
+                    <h2 id="cart-title">Your order</h2>
+                    <button type="button" class="btn btn-round" aria-label="Close" @onclick="() => showCart = false">×</button>
+                </div>
+                <p class="muted small">@restaurant.Name · @(table?.Name ?? "Takeaway")</p>
+
+                <ul class="lines">
+                    @foreach (var l in cart)
+                    {
+                        <li>
+                            <span class="grow">
+                                <button type="button" class="pos-link" style="text-decoration:none;font-weight:600;text-align:left" @onclick="() => Edit(l)">@l.Name</button>
+                                @if (l.ModifiersText is not null) { <span class="mods" style="display:block">@l.ModifiersText</span> }
+                                @if (l.Notes is not null) { <span class="note" style="display:block">“@l.Notes”</span> }
+                                <span class="num small" style="display:block">@Money.Format(l.UnitPriceCents * l.Quantity, restaurant.Currency)</span>
+                            </span>
+                            <span class="row" style="flex-wrap:nowrap">
+                                <button type="button" class="btn btn-round btn-sm" aria-label="@($"One fewer {l.Name}")" @onclick="() => ChangeQty(l, -1)">−</button>
+                                <b class="num">@l.Quantity</b>
+                                <button type="button" class="btn btn-round btn-sm" aria-label="@($"One more {l.Name}")" disabled="@(l.Quantity >= OrderService.MaxQuantity)" @onclick="() => ChangeQty(l, 1)">+</button>
+                            </span>
+                        </li>
+                    }
+                </ul>
+
+                <div class="totals num">
+                    <div><span>Subtotal</span><span>@Money.Format(Subtotal, restaurant.Currency)</span></div>
+                    @if (restaurant.TaxRatePercent > 0)
+                    {
+                        <div><span>Tax</span><span>@Money.Format(Money.Tax(Subtotal, restaurant.TaxRatePercent), restaurant.Currency)</span></div>
+                    }
+                    <div class="total"><span>Total</span><span>@Money.Format(Subtotal + Money.Tax(Subtotal, restaurant.TaxRatePercent), restaurant.Currency)</span></div>
+                </div>
+
+                <div class="field" style="margin-top:1rem">
+                    <label for="cust-name">Your name <span class="muted small">(so we can call you)</span></label>
+                    <input id="cust-name" type="text" maxlength="80" autocomplete="given-name" @bind="customerName" />
+                </div>
+                <div class="field">
+                    <label for="order-note">Anything we should know? <span class="muted small">(optional)</span></label>
+                    <input id="order-note" type="text" maxlength="500" placeholder="Allergies, timing…" @bind="orderNotes" />
+                </div>
+
+                @if (error is not null)
+                {
+                    <div class="alert alert-error" role="alert">@error</div>
+                }
+
+                <button type="button" class="btn btn-primary btn-block" disabled="@(placing || !CanOrder)" @onclick="PlaceOrder">
+                    @if (placing) { <span class="spinner" style="width:18px;height:18px"></span> }
+                    @(restaurant.PayBeforeKitchen ? "Continue to payment" : "Place order")
+                </button>
+                @if (!restaurant.PayBeforeKitchen)
+                {
+                    <p class="hint" style="text-align:center">Your order goes to the kitchen now. Pay from your phone whenever you're ready.</p>
+                }
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string Slug { get; set; } = string.Empty;
+    [Parameter] public string? TableCode { get; set; }
+
+    private Restaurant? restaurant;
+    private DiningTable? table;
+    private bool tableMissing;
+    private List<MenuCategory> menu = new();
+    private List<CartLine> cart = new();
+    private List<RecentOrder> recentOrders = new();
+    private bool loading = true;
+
+    private MenuItem? selected;
+    private CartLine? editing;
+    private bool showCart;
+    private string? customerName;
+    private string? orderNotes;
+    private string? error;
+    private bool placing;
+    private PosCustomer? customer;
+
+    private string SignOutAction =>
+        $"pos/customer/signout?returnUrl={Uri.EscapeDataString("/" + Nav.ToBaseRelativePath(Nav.Uri).Split('#')[0])}";
+
+    private long Subtotal => cart.Sum(l => l.UnitPriceCents * l.Quantity);
+    private bool CanOrder => restaurant is { OnlineOrderingOpen: true } && (table is not null || restaurant.AllowTakeaway);
+    private string CartKey => $"qrpos.cart.{restaurant!.Id:N}.{table?.Id.ToString("N") ?? "takeaway"}";
+    private string RecentKey => $"qrpos.orders.{restaurant!.Id:N}";
+    private string OrderLink(string token) => $"r/{restaurant!.Slug}/order/{token}";
+
+    public sealed class RecentOrder
+    {
+        public string Token { get; set; } = string.Empty;
+        public int Number { get; set; }
+        public DateTime PlacedAt { get; set; }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        loading = true;
+        customer = await Customers.GetAsync();
+        customerName ??= customer?.Name;
+        restaurant = await Restaurants.GetBySlugAsync(Slug);
+        if (restaurant is not null)
+        {
+            if (!string.IsNullOrEmpty(TableCode))
+            {
+                table = await Restaurants.FindTableAsync(restaurant.Id, TableCode);
+                tableMissing = table is null;
+            }
+
+            menu = await Menu.GetMenuAsync(restaurant.Id, sellableOnly: true);
+        }
+
+        loading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Browser storage is only reachable once the circuit is connected.
+        if (!firstRender || restaurant is null) return;
+        try
+        {
+            var stored = await Session.GetAsync<List<CartLine>>(CartKey);
+            if (stored is { Success: true, Value: { Count: > 0 } lines })
+            {
+                // Keep only lines whose item is still on the menu.
+                var onMenu = menu.SelectMany(c => c.Items).ToDictionary(i => i.Id);
+                cart = lines.Where(l => onMenu.ContainsKey(l.MenuItemId)).ToList();
+            }
+
+            var recent = await Session.GetAsync<List<RecentOrder>>(RecentKey);
+            if (recent is { Success: true, Value: not null }) recentOrders = recent.Value.Where(r => r.PlacedAt > DateTime.UtcNow.AddHours(-12)).ToList();
+            StateHasChanged();
+        }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            await Session.DeleteAsync(CartKey); // stored with old keys; start a fresh cart
+        }
+    }
+
+    private void Open(MenuItem item)
+    {
+        editing = null;
+        selected = item;
+    }
+
+    private void Edit(CartLine line)
+    {
+        var item = menu.SelectMany(c => c.Items).FirstOrDefault(i => i.Id == line.MenuItemId);
+        if (item is null) return;
+        showCart = false;
+        editing = line;
+        selected = item;
+    }
+
+    private void CloseItem()
+    {
+        if (editing is not null) showCart = true;
+        selected = null;
+        editing = null;
+    }
+
+    private async Task AddToCart(CartLine line)
+    {
+        if (editing is null)
+        {
+            // Same item with the same choices and note: add to that line.
+            var same = cart.FirstOrDefault(l => l.MenuItemId == line.MenuItemId && l.Notes == line.Notes && l.ModifierIds.Order().SequenceEqual(line.ModifierIds.Order()));
+            if (same is not null) same.Quantity = Math.Min(OrderService.MaxQuantity, same.Quantity + line.Quantity);
+            else cart.Add(line);
+        }
+
+        var reopenCart = editing is not null;
+        selected = null;
+        editing = null;
+        showCart = reopenCart;
+        error = null;
+        await SaveCart();
+    }
+
+    private async Task ChangeQty(CartLine line, int delta)
+    {
+        line.Quantity += delta;
+        if (line.Quantity <= 0) cart.Remove(line);
+        if (cart.Count == 0) showCart = false;
+        await SaveCart();
+    }
+
+    private async Task SaveCart() => await Session.SetAsync(CartKey, cart);
+
+    private async Task PlaceOrder()
+    {
+        if (restaurant is null || cart.Count == 0) return;
+        placing = true;
+        error = null;
+        try
+        {
+            var order = await Orders.PlaceAsync(new PlaceOrderRequest
+            {
+                RestaurantId = restaurant.Id,
+                TableId = table?.Id,
+                Source = OrderSource.Customer,
+                Customer = customer,
+                CustomerName = customerName,
+                Notes = orderNotes,
+                Lines = cart
+            });
+
+            recentOrders.Insert(0, new RecentOrder { Token = order.PublicToken, Number = order.Number, PlacedAt = order.CreatedAt });
+            await Session.SetAsync(RecentKey, recentOrders.Take(10).ToList());
+            cart.Clear();
+            await Session.DeleteAsync(CartKey);
+            Nav.NavigateTo(OrderLink(order.PublicToken));
+        }
+        catch (PosException ex)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            placing = false;
+        }
+    }
+}

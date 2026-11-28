@@ -1,0 +1,39 @@
+@page "/pos/customer/signin-error"
+@namespace Qrbound.POS.Components.Customer
+@layout PosCustomerLayout
+
+@* Where a qrbound sign-in that didn't work lands: says why, and offers to try again. *@
+
+<PageTitle>Sign-in didn't work</PageTitle>
+
+<div class="wrap page">
+    <div class="auth-box card">
+        <h1>@Headline</h1>
+        <p class="muted">@Detail</p>
+        <a class="btn btn-primary btn-block" href="@($"pos/customer/signin?returnUrl={Uri.EscapeDataString(Back)}")">Sign in with qrbound</a>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] private string? Reason { get; set; }
+    [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+
+    private string Back => CustomerSignIn.SafeReturnUrl(ReturnUrl);
+
+    private string Headline => Reason switch
+    {
+        "access_pending" => "Waiting for approval",
+        "access_denied" or "denied" => "Sign-in was cancelled",
+        _ => "Sign-in didn't work"
+    };
+
+    private string Detail => Reason switch
+    {
+        "access_pending" => "The restaurant still has to approve your access. You'll get an email from qrbound once it's decided.",
+        "access_denied" => "This qrbound account can't order here. Please ask a member of staff.",
+        "denied" => "You need to sign in with your qrbound account to see the menu, order and pay.",
+        "expired" => "The sign-in took too long. Please try again.",
+        "unreachable" => "qrbound can't be reached right now. Please try again in a moment.",
+        _ => "We couldn't confirm your qrbound sign-in. Please try again."
+    };
+}

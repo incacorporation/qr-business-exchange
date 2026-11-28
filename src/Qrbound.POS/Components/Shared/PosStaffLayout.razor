@@ -1,0 +1,24 @@
+@inherits LayoutComponentBase
+@namespace Qrbound.POS.Components.Shared
+
+<div class="pos pos-staff">
+    <header class="pos-topbar">
+        <a class="pos-brand" href="pos">qrbound <b>POS</b></a>
+        <AuthorizeView Policy="@QrboundPosDefaults.StaffPolicy">
+            <Authorized>
+                <span class="pos-topbar-user">
+                    @context.User.Identity?.Name
+                    <AuthorizeView Policy="@QrboundPosDefaults.OwnerPolicy" Context="owner">
+                        <a href="pos/staff">Staff</a>
+                    </AuthorizeView>
+                    <form method="post" action="pos/signout" class="pos-inline">
+                        <button type="submit" class="pos-link">Sign out</button>
+                    </form>
+                </span>
+            </Authorized>
+        </AuthorizeView>
+    </header>
+    <main class="pos-main">
+        @Body
+    </main>
+</div>

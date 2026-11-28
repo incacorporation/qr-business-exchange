@@ -1,0 +1,311 @@
+@page "/pos/{RestaurantId:guid}/menu"
+@namespace Qrbound.POS.Components.Staff
+@layout PosStaffLayout
+@rendermode InteractiveServer
+@attribute [Authorize(Policy = QrboundPosDefaults.ManagerPolicy)]
+@inherits RestaurantPageBase
+@inject MenuService Menu
+
+<PageTitle>Menu · @(Restaurant?.Name ?? "POS")</PageTitle>
+
+@if (!Loaded) { <span class="spinner" role="status" aria-label="Loading"></span> }
+else if (Restaurant is null) { <p>Restaurant not found. <a href="pos">All restaurants</a></p> }
+else
+{
+    <StaffNav Restaurant="Restaurant" />
+    @if (Error is not null) { <div class="alert alert-error" role="alert">@Error</div> }
+    @if (Notice is not null) { <div class="alert alert-ok" role="status">@Notice</div> }
+
+    <div class="menu-editor">
+        <div class="card">
+            <h2>Categories</h2>
+            <ul class="cat-list">
+                @foreach (var c in categories)
+                {
+                    <li class="@(c.Id == categoryId ? "active" : null)">
+                        <button type="button" class="name" @onclick="() => SelectCategory(c.Id)">
+                            @c.Name @if (!c.IsVisible) { <span class="badge">hidden</span> }
+                            <span class="small muted">(@c.Items.Count)</span>
+                        </button>
+                        <button type="button" class="btn btn-sm" aria-label="@($"Move {c.Name} up")" @onclick="() => MoveCategory(c.Id, -1)">↑</button>
+                        <button type="button" class="btn btn-sm" aria-label="@($"Move {c.Name} down")" @onclick="() => MoveCategory(c.Id, 1)">↓</button>
+                    </li>
+                }
+            </ul>
+
+            <hr style="border:0;border-top:1px solid var(--pos-line);margin:1rem 0" />
+            <h3>@(catEditId is null ? "Add a category" : "Edit category")</h3>
+            <div class="field"><input type="text" placeholder="Name, e.g. Starters" aria-label="Category name" maxlength="80" @bind="catName" /></div>
+            <div class="field"><input type="text" placeholder="Description (optional)" aria-label="Category description" maxlength="300" @bind="catDescription" /></div>
+            <label class="check field"><input type="checkbox" @bind="catVisible" /> Show on the menu</label>
+            <div class="row">
+                <button type="button" class="btn btn-primary" @onclick="SaveCategory">@(catEditId is null ? "Add" : "Save")</button>
+                @if (catEditId is not null)
+                {
+                    <button type="button" class="btn" @onclick="NewCategoryForm">New</button>
+                    <button type="button" class="btn btn-danger" @onclick="DeleteCategory">Delete</button>
+                }
+            </div>
+        </div>
+
+        <div>
+            @if (Category is null)
+            {
+                <div class="card"><p class="muted">Add a category to start the menu.</p></div>
+            }
+            else if (editItem is null)
+            {
+                <div class="card">
+                    <div class="row"><h2 class="grow">@Category.Name</h2><button type="button" class="btn btn-primary" @onclick="NewItem">Add item</button></div>
+                    @if (Category.Items.Count == 0) { <p class="muted">No items in this category yet.</p> }
+                    <table class="grid">
+                        <tbody>
+                            @foreach (var i in Category.Items)
+                            {
+                                <tr>
+                                    <td>
+                                        <b>@i.Name</b>
+                                        @if (i.ModifierGroups.Count > 0) { <span class="small muted"> · @string.Join(", ", i.ModifierGroups.Select(g => g.Name))</span> }
+                                        @if (i.Description is not null) { <div class="small muted">@i.Description</div> }
+                                    </td>
+                                    <td class="num right">@Money.Format(i.PriceCents, Restaurant.Currency)</td>
+                                    <td><label class="check"><input type="checkbox" checked="@i.IsAvailable" @onchange="e => SetAvailable(i, e)" /> Available</label></td>
+                                    <td class="right" style="white-space:nowrap">
+                                        <button type="button" class="btn btn-sm" aria-label="@($"Move {i.Name} up")" @onclick="() => MoveItem(i.Id, -1)">↑</button>
+                                        <button type="button" class="btn btn-sm" aria-label="@($"Move {i.Name} down")" @onclick="() => MoveItem(i.Id, 1)">↓</button>
+                                        <button type="button" class="btn btn-sm" @onclick="() => EditItem(i)">Edit</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <div class="card">
+                    <h2>@(isNewItem ? "New item" : $"Edit {editItem.Name}")</h2>
+                    <div class="row" style="align-items:flex-start">
+                        <div class="field grow"><label for="i-name">Name</label><input id="i-name" type="text" maxlength="120" @bind="editItem.Name" /></div>
+                        <div class="field" style="width:140px"><label for="i-price">Price</label><input id="i-price" type="text" inputmode="decimal" @bind="priceText" /></div>
+                        <div class="field" style="width:200px">
+                            <label for="i-cat">Category</label>
+                            <select id="i-cat" @bind="itemCategoryText">
+                                @foreach (var c in categories) { <option value="@c.Id.ToString()">@c.Name</option> }
+                            </select>
+                        </div>
+                    </div>
+                    <div class="field"><label for="i-desc">Description</label><textarea id="i-desc" maxlength="500" @bind="editItem.Description"></textarea></div>
+                    <div class="field"><label for="i-img">Picture URL <span class="muted small">(optional)</span></label><input id="i-img" type="url" maxlength="500" @bind="editItem.ImageUrl" /></div>
+                    <label class="check field"><input type="checkbox" @bind="editItem.IsAvailable" /> Available to order</label>
+
+                    <h3 style="margin-top:1rem">Options</h3>
+                    <p class="hint">E.g. "Size" (choose 1 of Small / Large +1.00) or "Extras" (up to 3).</p>
+                    @foreach (var g in groups)
+                    {
+                        <div class="card" style="margin-bottom:.6rem;box-shadow:none">
+                            <div class="row">
+                                <input type="text" class="grow" style="width:auto" placeholder="Group name, e.g. Size" aria-label="Option group name" maxlength="80" @bind="g.Name" />
+                                <label class="small" style="margin:0">Choose at least <input type="number" min="0" max="20" style="width:64px" @bind="g.MinSelect" /></label>
+                                <label class="small" style="margin:0">at most <input type="number" min="1" max="20" style="width:64px" @bind="g.MaxSelect" /></label>
+                                <button type="button" class="btn btn-sm btn-danger" @onclick="() => groups.Remove(g)">Remove group</button>
+                            </div>
+                            @foreach (var m in g.Choices)
+                            {
+                                <div class="row" style="margin-top:.4rem">
+                                    <input type="text" class="grow" style="width:auto" placeholder="Choice" aria-label="Choice name" maxlength="80" @bind="m.Name" />
+                                    <input type="text" inputmode="decimal" style="width:110px" placeholder="+0.00" aria-label="Extra price" @bind="m.PriceText" />
+                                    <button type="button" class="btn btn-sm" aria-label="Remove choice" @onclick="() => g.Choices.Remove(m)">×</button>
+                                </div>
+                            }
+                            <button type="button" class="btn btn-sm" style="margin-top:.4rem" @onclick="() => g.Choices.Add(new ChoiceForm())">Add choice</button>
+                        </div>
+                    }
+                    <button type="button" class="btn btn-sm" @onclick="AddGroup">Add option group</button>
+
+                    <div class="row" style="margin-top:1.25rem">
+                        <button type="button" class="btn btn-primary" @onclick="SaveItem">Save item</button>
+                        <button type="button" class="btn" @onclick="() => editItem = null">Cancel</button>
+                        @if (!isNewItem)
+                        {
+                            <button type="button" class="btn btn-danger" style="margin-left:auto" @onclick="ArchiveItem">Remove from menu</button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private List<MenuCategory> categories = new();
+    private Guid? categoryId;
+
+    private Guid? catEditId;
+    private string? catName;
+    private string? catDescription;
+    private bool catVisible = true;
+
+    private MenuItem? editItem;
+    private bool isNewItem;
+    private string? priceText;
+    private string itemCategoryText = string.Empty;
+    private List<GroupForm> groups = new();
+
+    private MenuCategory? Category => categories.FirstOrDefault(c => c.Id == categoryId);
+
+    private sealed class GroupForm
+    {
+        public Guid Id { get; set; } = Guid.NewGuid();
+        public string Name { get; set; } = string.Empty;
+        public int MinSelect { get; set; }
+        public int MaxSelect { get; set; } = 1;
+        public List<ChoiceForm> Choices { get; set; } = new();
+    }
+
+    private sealed class ChoiceForm
+    {
+        public Guid Id { get; set; } = Guid.NewGuid();
+        public string Name { get; set; } = string.Empty;
+        public string? PriceText { get; set; }
+    }
+
+    protected override async Task LoadAsync()
+    {
+        if (Restaurant is null) return;
+        categories = await Menu.GetMenuAsync(Restaurant.Id, sellableOnly: false);
+        if (Category is null) SelectCategory(categories.FirstOrDefault()?.Id);
+    }
+
+    private void SelectCategory(Guid? id)
+    {
+        categoryId = id;
+        editItem = null;
+        var c = Category;
+        catEditId = c?.Id;
+        catName = c?.Name;
+        catDescription = c?.Description;
+        catVisible = c?.IsVisible ?? true;
+    }
+
+    private void NewCategoryForm()
+    {
+        catEditId = null;
+        catName = catDescription = null;
+        catVisible = true;
+    }
+
+    private async Task SaveCategory()
+    {
+        MenuCategory? saved = null;
+        await Try(async () => saved = await Menu.SaveCategoryAsync(RestaurantId, catEditId, catName ?? "", catDescription, catVisible), "Category saved.");
+        await LoadAsync();
+        if (saved is not null) SelectCategory(saved.Id);
+    }
+
+    private async Task DeleteCategory()
+    {
+        if (catEditId is not { } id) return;
+        await Try(() => Menu.DeleteCategoryAsync(RestaurantId, id), "Category deleted.");
+        if (Error is null) categoryId = null;
+        await LoadAsync();
+    }
+
+    private async Task MoveCategory(Guid id, int direction)
+    {
+        await Try(() => Menu.MoveCategoryAsync(RestaurantId, id, direction));
+        await LoadAsync();
+    }
+
+    private async Task MoveItem(Guid id, int direction)
+    {
+        await Try(() => Menu.MoveItemAsync(RestaurantId, id, direction));
+        await LoadAsync();
+    }
+
+    private async Task SetAvailable(MenuItem i, ChangeEventArgs e)
+    {
+        var on = e.Value is true;
+        await Try(() => Menu.SetAvailableAsync(RestaurantId, i.Id, on), on ? $"{i.Name} is available." : $"{i.Name} is marked sold out.");
+        await LoadAsync();
+    }
+
+    private void NewItem()
+    {
+        isNewItem = true;
+        editItem = new MenuItem { Id = Guid.NewGuid(), CategoryId = categoryId!.Value };
+        priceText = null;
+        itemCategoryText = categoryId.Value.ToString();
+        groups = new();
+        Error = Notice = null;
+    }
+
+    private void EditItem(MenuItem i)
+    {
+        isNewItem = false;
+        editItem = new MenuItem
+        {
+            Id = i.Id, CategoryId = i.CategoryId, Name = i.Name, Description = i.Description,
+            PriceCents = i.PriceCents, ImageUrl = i.ImageUrl, IsAvailable = i.IsAvailable
+        };
+        priceText = Money.ToInput(i.PriceCents);
+        itemCategoryText = i.CategoryId.ToString();
+        groups = i.ModifierGroups.Select(g => new GroupForm
+        {
+            Id = g.Id, Name = g.Name, MinSelect = g.MinSelect, MaxSelect = g.MaxSelect,
+            Choices = g.Modifiers.Select(m => new ChoiceForm { Id = m.Id, Name = m.Name, PriceText = m.PriceDeltaCents == 0 ? null : Money.ToInput(m.PriceDeltaCents) }).ToList()
+        }).ToList();
+        Error = Notice = null;
+    }
+
+    private void AddGroup() => groups.Add(new GroupForm { Choices = { new ChoiceForm(), new ChoiceForm() } });
+
+    private async Task SaveItem()
+    {
+        if (editItem is null) return;
+        Error = null;
+        if (!Money.TryParse(priceText, out var price)) { Error = "Type the price like 12.50."; return; }
+        if (!Guid.TryParse(itemCategoryText, out var cat)) { Error = "Pick a category."; return; }
+
+        var modifierGroups = new List<ModifierGroup>();
+        foreach (var g in groups)
+        {
+            var mods = new List<Modifier>();
+            foreach (var m in g.Choices.Where(m => !string.IsNullOrWhiteSpace(m.Name) || !string.IsNullOrWhiteSpace(m.PriceText)))
+            {
+                long delta = 0;
+                if (!string.IsNullOrWhiteSpace(m.PriceText) && !Money.TryParse(m.PriceText.TrimStart('+'), out delta))
+                {
+                    Error = $"\"{m.Name}\": type the extra price like 1.50.";
+                    return;
+                }
+
+                mods.Add(new Modifier { Id = m.Id, Name = m.Name, PriceDeltaCents = delta });
+            }
+
+            modifierGroups.Add(new ModifierGroup { Id = g.Id, Name = g.Name, MinSelect = g.MinSelect, MaxSelect = g.MaxSelect, Modifiers = mods });
+        }
+
+        editItem.PriceCents = price;
+        editItem.CategoryId = cat;
+        editItem.ModifierGroups = modifierGroups;
+
+        var name = editItem.Name;
+        await Try(() => Menu.SaveItemAsync(RestaurantId, editItem), $"{name} saved.");
+        if (Error is null)
+        {
+            editItem = null;
+            categoryId = cat;
+            await LoadAsync();
+        }
+    }
+
+    private async Task ArchiveItem()
+    {
+        if (editItem is null) return;
+        var name = editItem.Name;
+        await Try(() => Menu.ArchiveItemAsync(RestaurantId, editItem.Id), $"{name} removed from the menu.");
+        editItem = null;
+        await LoadAsync();
+    }
+}

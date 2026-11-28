@@ -1,0 +1,289 @@
+@page "/r/{Slug}/order/{Token}"
+@namespace Qrbound.POS.Components.Customer
+@layout PosCustomerLayout
+@rendermode InteractiveServer
+@attribute [Authorize(Policy = QrboundPosDefaults.CustomerPolicy)]
+@implements IDisposable
+@inject CurrentCustomer Customers
+@inject RestaurantService Restaurants
+@inject OrderService Orders
+@inject CheckoutService Checkout
+@inject QrboundPaymentsClient Payments
+@inject PosEvents Events
+@inject ILogger<CustomerOrder> Log
+
+@* The customer's order: where it is (paid, preparing, ready), and paying for it through
+   Qrbound.Payments. The register's "customer pays by card" QR code also opens this page. *@
+
+<PageTitle>@(order is null ? "Your order" : $"Order {order.Number}")</PageTitle>
+
+<div class="wrap page">
+    @if (loading)
+    {
+        <div class="center"><span class="spinner" role="status" aria-label="Loading"></span></div>
+    }
+    else if (order is null || restaurant is null)
+    {
+        <div class="center">
+            <div>
+                <h1>Order not found</h1>
+                <p class="muted">Check the link, or ask a member of staff.</p>
+                @if (customer is not null)
+                {
+                    <p class="small muted">You're signed in as @customer.DisplayName. An order can only be opened by the qrbound account that placed it.</p>
+                }
+            </div>
+        </div>
+    }
+    else
+    {
+        <p class="muted small" style="margin-bottom:.25rem">
+            @restaurant.Name · @PosUi.Where(order)
+            @if (customer is not null) { <span> · @customer.DisplayName</span> }
+        </p>
+        <div class="row" style="align-items:flex-end">
+            <div class="grow">
+                <div class="small muted">Order</div>
+                <div class="big-number num">#@order.Number</div>
+            </div>
+            <span class="@PosUi.StatusBadge(order.Status)">@PosUi.StatusLabel(order.Status)</span>
+        </div>
+
+        @if (order.Status != OrderStatus.Cancelled)
+        {
+            <div class="status-steps" aria-hidden="true">
+                <span class="@(order.PaymentStatus == PaymentStatus.Paid || !restaurant.PayBeforeKitchen || order.Source == OrderSource.Register ? "done" : null)">@(order.PaymentStatus == PaymentStatus.Paid ? "Paid" : "Placed")</span>
+                <span class="@(order.Status >= OrderStatus.Preparing ? "done" : null)">Preparing</span>
+                <span class="@(order.Status >= OrderStatus.Ready ? "done" : null)">Ready</span>
+            </div>
+        }
+
+        <p aria-live="polite">@Headline()</p>
+
+        @if (order.Status != OrderStatus.Cancelled && order.PaymentStatus != PaymentStatus.Paid)
+        {
+            <div class="card stack" style="margin-bottom:1rem">
+                <h2>Pay @Money.Format(order.TotalCents + tipCents, order.Currency)</h2>
+
+                @if (payError is not null)
+                {
+                    <div class="alert alert-error" role="alert">@payError</div>
+                    <button type="button" class="btn" @onclick="StartPayment">Try again</button>
+                }
+                else if (order.PaymentStatus == PaymentStatus.NeedsReview)
+                {
+                    <div class="alert alert-warn">We couldn't confirm an earlier payment for this order. Please ask a member of staff before paying again.</div>
+                }
+                else if (Checkout.Simulated)
+                {
+                    <TipPicker BillCents="order.TotalCents" Currency="@order.Currency" OnChanged="t => tipCents = t" />
+                    <div class="alert alert-warn small">Development mode: payments are simulated and nothing is charged.</div>
+                    <button type="button" class="btn btn-primary btn-block" disabled="@busy" @onclick="Simulate">Simulate payment</button>
+                }
+                else if (paymentId is null || payInfo is null)
+                {
+                    <div class="center" style="min-height:120px"><span class="spinner" role="status" aria-label="Preparing payment"></span></div>
+                }
+                else
+                {
+                    @if (payInfo.TipsEnabled)
+                    {
+                        <TipPicker BillCents="payInfo.AmountCents" Currency="@payInfo.Currency"
+                                   Percentages="@(payInfo.TipPercentages.Count > 0 ? payInfo.TipPercentages : [15, 18, 20])"
+                                   AllowCustom="payInfo.AllowCustomTip" MaxPercent="payInfo.MaxTipPercent" OnChanged="ChooseTip" />
+                        @if (tipError is not null) { <div class="alert alert-error">@tipError</div> }
+                    }
+                    @if (!quoting)
+                    {
+                        <QrboundPayLink @key="@($"{paymentId}-{quote?.QuoteId}")" PaymentId="paymentId.Value" Quote="quote" OnPaid="OnPaid" />
+                    }
+                    else
+                    {
+                        <div class="center" style="min-height:120px"><span class="spinner" role="status" aria-label="Updating total"></span></div>
+                    }
+                }
+            </div>
+        }
+
+        <div class="card">
+            <h2>Your order</h2>
+            <OrderLinesView Order="order" />
+            @if (order.PaymentStatus == PaymentStatus.Paid && order.TransactionId is not null && order.PaymentMethod == PaymentMethod.Qrbound)
+            {
+                <p class="small muted" style="margin-top:.5rem">Card payment reference @order.TransactionId</p>
+            }
+        </div>
+
+        <p style="margin-top:1rem;text-align:center">
+            <a href="@($"r/{restaurant.Slug}{(order.Table is { } t ? $"/t/{t.Code}" : "")}")">Order something else</a>
+        </p>
+    }
+</div>
+
+@code {
+    [Parameter] public string Slug { get; set; } = string.Empty;
+    [Parameter] public string Token { get; set; } = string.Empty;
+
+    private Restaurant? restaurant;
+    private Order? order;
+    private bool loading = true;
+
+    private Guid? paymentId;
+    private QrPaymentInfo? payInfo;
+    private QrPaymentQuote? quote;
+    private long tipCents;
+    private bool quoting;
+    private string? payError;
+    private string? tipError;
+    private bool busy;
+
+    private PosCustomer? customer;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        customer = await Customers.GetAsync();
+        restaurant = await Restaurants.GetBySlugAsync(Slug);
+        order = restaurant is null ? null : await Orders.GetForCustomerAsync(restaurant.Id, Token, customer);
+        loading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || order is null) return;
+        Events.OrderChanged += OnOrderChanged;
+        if (NeedsPayment) await StartPayment();
+    }
+
+    private bool NeedsPayment => order is { Status: not OrderStatus.Cancelled, PaymentStatus: PaymentStatus.Unpaid or PaymentStatus.Pending };
+
+    private async Task StartPayment()
+    {
+        if (Checkout.Simulated || order is null) return;
+        payError = null;
+        StateHasChanged();
+        try
+        {
+            paymentId = await Checkout.StartPaymentAsync(order.Id);
+            if (paymentId is null)
+            {
+                await ReloadAsync(); // paid meanwhile
+                return;
+            }
+
+            payInfo = await Payments.GetQrPaymentAsync(paymentId.Value);
+            if (payInfo is null) payError = "The payment couldn't be started. Please try again.";
+        }
+        catch (PosException ex)
+        {
+            payError = ex.Message;
+        }
+        catch (HttpRequestException ex)
+        {
+            Log.LogWarning(ex, "Starting payment for order {OrderId}", order.Id);
+            payError = "We couldn't reach the payment service. Check your connection and try again.";
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task ChooseTip(long cents)
+    {
+        if (paymentId is null) return;
+        tipCents = cents;
+        tipError = null;
+        quoting = true;
+        try
+        {
+            // The server locks the bill plus tip into a quote, and charges exactly that.
+            quote = cents == 0 ? null : await Payments.QuoteQrPaymentAsync(paymentId.Value, cents);
+        }
+        catch (QrboundPaymentException ex)
+        {
+            tipError = ex.Message;
+            quote = null;
+            tipCents = 0;
+        }
+        finally
+        {
+            quoting = false;
+        }
+    }
+
+    private async Task OnPaid(CardPaymentResult result)
+    {
+        // Don't take the browser's word for it: ask qrbound.
+        if (order is null) return;
+        try
+        {
+            await Checkout.RefreshPaymentAsync(order.Id);
+        }
+        catch (PosException ex)
+        {
+            Log.LogWarning("Confirming payment of order {OrderId}: {Reason}", order.Id, ex.Message);
+        }
+
+        await ReloadAsync();
+    }
+
+    private async Task Simulate()
+    {
+        if (order is null) return;
+        busy = true;
+        try
+        {
+            await Checkout.SimulatePaymentAsync(order.Id, tipCents);
+            await ReloadAsync();
+        }
+        catch (PosException ex)
+        {
+            payError = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        if (restaurant is null) return;
+        order = await Orders.GetForCustomerAsync(restaurant.Id, Token, customer);
+    }
+
+    private void OnOrderChanged(OrderChanged e)
+    {
+        if (e.OrderId != order?.Id) return;
+        _ = InvokeAsync(async () =>
+        {
+            var wasPaid = order?.PaymentStatus == PaymentStatus.Paid;
+            await ReloadAsync();
+            // A new payment request (staff replaced it) needs the card form reloaded.
+            if (!wasPaid && order is { QrPaymentId: { } id } && id != paymentId && paymentId is not null && NeedsPayment)
+            {
+                quote = null;
+                tipCents = 0;
+                await StartPayment();
+            }
+
+            StateHasChanged();
+        });
+    }
+
+    private string Headline()
+    {
+        if (order is null || restaurant is null) return string.Empty;
+        var name = order.CustomerName is null ? "" : $", {order.CustomerName}";
+        return order.Status switch
+        {
+            OrderStatus.AwaitingPayment => "Pay below and your order goes straight to the kitchen.",
+            OrderStatus.New => $"Thanks{name}! Your order is in the queue.",
+            OrderStatus.Preparing => "The kitchen is preparing your order.",
+            OrderStatus.Ready => order.Table is null ? $"Your order is ready{name}! Collect it at the counter." : $"Your order is ready{name}!",
+            OrderStatus.Completed => "Enjoy! This order is complete.",
+            OrderStatus.Cancelled => "This order was cancelled. Please ask a member of staff if that's unexpected.",
+            _ => string.Empty
+        };
+    }
+
+    public void Dispose() => Events.OrderChanged -= OnOrderChanged;
+}

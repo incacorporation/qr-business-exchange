@@ -1,0 +1,65 @@
+@page "/pos"
+@namespace Qrbound.POS.Components.Staff
+@layout PosStaffLayout
+@rendermode InteractiveServer
+@attribute [Authorize(Policy = QrboundPosDefaults.StaffPolicy)]
+@inject RestaurantService Restaurants
+@inject NavigationManager Nav
+
+<PageTitle>Restaurants · POS</PageTitle>
+
+<h1>Restaurants</h1>
+
+@if (restaurants is null)
+{
+    <span class="spinner" role="status" aria-label="Loading"></span>
+}
+else
+{
+    @if (restaurants.Count == 0)
+    {
+        <p class="muted">No restaurants yet.</p>
+    }
+    <div class="stats">
+        @foreach (var r in restaurants)
+        {
+            <a class="stat" href="@($"pos/{r.Id}")" style="text-decoration:none;color:inherit">
+                <b style="font-size:1.1rem">@r.Name</b>
+                <span>/r/@r.Slug · @(r.OnlineOrderingOpen ? "taking orders" : "phone orders off")@(r.QrboundBusinessId is null ? " · card payments not set up" : "")</span>
+            </a>
+        }
+    </div>
+
+    <AuthorizeView Policy="@QrboundPosDefaults.OwnerPolicy">
+        <div class="card" style="max-width:460px">
+            <h2>Add a restaurant</h2>
+            @if (error is not null) { <div class="alert alert-error">@error</div> }
+            <div class="field">
+                <label for="new-name">Name</label>
+                <input id="new-name" type="text" maxlength="120" @bind="newName" />
+            </div>
+            <button type="button" class="btn btn-primary" disabled="@string.IsNullOrWhiteSpace(newName)" @onclick="Create">Add restaurant</button>
+        </div>
+    </AuthorizeView>
+}
+
+@code {
+    private List<Restaurant>? restaurants;
+    private string? newName;
+    private string? error;
+
+    protected override async Task OnInitializedAsync() => restaurants = await Restaurants.ListAsync();
+
+    private async Task Create()
+    {
+        try
+        {
+            var r = await Restaurants.CreateAsync(newName!);
+            Nav.NavigateTo($"pos/{r.Id}/settings");
+        }
+        catch (PosException ex)
+        {
+            error = ex.Message;
+        }
+    }
+}

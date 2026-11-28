@@ -1,0 +1,68 @@
+@page "/pos/customer/dev-signin"
+@namespace Qrbound.POS.Components.Customer
+@layout PosCustomerLayout
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Http
+@using Microsoft.Extensions.Options
+@inject IOptions<QrboundPosOptions> Options
+@inject NavigationManager Nav
+
+@* Development only (QrboundPos:CustomerSignIn:Simulate): stands in for qrbound's sign-in page, so the
+   customer flow can be tried without a registered qrbound application. Static rendering: it sets a cookie. *@
+
+<PageTitle>Sign in · development</PageTitle>
+
+<div class="wrap page">
+    <div class="auth-box card">
+        @if (!Options.Value.CustomerSignIn.Simulate)
+        {
+            <h1>Not available</h1>
+            <p class="muted">Customers sign in with qrbound.</p>
+        }
+        else
+        {
+            <h1>Sign in with qrbound</h1>
+            <div class="alert alert-warn small">Development mode: this stands in for qrbound's sign-in page. No qrbound account is checked.</div>
+            <EditForm Model="Input" method="post" OnValidSubmit="SignInAsync" FormName="pos-customer-dev-signin">
+                <DataAnnotationsValidator />
+                <div class="field">
+                    <label for="name">Name</label>
+                    <InputText id="name" @bind-Value="Input.Name" autocomplete="name" />
+                    <ValidationMessage For="() => Input.Name" />
+                </div>
+                <div class="field">
+                    <label for="email">Email</label>
+                    <InputText id="email" type="email" @bind-Value="Input.Email" autocomplete="email" />
+                    <ValidationMessage For="() => Input.Email" />
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">Continue</button>
+            </EditForm>
+        }
+    </div>
+</div>
+
+@code {
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
+    [SupplyParameterFromForm] private DevSignInModel Input { get; set; } = default!;
+    [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+
+    public sealed class DevSignInModel
+    {
+        [Required(ErrorMessage = "Enter a name."), StringLength(80)] public string Name { get; set; } = string.Empty;
+        [Required(ErrorMessage = "Enter an email."), EmailAddress, StringLength(254)] public string Email { get; set; } = string.Empty;
+    }
+
+    protected override void OnInitialized() => Input ??= new();
+
+    private async Task SignInAsync()
+    {
+        if (!Options.Value.CustomerSignIn.Simulate) return;
+
+        // The email stands in for the qrbound user ID, so the same "account" comes back each time.
+        var email = Input.Email.Trim().ToLowerInvariant();
+        await HttpContext.SignInAsync(QrboundPosDefaults.CustomerAuthenticationScheme,
+            CustomerSignIn.ToPrincipal("dev:" + email, Input.Name, email, emailVerified: true));
+        Nav.NavigateTo(CustomerSignIn.SafeReturnUrl(ReturnUrl), forceLoad: true);
+    }
+}

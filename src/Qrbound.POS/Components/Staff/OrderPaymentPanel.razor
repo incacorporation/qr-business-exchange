@@ -1,0 +1,109 @@
+@namespace Qrbound.POS.Components.Staff
+@inject CheckoutService Checkout
+@inject OrderService Orders
+@inject PosLinks Links
+
+@* Taking payment for an order at the register: the customer scans a QR code and pays by card on
+   their phone (through Qrbound.Payments), or staff take cash. *@
+
+<div class="stack">
+    @if (error is not null)
+    {
+        <div class="alert alert-error" role="alert">@error</div>
+    }
+
+    @if (Order.PaymentStatus == PaymentStatus.Paid)
+    {
+        <div class="alert alert-ok">
+            <b>@PosUi.PaymentLabel(Order)</b> · @Money.Format(Order.PaidCents ?? Order.TotalCents, Order.Currency)
+            @if (Order.TipCents > 0) { <span> (tip @Money.Format(Order.TipCents, Order.Currency))</span> }
+            @if (Order.TransactionId is not null && Order.PaymentMethod == PaymentMethod.Qrbound) { <div class="small">CardPointe reference @Order.TransactionId</div> }
+        </div>
+    }
+    else if (Order.Status == OrderStatus.Cancelled)
+    {
+        <div class="alert alert-warn">Cancelled.</div>
+    }
+    else
+    {
+        @if (Order.PaymentStatus == PaymentStatus.NeedsReview)
+        {
+            <div class="alert alert-error">
+                <b>Check this payment.</b> @Order.PaymentError
+                @if (Order.PaymentInvoiceNumber is not null) { <div class="small">Look up invoice <b>@Order.PaymentInvoiceNumber</b> in CardPointe, then resolve it on qrbound's Take a payment page.</div> }
+            </div>
+        }
+        else if (Order.PaymentError is not null)
+        {
+            <div class="alert alert-warn small">@Order.PaymentError</div>
+        }
+
+        <div class="row">
+            <button type="button" class="btn btn-primary grow" disabled="@busy" @onclick="ShowCard">Card: customer scans</button>
+            <button type="button" class="btn grow" disabled="@(busy || Order.PaymentStatus == PaymentStatus.NeedsReview)" @onclick="Cash">Cash @Money.Format(Order.TotalCents, Order.Currency)</button>
+        </div>
+
+        @if (showQr)
+        {
+            <div class="qr-card">
+                <div class="qr"><PaymentQrCode Value="@Links.Order(Order.Restaurant!, Order)" Title="@($"Pay order {Order.Number}")" Size="170px" /></div>
+                <b>Scan to pay @Money.Format(Order.TotalCents, Order.Currency)</b>
+                <p class="small muted">Order #@Order.Number opens on the customer's phone, where they can add a tip and pay by card.</p>
+                @if (Order.PaymentStatus == PaymentStatus.Pending)
+                {
+                    <p class="small"><span class="spinner" style="width:14px;height:14px;vertical-align:middle"></span> Waiting for payment…</p>
+                }
+                @if (!Checkout.Simulated)
+                {
+                    <button type="button" class="btn btn-sm" disabled="@busy" @onclick="CheckNow">Check payment now</button>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Order Order { get; set; } = default!;
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private bool showQr;
+    private bool busy;
+    private string? error;
+
+    private async Task ShowCard()
+    {
+        // Create the qrbound payment request now, so the customer's page opens straight onto the card form.
+        await Run(async () =>
+        {
+            await Checkout.StartPaymentAsync(Order.Id);
+            showQr = true;
+        });
+    }
+
+    private Task Cash() => Run(() => Orders.MarkPaidCashAsync(Order.Id));
+
+    private Task CheckNow() => Run(() => Checkout.RefreshPaymentAsync(Order.Id, askGateway: true));
+
+    private async Task Run(Func<Task> action)
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            await action();
+            await OnChanged.InvokeAsync();
+        }
+        catch (PosException ex)
+        {
+            error = ex.Message;
+        }
+        catch (HttpRequestException)
+        {
+            error = "qrbound can't be reached right now. Try again in a moment.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+}

@@ -1,0 +1,8 @@
+@* The POS's pages (/r/... for customers, /pos/... for staff) live in the Qrbound.POS assembly.
+   Each declares its own render mode, so this router stays static. *@
+<Router AppAssembly="typeof(Program).Assembly" AdditionalAssemblies="new[] { typeof(Qrbound.POS.QrboundPosOptions).Assembly }">
+    <Found Context="routeData">
+        <RouteView RouteData="routeData" DefaultLayout="typeof(Qrbound.POS.Components.Shared.PosStaffLayout)" />
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+</Router>

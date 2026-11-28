@@ -1,0 +1,215 @@
+@page "/pos/{RestaurantId:guid}/register"
+@namespace Qrbound.POS.Components.Staff
+@layout PosStaffLayout
+@rendermode InteractiveServer
+@attribute [Authorize(Policy = QrboundPosDefaults.StaffPolicy)]
+@inherits RestaurantPageBase
+@inject MenuService Menu
+@inject OrderService Orders
+
+@* The register: tap items onto a ticket, send it to the kitchen, take payment by card (the
+   customer scans a QR code) or cash. *@
+
+<PageTitle>Register · @(Restaurant?.Name ?? "POS")</PageTitle>
+
+@if (!Loaded) { <span class="spinner" role="status" aria-label="Loading"></span> }
+else if (Restaurant is null) { <p>Restaurant not found. <a href="pos">All restaurants</a></p> }
+else
+{
+    <StaffNav Restaurant="Restaurant" />
+
+    <div class="register">
+        <div>
+            <div class="row" style="margin-bottom:.75rem">
+                @foreach (var c in menu)
+                {
+                    <button type="button" class="btn btn-sm @(category == c.Id ? "btn-primary" : null)" @onclick="() => category = c.Id">@c.Name</button>
+                }
+                <input type="text" placeholder="Search items" aria-label="Search items" @bind="search" @bind:event="oninput" style="max-width:220px;margin-left:auto" />
+            </div>
+            @if (menu.Count == 0)
+            {
+                <p class="muted">Nothing on the menu to sell. @if (IsManager) { <a href="@($"pos/{Restaurant.Id}/menu")">Add items</a> }</p>
+            }
+            <div class="tiles">
+                @foreach (var item in VisibleItems)
+                {
+                    <button type="button" class="tile" @onclick="() => Tap(item)">
+                        <b>@item.Name</b>
+                        <span class="num muted">@Money.Format(item.PriceCents, Restaurant.Currency)@(item.ModifierGroups.Count > 0 ? " +" : "")</span>
+                    </button>
+                }
+            </div>
+        </div>
+
+        <div class="card ticket">
+            @if (placed is not null)
+            {
+                <div class="row"><h2 class="grow">Order #@placed.Number</h2><span class="@PosUi.StatusBadge(placed.Status)">@PosUi.StatusLabel(placed.Status)</span></div>
+                <p class="muted small">@PosUi.Where(placed)@(placed.CustomerName is null ? "" : $" · {placed.CustomerName}")</p>
+                <OrderLinesView Order="placed" />
+                <h3 style="margin-top:1rem">Payment</h3>
+                <OrderPaymentPanel Order="placed" OnChanged="RefreshPlaced" />
+                <button type="button" class="btn btn-block" style="margin-top:1rem" @onclick="NewTicket">New order</button>
+            }
+            else
+            {
+                <h2>New order</h2>
+                <div class="row" style="margin-bottom:.6rem">
+                    <select aria-label="Table" @bind="tableText" class="grow" style="width:auto">
+                        <option value="">Takeaway / counter</option>
+                        @foreach (var t in tables.Where(t => t.IsActive))
+                        {
+                            <option value="@t.Id.ToString()">@t.Name</option>
+                        }
+                    </select>
+                    <input type="text" placeholder="Name" aria-label="Customer name" maxlength="80" @bind="customerName" class="grow" style="width:auto" />
+                </div>
+
+                @if (ticket.Count == 0)
+                {
+                    <p class="muted">Tap items to add them.</p>
+                }
+                else
+                {
+                    <ul class="lines">
+                        @foreach (var l in ticket)
+                        {
+                            <li>
+                                <span class="grow">
+                                    <b>@l.Name</b>
+                                    @if (l.ModifiersText is not null) { <span class="mods" style="display:block">@l.ModifiersText</span> }
+                                    @if (l.Notes is not null) { <span class="note" style="display:block">“@l.Notes”</span> }
+                                </span>
+                                <span class="row" style="flex-wrap:nowrap">
+                                    <button type="button" class="btn btn-round btn-sm" aria-label="@($"One fewer {l.Name}")" @onclick="() => Qty(l, -1)">−</button>
+                                    <b class="num">@l.Quantity</b>
+                                    <button type="button" class="btn btn-round btn-sm" aria-label="@($"One more {l.Name}")" @onclick="() => Qty(l, 1)">+</button>
+                                </span>
+                                <span class="num" style="min-width:4.5rem;text-align:right">@Money.Format(l.UnitPriceCents * l.Quantity, Restaurant.Currency)</span>
+                            </li>
+                        }
+                    </ul>
+                    <div class="totals num">
+                        <div><span>Subtotal</span><span>@Money.Format(Subtotal, Restaurant.Currency)</span></div>
+                        <div><span>Tax</span><span>@Money.Format(Money.Tax(Subtotal, Restaurant.TaxRatePercent), Restaurant.Currency)</span></div>
+                        <div class="total"><span>Total</span><span>@Money.Format(Subtotal + Money.Tax(Subtotal, Restaurant.TaxRatePercent), Restaurant.Currency)</span></div>
+                    </div>
+                    <div class="field" style="margin-top:.75rem">
+                        <input type="text" placeholder="Order note" aria-label="Order note" maxlength="500" @bind="orderNotes" />
+                    </div>
+                }
+
+                @if (Error is not null) { <div class="alert alert-error" role="alert">@Error</div> }
+
+                <div class="row">
+                    <button type="button" class="btn" disabled="@(ticket.Count == 0)" @onclick="() => ticket.Clear()">Clear</button>
+                    <button type="button" class="btn btn-primary grow" disabled="@(ticket.Count == 0 || placing)" @onclick="Place">Send to kitchen</button>
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (selected is not null)
+    {
+        <ItemOptionsSheet Item="selected" Currency="@Restaurant.Currency" ShowImage="false" OnAdd="Add" OnCancel="() => selected = null" />
+    }
+}
+
+@code {
+    private List<MenuCategory> menu = new();
+    private List<DiningTable> tables = new();
+    private Guid? category;
+    private string? search;
+    private readonly List<CartLine> ticket = new();
+    private MenuItem? selected;
+    private string tableText = string.Empty;
+    private Guid? tableId => Guid.TryParse(tableText, out var id) ? id : null;
+    private string? customerName;
+    private string? orderNotes;
+    private bool placing;
+    private Order? placed;
+
+    protected override bool LiveUpdates => true;
+
+    protected override async Task LoadAsync()
+    {
+        if (Restaurant is null) return;
+        menu = await Menu.GetMenuAsync(Restaurant.Id, sellableOnly: true);
+        tables = await Restaurants.ListTablesAsync(Restaurant.Id);
+        category ??= menu.FirstOrDefault()?.Id;
+    }
+
+    protected override async Task OnOrderChangedAsync(OrderChanged change)
+    {
+        if (placed is not null && change.OrderId == placed.Id) await RefreshPlaced();
+    }
+
+    private IEnumerable<MenuItem> VisibleItems =>
+        string.IsNullOrWhiteSpace(search)
+            ? menu.FirstOrDefault(c => c.Id == category)?.Items ?? Enumerable.Empty<MenuItem>()
+            : menu.SelectMany(c => c.Items).Where(i => i.Name.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private long Subtotal => ticket.Sum(l => l.UnitPriceCents * l.Quantity);
+
+    private void Tap(MenuItem item)
+    {
+        if (item.ModifierGroups.Count > 0)
+        {
+            selected = item;
+            return;
+        }
+
+        Add(new CartLine { MenuItemId = item.Id, Name = item.Name, UnitPriceCents = item.PriceCents, Quantity = 1 });
+    }
+
+    private void Add(CartLine line)
+    {
+        var same = ticket.FirstOrDefault(l => l.MenuItemId == line.MenuItemId && l.Notes == line.Notes && l.ModifierIds.Order().SequenceEqual(line.ModifierIds.Order()));
+        if (same is not null) same.Quantity = Math.Min(OrderService.MaxQuantity, same.Quantity + line.Quantity);
+        else ticket.Add(line);
+        selected = null;
+        Error = null;
+    }
+
+    private void Qty(CartLine l, int delta)
+    {
+        l.Quantity = Math.Min(OrderService.MaxQuantity, l.Quantity + delta);
+        if (l.Quantity <= 0) ticket.Remove(l);
+    }
+
+    private async Task Place()
+    {
+        placing = true;
+        await Try(async () =>
+        {
+            var order = await Orders.PlaceAsync(new PlaceOrderRequest
+            {
+                RestaurantId = RestaurantId,
+                TableId = tableId,
+                Source = OrderSource.Register,
+                CustomerName = customerName,
+                Notes = orderNotes,
+                CreatedBy = StaffName,
+                Lines = ticket.ToList()
+            });
+            placed = await Orders.GetAsync(order.Id);
+        });
+        placing = false;
+    }
+
+    private async Task RefreshPlaced()
+    {
+        if (placed is not null) placed = await Orders.GetAsync(placed.Id);
+    }
+
+    private void NewTicket()
+    {
+        placed = null;
+        ticket.Clear();
+        tableText = string.Empty;
+        customerName = null;
+        orderNotes = null;
+        Error = null;
+    }
+}

@@ -1,0 +1,91 @@
+@page "/pos/setup"
+@namespace Qrbound.POS.Components.Staff
+@layout PosStaffLayout
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Http
+@inject StaffService Staff
+@inject NavigationManager Nav
+
+@* First run: create the Owner account with the setup key from configuration. *@
+
+<PageTitle>Set up · POS</PageTitle>
+
+<div class="auth-box card">
+    <h1>Set up the POS</h1>
+    @if (done)
+    {
+        <p>Setup is done. <a href="pos/signin">Sign in</a>.</p>
+    }
+    else
+    {
+        <p class="muted small">Create the owner account. You'll need the setup key from the app's configuration (<code>QrboundPos:SetupKey</code>).</p>
+        @if (error is not null)
+        {
+            <div class="alert alert-error" role="alert">@error</div>
+        }
+        <EditForm Model="Input" method="post" OnValidSubmit="SetupAsync" FormName="pos-setup">
+            <DataAnnotationsValidator />
+            <div class="field">
+                <label for="key">Setup key</label>
+                <InputText id="key" type="password" @bind-Value="Input.SetupKey" autocomplete="off" />
+                <ValidationMessage For="() => Input.SetupKey" />
+            </div>
+            <div class="field">
+                <label for="name">Your name</label>
+                <InputText id="name" @bind-Value="Input.DisplayName" autocomplete="name" />
+                <ValidationMessage For="() => Input.DisplayName" />
+            </div>
+            <div class="field">
+                <label for="username">Username</label>
+                <InputText id="username" @bind-Value="Input.UserName" autocomplete="username" />
+                <ValidationMessage For="() => Input.UserName" />
+            </div>
+            <div class="field">
+                <label for="password">Password</label>
+                <InputText id="password" type="password" @bind-Value="Input.Password" autocomplete="new-password" />
+                <div class="hint">At least @StaffService.MinPasswordLength characters.</div>
+                <ValidationMessage For="() => Input.Password" />
+            </div>
+            <button type="submit" class="btn btn-primary btn-block">Create owner account</button>
+        </EditForm>
+    }
+</div>
+
+@code {
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
+    [SupplyParameterFromForm] private SetupModel Input { get; set; } = default!;
+
+    private string? error;
+    private bool done;
+
+    public sealed class SetupModel
+    {
+        [Required(ErrorMessage = "Enter the setup key.")] public string SetupKey { get; set; } = string.Empty;
+        [Required(ErrorMessage = "Enter your name.")] public string DisplayName { get; set; } = string.Empty;
+        [Required(ErrorMessage = "Choose a username.")] public string UserName { get; set; } = string.Empty;
+        [Required(ErrorMessage = "Choose a password.")] public string Password { get; set; } = string.Empty;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Input ??= new();
+        if (HttpMethods.IsGet(HttpContext.Request.Method)) done = await Staff.AnyAsync();
+    }
+
+    private async Task SetupAsync()
+    {
+        try
+        {
+            var owner = await Staff.SetupOwnerAsync(Input.SetupKey, Input.UserName, Input.DisplayName, Input.Password);
+            await HttpContext.SignInAsync(QrboundPosDefaults.AuthenticationScheme, StaffService.ToPrincipal(owner));
+        }
+        catch (PosException ex)
+        {
+            error = ex.Message;
+            return;
+        }
+
+        Nav.NavigateTo("pos", forceLoad: true);
+    }
+}

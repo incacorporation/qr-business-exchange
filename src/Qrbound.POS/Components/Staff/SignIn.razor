@@ -1,0 +1,82 @@
+@page "/pos/signin"
+@namespace Qrbound.POS.Components.Staff
+@layout PosStaffLayout
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Http
+@inject StaffService Staff
+@inject NavigationManager Nav
+
+@* Static server rendering (no @rendermode): signing in sets a cookie, which needs the HTTP response. *@
+
+<PageTitle>Sign in · POS</PageTitle>
+
+<div class="auth-box card">
+    <h1>Staff sign in</h1>
+    @if (error is not null)
+    {
+        <div class="alert alert-error" role="alert">@error</div>
+    }
+    @if (noStaff)
+    {
+        <div class="alert alert-warn">No staff accounts yet. <a href="pos/setup">Set up the POS</a> first.</div>
+    }
+    <EditForm Model="Input" method="post" OnValidSubmit="SignInAsync" FormName="pos-signin">
+        <DataAnnotationsValidator />
+        <div class="field">
+            <label for="username">Username</label>
+            <InputText id="username" @bind-Value="Input.UserName" autocomplete="username" autofocus />
+            <ValidationMessage For="() => Input.UserName" />
+        </div>
+        <div class="field">
+            <label for="password">Password</label>
+            <InputText id="password" type="password" @bind-Value="Input.Password" autocomplete="current-password" />
+            <ValidationMessage For="() => Input.Password" />
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Sign in</button>
+    </EditForm>
+</div>
+
+@code {
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm] private SignInModel Input { get; set; } = default!;
+
+    [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+
+    private string? error;
+    private bool noStaff;
+
+    public sealed class SignInModel
+    {
+        [Required(ErrorMessage = "Enter your username.")] public string UserName { get; set; } = string.Empty;
+        [Required(ErrorMessage = "Enter your password.")] public string Password { get; set; } = string.Empty;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Input ??= new();
+        if (HttpMethods.IsGet(HttpContext.Request.Method)) noStaff = !await Staff.AnyAsync();
+    }
+
+    private async Task SignInAsync()
+    {
+        try
+        {
+            var member = await Staff.VerifyAsync(Input.UserName, Input.Password);
+            await HttpContext.SignInAsync(QrboundPosDefaults.AuthenticationScheme, StaffService.ToPrincipal(member),
+                new AuthenticationProperties { IsPersistent = false });
+        }
+        catch (PosException ex)
+        {
+            error = ex.Message;
+            return;
+        }
+
+        // Only ever return to a page of this app.
+        var target = !string.IsNullOrEmpty(ReturnUrl) && Uri.TryCreate(ReturnUrl, UriKind.Relative, out _) && ReturnUrl.StartsWith('/') && !ReturnUrl.StartsWith("//") && !ReturnUrl.StartsWith("/\\")
+            ? ReturnUrl
+            : "pos";
+        Nav.NavigateTo(target, forceLoad: true);
+    }
+}

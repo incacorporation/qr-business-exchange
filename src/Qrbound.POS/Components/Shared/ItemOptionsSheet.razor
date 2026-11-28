@@ -1,0 +1,155 @@
+@namespace Qrbound.POS.Components.Shared
+
+@* Picks an item's options (modifier groups), quantity and a note, then adds it to a cart.
+   Shown as a bottom sheet on phones and a dialog on the register. *@
+
+<div class="sheet-backdrop" @onclick="Cancel">
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="item-sheet-title" @onclick:stopPropagation="true">
+        <div class="sheet-head">
+            <h2 id="item-sheet-title">@Item.Name</h2>
+            <button type="button" class="btn btn-round" aria-label="Close" @onclick="Cancel">×</button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(Item.ImageUrl) && ShowImage)
+        {
+            <img src="@Item.ImageUrl" alt="" style="width:100%;max-height:220px;object-fit:cover;border-radius:12px;margin-bottom:.75rem" />
+        }
+        @if (!string.IsNullOrEmpty(Item.Description))
+        {
+            <p class="muted">@Item.Description</p>
+        }
+
+        @foreach (var g in Item.ModifierGroups)
+        {
+            var single = g.MaxSelect == 1;
+            <fieldset class="opt-group">
+                <legend>
+                    @g.Name
+                    <span class="small muted">@Rule(g)</span>
+                </legend>
+                @foreach (var m in g.Modifiers)
+                {
+                    var on = picked.Contains(m.Id);
+                    <label class="opt">
+                        @if (single)
+                        {
+                            <input type="radio" name="@($"g{g.Id:N}")" checked="@on" @onchange="() => PickOne(g, m)" />
+                        }
+                        else
+                        {
+                            <input type="checkbox" checked="@on" disabled="@(!on && Count(g) >= g.MaxSelect)" @onchange="e => Toggle(m, e)" />
+                        }
+                        <span>@m.Name</span>
+                        @if (m.PriceDeltaCents > 0)
+                        {
+                            <span class="price num">+@Money.Format(m.PriceDeltaCents, Currency)</span>
+                        }
+                    </label>
+                }
+            </fieldset>
+        }
+
+        <div class="field">
+            <label for="item-note">Note for the kitchen <span class="muted small">(optional)</span></label>
+            <input id="item-note" type="text" maxlength="200" placeholder="e.g. no onions" @bind="notes" />
+        </div>
+
+        @if (error is not null)
+        {
+            <div class="alert alert-error" role="alert">@error</div>
+        }
+
+        <div class="row" style="margin-top:.5rem">
+            <button type="button" class="btn btn-round" aria-label="One fewer" disabled="@(quantity <= 1)" @onclick="() => quantity--">−</button>
+            <b class="num" style="min-width:2rem;text-align:center" aria-live="polite">@quantity</b>
+            <button type="button" class="btn btn-round" aria-label="One more" disabled="@(quantity >= OrderService.MaxQuantity)" @onclick="() => quantity++">+</button>
+            <button type="button" class="btn btn-primary grow" @onclick="Add">
+                <span>@(Editing is null ? "Add" : "Update")</span>
+                <span class="num">@Money.Format(UnitPrice * quantity, Currency)</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public MenuItem Item { get; set; } = default!;
+    [Parameter] public string Currency { get; set; } = "USD";
+    [Parameter] public bool ShowImage { get; set; } = true;
+
+    /// <summary>A line already in the cart, to change it rather than add another.</summary>
+    [Parameter] public CartLine? Editing { get; set; }
+
+    [Parameter] public EventCallback<CartLine> OnAdd { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private readonly HashSet<Guid> picked = new();
+    private int quantity = 1;
+    private string? notes;
+    private string? error;
+
+    protected override void OnInitialized()
+    {
+        if (Editing is not null)
+        {
+            picked.UnionWith(Editing.ModifierIds);
+            quantity = Editing.Quantity;
+            notes = Editing.Notes;
+        }
+        else
+        {
+            // Pre-pick the first choice of required single-choice groups (e.g. Size).
+            foreach (var g in Item.ModifierGroups.Where(g => g.MinSelect == 1 && g.MaxSelect == 1 && g.Modifiers.Count > 0))
+            {
+                picked.Add(g.Modifiers[0].Id);
+            }
+        }
+    }
+
+    private long UnitPrice => Item.PriceCents + Item.ModifierGroups.SelectMany(g => g.Modifiers).Where(m => picked.Contains(m.Id)).Sum(m => m.PriceDeltaCents);
+
+    private int Count(ModifierGroup g) => g.Modifiers.Count(m => picked.Contains(m.Id));
+
+    private static string Rule(ModifierGroup g) =>
+        g.MinSelect == 0 ? (g.MaxSelect == 1 ? "optional" : $"up to {g.MaxSelect}")
+        : g.MinSelect == g.MaxSelect ? (g.MinSelect == 1 ? "required" : $"choose {g.MinSelect}")
+        : $"choose {g.MinSelect} to {g.MaxSelect}";
+
+    private void PickOne(ModifierGroup g, Modifier m)
+    {
+        foreach (var other in g.Modifiers) picked.Remove(other.Id);
+        picked.Add(m.Id);
+        error = null;
+    }
+
+    private void Toggle(Modifier m, ChangeEventArgs e)
+    {
+        if (e.Value is true) picked.Add(m.Id); else picked.Remove(m.Id);
+        error = null;
+    }
+
+    private async Task Add()
+    {
+        foreach (var g in Item.ModifierGroups)
+        {
+            var n = Count(g);
+            if (n < g.MinSelect)
+            {
+                error = g.MinSelect == 1 ? $"Choose a {g.Name.ToLowerInvariant()}." : $"Choose {g.MinSelect} {g.Name.ToLowerInvariant()}.";
+                return;
+            }
+        }
+
+        var chosen = Item.ModifierGroups.SelectMany(g => g.Modifiers).Where(m => picked.Contains(m.Id)).ToList();
+        var line = Editing ?? new CartLine();
+        line.MenuItemId = Item.Id;
+        line.Name = Item.Name;
+        line.Quantity = quantity;
+        line.ModifierIds = chosen.Select(m => m.Id).ToList();
+        line.ModifiersText = chosen.Count == 0 ? null : string.Join(", ", chosen.Select(m => m.Name));
+        line.UnitPriceCents = UnitPrice;
+        line.Notes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim();
+        await OnAdd.InvokeAsync(line);
+    }
+
+    private Task Cancel() => OnCancel.InvokeAsync();
+}

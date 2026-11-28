@@ -1,0 +1,131 @@
+@page "/pos/{RestaurantId:guid}/tables"
+@namespace Qrbound.POS.Components.Staff
+@layout PosStaffLayout
+@rendermode InteractiveServer
+@attribute [Authorize(Policy = QrboundPosDefaults.ManagerPolicy)]
+@inherits RestaurantPageBase
+@inject PosLinks Links
+@inject IJSRuntime JS
+
+@* Tables and their QR codes, ready to print: each opens that table's menu on the customer's phone. *@
+
+<PageTitle>Tables · @(Restaurant?.Name ?? "POS")</PageTitle>
+
+@if (!Loaded) { <span class="spinner" role="status" aria-label="Loading"></span> }
+else if (Restaurant is null) { <p>Restaurant not found. <a href="pos">All restaurants</a></p> }
+else
+{
+    <StaffNav Restaurant="Restaurant" />
+    @if (Error is not null) { <div class="alert alert-error no-print" role="alert">@Error</div> }
+    @if (Notice is not null) { <div class="alert alert-ok no-print" role="status">@Notice</div> }
+
+    <div class="card no-print" style="margin-bottom:1rem">
+        <div class="row">
+            <label style="margin:0">Add</label>
+            <input type="number" min="1" max="200" style="width:80px" aria-label="How many tables" @bind="addCount" />
+            <span>tables named</span>
+            <input type="text" style="width:140px" aria-label="Table name prefix" maxlength="40" @bind="addPrefix" />
+            <span>starting at</span>
+            <input type="number" min="0" style="width:80px" aria-label="First table number" @bind="addFrom" />
+            <button type="button" class="btn btn-primary" @onclick="Add">Add tables</button>
+            <button type="button" class="btn" style="margin-left:auto" @onclick="Print">Print QR codes</button>
+        </div>
+        <p class="hint">Print the codes and put one on each table. Customers scan it with their phone camera to see the menu, order and pay. "New code" retires a printed code (for example if one is copied or moved).</p>
+    </div>
+
+    <div class="qr-grid">
+        @if (Restaurant.AllowTakeaway)
+        {
+            <div class="qr-card">
+                <b>Takeaway / counter</b>
+                <div class="qr"><PaymentQrCode Value="@Links.Takeaway(Restaurant)" Title="Takeaway menu QR code" Size="170px" /></div>
+                <div class="small muted">Scan to order · @Restaurant.Name</div>
+                <div class="small no-print" style="word-break:break-all;margin-top:.3rem"><a href="@Links.Takeaway(Restaurant)" target="_blank" rel="noopener">@Links.Takeaway(Restaurant)</a></div>
+            </div>
+        }
+        @foreach (var t in tables)
+        {
+            <div class="qr-card" style="@(t.IsActive ? null : "opacity:.5")">
+                @if (editing == t.Id)
+                {
+                    <div class="no-print stack" style="text-align:left">
+                        <input type="text" maxlength="60" aria-label="Table name" @bind="editName" />
+                        <label class="check"><input type="checkbox" @bind="editActive" /> Taking orders</label>
+                        <div class="row">
+                            <button type="button" class="btn btn-sm btn-primary" @onclick="() => Save(t)">Save</button>
+                            <button type="button" class="btn btn-sm" @onclick="() => editing = null">Cancel</button>
+                            <button type="button" class="btn btn-sm btn-danger" @onclick="() => Delete(t)">Delete</button>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <b>@t.Name</b>
+                    @if (!t.IsActive) { <span class="badge">off</span> }
+                }
+                <div class="qr"><PaymentQrCode Value="@Links.Table(Restaurant, t)" Title="@($"{t.Name} menu QR code")" Size="170px" /></div>
+                <div class="small muted">Scan to order · @Restaurant.Name</div>
+                @if (editing != t.Id)
+                {
+                    <div class="row no-print" style="justify-content:center;margin-top:.4rem">
+                        <button type="button" class="btn btn-sm" @onclick="() => StartEdit(t)">Edit</button>
+                        <button type="button" class="btn btn-sm" @onclick="() => NewCode(t)">New code</button>
+                        <a class="btn btn-sm" href="@Links.Table(Restaurant, t)" target="_blank" rel="noopener">Open</a>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<DiningTable> tables = new();
+    private int addCount = 10;
+    private string addPrefix = "Table";
+    private int addFrom = 1;
+    private Guid? editing;
+    private string editName = string.Empty;
+    private bool editActive;
+
+    protected override async Task LoadAsync()
+    {
+        if (Restaurant is null) return;
+        tables = await Restaurants.ListTablesAsync(Restaurant.Id);
+        addFrom = tables.Count + 1;
+    }
+
+    private async Task Add()
+    {
+        await Try(() => Restaurants.AddTablesAsync(RestaurantId, addPrefix, addFrom, addCount), $"Added {addCount} table(s).");
+        await LoadAsync();
+    }
+
+    private void StartEdit(DiningTable t)
+    {
+        editing = t.Id;
+        editName = t.Name;
+        editActive = t.IsActive;
+    }
+
+    private async Task Save(DiningTable t)
+    {
+        await Try(() => Restaurants.RenameTableAsync(t.Id, editName, editActive));
+        editing = null;
+        await LoadAsync();
+    }
+
+    private async Task Delete(DiningTable t)
+    {
+        await Try(() => Restaurants.DeleteTableAsync(t.Id), $"{t.Name} deleted. Its past orders are kept.");
+        editing = null;
+        await LoadAsync();
+    }
+
+    private async Task NewCode(DiningTable t)
+    {
+        await Try(() => Restaurants.NewTableCodeAsync(t.Id), $"{t.Name} has a new QR code. Print it: the old one no longer works.");
+        await LoadAsync();
+    }
+
+    private async Task Print() => await JS.InvokeVoidAsync("print");
+}
